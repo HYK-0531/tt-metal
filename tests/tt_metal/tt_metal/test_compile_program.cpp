@@ -34,9 +34,11 @@ void ClearKernelCache (const string& kernel_root_path) {
 // This assumes binaries are written to specific location: kernel_compile_outpath / kernel_name / hash
 std::unordered_map<std::string, std::string> get_last_program_binary_path(const Program& program, const string& kernel_root_path) {
     std::unordered_map<std::string, std::string> kernel_name_to_last_compiled_dir;
+    std::cout << "kernel_root_path: " << kernel_root_path << std::endl;
     for (size_t kernel_id = 0; kernel_id < program.num_kernels(); kernel_id++) {
         auto kernel = detail::GetKernel(program, kernel_id);
-        if (not std::filesystem::exists(kernel_root_path + kernel->name())) {
+        if (!std::filesystem::exists(kernel_root_path + kernel->name())) {
+            std::cout << "Kernel " << kernel->name() << " not found in " << kernel_root_path << std::endl;
             continue;
         }
 
@@ -44,6 +46,7 @@ std::unordered_map<std::string, std::string> get_last_program_binary_path(const 
         std::filesystem::file_time_type ftime = std::filesystem::last_write_time(*kernel_path.begin());
         std::string latest_hash;
         for (auto const& dir_entry : std::filesystem::directory_iterator{kernel_path}) {
+            std::cout << "dir_entry: " << dir_entry.path() << std::endl;
             auto kbtime = std::filesystem::last_write_time(dir_entry.path());
             if (kbtime > ftime) {
                 ftime = kbtime;

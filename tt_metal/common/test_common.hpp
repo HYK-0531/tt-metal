@@ -21,6 +21,7 @@
 
 inline std::string get_soc_description_file(
     const tt::ARCH& arch, tt::TargetDevice target_device, std::string output_dir = "") {
+#if NOPE
     // Ability to skip this runtime opt, since trimmed SOC desc limits which DRAM channels are available.
     std::string tt_metal_home;
     if (getenv("TT_METAL_HOME")) {
@@ -52,6 +53,8 @@ inline std::string get_soc_description_file(
         };
     }
     return "";
+#endif
+    return "/root/blackhole_x280.yaml";
 }
 
 namespace test_args {

@@ -72,13 +72,14 @@ Cluster::Cluster() {
 
     this->initialize_device_drivers();
 
-    this->reserve_ethernet_cores_for_tunneling();
+    // this->reserve_ethernet_cores_for_tunneling();
 
-    this->initialize_ethernet_sockets();
+    // this->initialize_ethernet_sockets();
 
-    this->set_tunnels_from_mmio_device();
-
+    // this->set_tunnels_from_mmio_device();
+    std::cout << "assert_risc_reset" << std::endl;
     this->assert_risc_reset();
+    std::cout << "done assert_risc_reset" << std::endl;
 }
 
 void Cluster::detect_arch_and_target() {
@@ -121,10 +122,16 @@ BoardType Cluster::get_board_type(chip_id_t chip_id) const {
 }
 
 void Cluster::generate_cluster_descriptor() {
+
+    this->cluster_desc_ = tt_ClusterDescriptor::create();
+    std::set<chip_id_t> &device_ids = this->devices_grouped_by_assoc_mmio_device_[0];
+    device_ids.insert(0);
+    this->device_to_mmio_device_[0] = 0;
+#if NOPE
     // Cluster descriptor yaml not available for Blackhole bring up
     if (this->target_type_ == TargetDevice::Simulator) {
         // Passing simulator reported physical devices as logical devices.
-        this->cluster_desc_ = tt_ClusterDescriptor::create_mock_cluster(tt_SimulationDevice::detect_available_device_ids(), this->arch_);
+        // this->cluster_desc_ = tt_ClusterDescriptor::create_mock_cluster(tt_SimulationDevice::detect_available_device_ids(), this->arch_);
     } else {
         this->cluster_desc_ = tt_ClusterDescriptor::create_from_yaml(tt_ClusterDescriptor::get_cluster_descriptor_file_path());
         for (const auto &chip_id : this->cluster_desc_->get_all_chips()) {
@@ -168,6 +175,7 @@ void Cluster::generate_cluster_descriptor() {
             this->cluster_desc_->get_all_chips().size(),
             total_num_hugepages);
     }
+#endif
 }
 
 void Cluster::initialize_device_drivers() {
@@ -228,11 +236,12 @@ void Cluster::open_driver(const bool &skip_driver_allocs) {
         // This is the target/desired number of mem channels per arch/device.
         // Silicon driver will attempt to open this many hugepages as channels per mmio chip,
         // and assert if workload uses more than available.
-        uint32_t num_host_mem_ch_per_mmio_device = std::min(HOST_MEM_CHANNELS, (uint32_t)all_chips_set.size());
+        //uint32_t num_host_mem_ch_per_mmio_device = std::min(HOST_MEM_CHANNELS, (uint32_t)all_chips_set.size());
+        uint32_t num_host_mem_ch_per_mmio_device = 1;
         // This will remove harvested rows from the soc descriptor
         const bool perform_harvesting = true;
         const bool clean_system_resources = true;
-        device_driver = std::make_unique<tt::umd::Cluster>(
+        device_driver = std::make_unique<tt::umd::ClusterX280>(
             sdesc_path,
             all_chips_set,
             num_host_mem_ch_per_mmio_device,
@@ -250,7 +259,7 @@ void Cluster::open_driver(const bool &skip_driver_allocs) {
         // that is later expected to be populated by unrelated APIs
         // TT_FATAL(device_driver->get_target_mmio_device_ids().size() == 1, "Only one target mmio device id allowed.");
     } else if (this->target_type_ == TargetDevice::Simulator) {
-        device_driver = std::make_unique<tt_SimulationDevice>(sdesc_path);
+        // device_driver = std::make_unique<tt_SimulationDevice>(sdesc_path);
     }
     std::uint32_t dram_barrier_base = tt_metal::hal.get_dev_addr(tt_metal::HalDramMemAddrType::DRAM_BARRIER);
     device_driver->set_device_dram_address_params(tt_device_dram_address_params{dram_barrier_base});

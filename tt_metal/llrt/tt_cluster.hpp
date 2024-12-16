@@ -95,7 +95,7 @@ class Cluster {
         std::vector<uint32_t> &data, uint32_t sz_in_bytes, tt_cxy_pair core, uint64_t addr, bool small_access = false) const;
 
     std::optional<std::tuple<uint32_t, uint32_t>> get_tlb_data(const tt_cxy_pair &target) const {
-        tt::umd::Cluster *device = dynamic_cast<tt::umd::Cluster *>(driver_.get());
+        tt::umd::ClusterX280 *device = dynamic_cast<tt::umd::ClusterX280 *>(driver_.get());
         tt_cxy_pair umd_target = this->virtual_to_umd_coord_mapping_.at(target);
         return device->get_tlb_data_from_target(umd_target);
     }
@@ -103,21 +103,21 @@ class Cluster {
     std::function<void(uint32_t, uint32_t, const uint8_t *)> get_fast_pcie_static_tlb_write_callable(
         int chip_id) const {
         chip_id_t mmio_device_id = device_to_mmio_device_.at(chip_id);
-        tt::umd::Cluster *device = dynamic_cast<tt::umd::Cluster *>(driver_.get());
+        tt::umd::ClusterX280 *device = dynamic_cast<tt::umd::ClusterX280*>(driver_.get());
         return device->get_fast_pcie_static_tlb_write_callable(mmio_device_id);
     }
 
     // Returns a writer object which holds a pointer to a static tlb
     // Allows for fast writes when targeting same device core by only doing the lookup once and avoiding repeated stack traversals
     tt::Writer get_static_tlb_writer(tt_cxy_pair target) const {
-        tt::umd::Cluster *device = dynamic_cast<tt::umd::Cluster *>(driver_.get());
+        tt::umd::ClusterX280 *device = dynamic_cast<tt::umd::ClusterX280 *>(driver_.get());
         tt_cxy_pair umd_target = this->virtual_to_umd_coord_mapping_.at(target);
         return device->get_static_tlb_writer(umd_target);
     }
 
     std::uint32_t get_numa_node_for_device(uint32_t device_id) const {
         uint32_t mmio_device_id = this->get_associated_mmio_device(device_id);
-        tt::umd::Cluster *device = dynamic_cast<tt::umd::Cluster *>(driver_.get());
+        tt::umd::ClusterX280 *device = dynamic_cast<tt::umd::ClusterX280 *>(driver_.get());
         return driver_->get_numa_node_for_pcie_device(mmio_device_id);
     }
 

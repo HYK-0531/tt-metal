@@ -316,7 +316,7 @@ void Device::initialize_device_kernel_defines()
     auto grid_size = this->grid_size();
 
     CoreCoord pcie_core = pcie_cores.empty() ? grid_size : pcie_cores[0];
-
+    std::cerr << "PCIE Core: " << pcie_core.str() << std::endl;
     this->device_kernel_defines_.emplace("PCIE_NOC_X", std::to_string(pcie_core.x));
     this->device_kernel_defines_.emplace("PCIE_NOC_Y", std::to_string(pcie_core.y));
 }

@@ -215,7 +215,7 @@ add_compile_options(
     -Wswitch
     -Wuninitialized
     -Wno-unused-parameter
-    -mavx2
+    "$<$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},x86_64>:-mavx2>"
     -fPIC
     -fvisibility-inlines-hidden
     -fno-lto # FIXME: This seems to be here for ttnn; it should go to TTNN, then.
@@ -267,7 +267,7 @@ if(ENABLE_TRACY)
 endif()
 
 add_subdirectory(tt_metal)
-add_subdirectory(ttnn)
+#add_subdirectory(ttnn)
 
 if(TT_METAL_BUILD_TESTS OR TTNN_BUILD_TESTS)
     add_subdirectory(${PROJECT_SOURCE_DIR}/tests)
@@ -290,26 +290,26 @@ install(
         DESTINATION ${CMAKE_INSTALL_LIBDIR}
         COMPONENT dev
 )
-install(
-    TARGETS
-        ttnn
-    ARCHIVE
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        COMPONENT dev
-)
-if(WITH_PYTHON_BINDINGS)
-    # Install .so into src files for pybinds implementation
-    install(
-        TARGETS
-            ttnn
-            DESTINATION
-            ${PROJECT_SOURCE_DIR}/ttnn/ttnn
-            COMPONENT
-            tt_pybinds
-    )
-endif()
+# install(
+#     TARGETS
+#         ttnn
+#     ARCHIVE
+#         DESTINATION ${CMAKE_INSTALL_LIBDIR}
+#     LIBRARY
+#         DESTINATION ${CMAKE_INSTALL_LIBDIR}
+#         COMPONENT dev
+# )
+# if(WITH_PYTHON_BINDINGS)
+#     # Install .so into src files for pybinds implementation
+#     install(
+#         TARGETS
+#             ttnn
+#             DESTINATION
+#             ${PROJECT_SOURCE_DIR}/ttnn/ttnn
+#             COMPONENT
+#             tt_pybinds
+#     )
+# endif()
 
 # Custom clean target for `built` folder for when new kernel changes are pulled
 add_custom_target(

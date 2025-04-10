@@ -27,6 +27,10 @@ PHDRS {
   data PT_LOAD;
 }
 
+__firmware_stack_size = 1536;
+__firmware_stack_start = ORIGIN(REGION_LDM);
+__firmware_stack_end = __firmware_stack_start + __firmware_stack_size;
+
 SECTIONS
 {
   PROVIDE (__erisc_jump_table = ORIGIN(ERISC_JUMPTABLE));
@@ -80,7 +84,7 @@ SECTIONS
     KEEP (*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
     KEEP (*(.fini_array))
   } > REGION_APP_KERNEL_DATA :data
-  .bss : ALIGN(4) {
+  .bss __firmware_stack_end : ALIGN(4) {
     __ldm_bss_start = .;
     *(.sbss2 .sbss2.* .gnu.linkonce.sb2.*)
     *(.dynsbss)
@@ -91,7 +95,7 @@ SECTIONS
     *(COMMON)
     . = ALIGN(4);
     __ldm_bss_end = .;
-  } > REGION_APP_KERNEL_DATA :data
+  } > REGION_LDM :data
 
   .riscv.attributes 0 : { *(.riscv.attributes) } :attributes
 

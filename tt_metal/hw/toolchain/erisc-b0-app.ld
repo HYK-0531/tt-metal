@@ -16,7 +16,7 @@ REGION_ALIAS("REGION_APP_DATA", ERISC_APP_DATA)
 REGION_ALIAS("REGION_LDM", LOCAL_DATA_MEM)
 
 __firmware_start = ORIGIN(ERISC_CODE);
-__firmware_stack_size = 1024;
+__firmware_stack_size = 1536;
 __firmware_global_pointer = ORIGIN(ERISC_DATA) + 0x7f0;
 
 

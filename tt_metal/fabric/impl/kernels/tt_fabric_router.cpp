@@ -11,7 +11,8 @@
 
 using namespace tt::tt_fabric;
 
-router_state_t router_state __attribute__((aligned(16)));
+// Keep in the data section in L1, because this is written to over ethernet.
+__attribute__((section(".data"))) router_state_t router_state __attribute__((aligned(16)));
 #ifdef FVC_MODE_PULL
 fvc_outbound_pull_state_t fvc_outbound_state __attribute__((aligned(16)));  // replicate for each fvc
 #endif

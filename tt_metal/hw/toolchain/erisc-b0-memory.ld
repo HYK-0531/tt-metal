@@ -5,7 +5,8 @@
 
 MEMORY
 {
-    LOCAL_DATA_MEM : ORIGIN = 0xFFB00600, LENGTH = 2560
+    /* The top of LDM is reserved for the router app stack, so avoid using it */
+    LOCAL_DATA_MEM : ORIGIN = 0xFFB00000, LENGTH = 3584
     ETH_L1 : ORIGIN = 0x00000000, LENGTH = 256K
     ERISC_INIT_CODE : ORIGIN = 0x00000000, LENGTH = 4K
     ERISC_PLATFORM : ORIGIN = 0x00001000, LENGTH = 4K

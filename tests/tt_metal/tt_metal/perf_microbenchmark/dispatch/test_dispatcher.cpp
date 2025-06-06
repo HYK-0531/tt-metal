@@ -566,6 +566,10 @@ int main(int argc, char** argv) {
             MetalContext::instance()
                 .dispatch_mem_map(CoreType::WORKER)
                 .get_device_command_queue_addr(CommandQueueDeviceAddrType::COMPLETION_Q_RD);
+        const uint32_t scratch_buffer_ptr =
+            MetalContext::instance()
+                .dispatch_mem_map(CoreType::WORKER)
+                .get_device_command_queue_addr(CommandQueueDeviceAddrType::SCRATCH_BUFFER);
 
         std::vector<uint32_t> dispatch_compile_args = {};
 
@@ -629,6 +633,7 @@ int main(int argc, char** argv) {
             {"TO_MESH_ID", "0"},
             {"TO_DEV_ID", "0"},
             {"ROUTER_DIRECTION", "0"},
+            {"SCRATCH_BUFFER", std::to_string(scratch_buffer_ptr)},
             {"IS_D_VARIANT", "1"},
             {"IS_H_VARIANT", "1"},
         };

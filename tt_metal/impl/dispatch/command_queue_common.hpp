@@ -25,7 +25,8 @@ enum class CommandQueueDeviceAddrType : uint8_t {
     DISPATCH_S_SYNC_SEM = 6,
     FABRIC_HEADER_RB = 7,
     FABRIC_SYNC_STATUS = 8,
-    UNRESERVED = 9,
+    SCRATCH_BUFFER = 9,
+    UNRESERVED = 10,
 };
 
 // likely only used in impl

@@ -54,6 +54,8 @@ struct dispatch_static_config_t {
     std::optional<bool> is_2d_fabric;
     std::optional<bool> is_2d_fabric_dynamic;
 
+    std::optional<uint32_t> scratch_buffer;
+
     std::optional<bool> is_d_variant;
     std::optional<bool> is_h_variant;
 };

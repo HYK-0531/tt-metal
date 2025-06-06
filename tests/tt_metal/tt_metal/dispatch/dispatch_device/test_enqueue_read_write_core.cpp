@@ -181,6 +181,9 @@ TEST_F(CommandQueueSingleCardFixture, TensixTestReadWriteEntireL1) {
             .enqueue_read_from_core(virtual_core, dst_data.data(), address, size, false);
 
         Finish(device->command_queue());
+        for (size_t i = 0; i < num_elements; ++i) {
+            EXPECT_EQ(src_data[i], dst_data[i]) << "Mismatch at index " << i;
+        }
 
         EXPECT_EQ(src_data, dst_data);
     }

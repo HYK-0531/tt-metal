@@ -92,6 +92,8 @@ constexpr uint32_t to_mesh_id = TO_MESH_ID;
 constexpr uint32_t to_dev_id = TO_DEV_ID;
 constexpr uint32_t router_direction = ROUTER_DIRECTION;
 
+constexpr uint32_t scratch_buffer = SCRATCH_BUFFER;
+
 constexpr bool is_2d_fabric = static_cast<bool>(FABRIC_2D);
 
 constexpr uint32_t is_d_variant = IS_D_VARIANT;
@@ -303,15 +305,13 @@ void process_write_host_h(uint32_t& block_noc_writes_to_clear, uint32_t block_ne
         noc_async_write(data_ptr, pcie_noc_xy | completion_queue_write_addr, xfer_size);
 #else
         cq_noc_async_write_with_state_any_len(data_ptr, completion_queue_write_addr, xfer_size);
-        // completion_queue_push_back below will do a write to host, so we add 1 to the number of data packets written
-        uint32_t num_noc_packets_written = div_up(xfer_size, NOC_MAX_BURST_SIZE) + 1;
-        noc_nonposted_writes_num_issued[noc_index] += num_noc_packets_written;
-        noc_nonposted_writes_acked[noc_index] += num_noc_packets_written;
 #endif
 
         noc_async_write_barrier();
+        /// Aligned addr that inclused the last byte written.
+        uint32_t read_addr = (completion_queue_write_addr + xfer_size - 1) & ~(PCIE_ALIGNMENT - 1);
         // Read written data to ensure it has reached the host.
-        noc_async_read(NOC_XY_ADDR2(pcie_noc_xy, completion_queue_write_addr + xfer_size - PCIE_ALIGNMENT), cmd_ptr, PCIE_ALIGNMENT);
+        noc_async_read(pcie_noc_xy | read_addr, scratch_buffer, PCIE_ALIGNMENT);
         // This will update the write ptr on device and host
         // We flush to ensure the ptr has been read out of l1 before we update it again
         completion_queue_push_back(npages);

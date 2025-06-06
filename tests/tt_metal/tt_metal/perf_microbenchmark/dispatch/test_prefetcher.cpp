@@ -2348,6 +2348,9 @@ void configure_for_single_chip(
         MetalContext::instance()
             .dispatch_mem_map(DISPATCH_CORE_TYPE)
             .get_device_command_queue_addr(CommandQueueDeviceAddrType::COMPLETION_Q_RD);
+    const uint32_t scratch_buffer_ptr = MetalContext::instance()
+                                                .dispatch_mem_map(DISPATCH_CORE_TYPE)
+                                                .get_device_command_queue_addr(CommandQueueDeviceAddrType::SCRATCH_BUFFER);
 
     std::map<std::string, std::string> dispatch_defines = {
         {"DISPATCH_CB_BASE", std::to_string(dispatch_buffer_base)},
@@ -2418,6 +2421,7 @@ void configure_for_single_chip(
         {"TO_DEV_ID", "0"},
         {"ROUTER_DIRECTION", "0"},
         {"FABRIC_2D", "0"},
+        {"SCRATCH_BUFFER", std::to_string(scratch_buffer_ptr)},
     };
 
     CoreCoord phys_upstream_from_dispatch_core = split_prefetcher_g ? phys_prefetch_d_core : phys_prefetch_core_g;
@@ -3379,6 +3383,7 @@ void configure_for_multi_chip(
         {"TO_DEV_ID", std::to_string(0)},
         {"ROUTER_DIRECTION", std::to_string(0)},
         {"FABRIC_2D", std::to_string(0)},
+        {"SCRATCH_BUFFER", std::to_string(scratch_buffer_ptr)},
     };
 
     CoreCoord phys_upstream_from_dispatch_core = split_prefetcher_g ? phys_prefetch_d_core : phys_prefetch_core_g;

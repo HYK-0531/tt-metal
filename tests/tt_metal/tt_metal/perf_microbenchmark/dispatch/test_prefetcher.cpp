@@ -2349,8 +2349,8 @@ void configure_for_single_chip(
             .dispatch_mem_map(DISPATCH_CORE_TYPE)
             .get_device_command_queue_addr(CommandQueueDeviceAddrType::COMPLETION_Q_RD);
     const uint32_t scratch_buffer_ptr = MetalContext::instance()
-                                                .dispatch_mem_map(DISPATCH_CORE_TYPE)
-                                                .get_device_command_queue_addr(CommandQueueDeviceAddrType::SCRATCH_BUFFER);
+                                            .dispatch_mem_map(DISPATCH_CORE_TYPE)
+                                            .get_device_command_queue_addr(CommandQueueDeviceAddrType::SCRATCH_BUFFER);
 
     std::map<std::string, std::string> dispatch_defines = {
         {"DISPATCH_CB_BASE", std::to_string(dispatch_buffer_base)},

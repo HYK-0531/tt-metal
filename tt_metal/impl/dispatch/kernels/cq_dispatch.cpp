@@ -228,8 +228,6 @@ void completion_queue_push_back(uint32_t num_pages) {
         cq_write_interface.completion_fifo_wr_toggle = not cq_write_interface.completion_fifo_wr_toggle;
     }
 
-
-
     // Notify host of updated completion wr ptr
     notify_host_of_completion_queue_write_pointer();
 }

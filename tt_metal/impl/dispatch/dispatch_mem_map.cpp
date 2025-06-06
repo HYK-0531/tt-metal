@@ -156,7 +156,8 @@ void DispatchMemMap::reset(const CoreType& core_type, const uint32_t num_hw_cqs)
     for (auto dev_addr_idx = 1; dev_addr_idx < num_dev_cq_addrs; dev_addr_idx++) {
         device_cq_addrs_[dev_addr_idx] = device_cq_addrs_[dev_addr_idx - 1] + device_cq_addr_sizes_[dev_addr_idx - 1];
         CommandQueueDeviceAddrType dev_addr_type = magic_enum::enum_value<CommandQueueDeviceAddrType>(dev_addr_idx);
-        if (dev_addr_type == CommandQueueDeviceAddrType::UNRESERVED | dev_addr_type == CommandQueueDeviceAddrType::SCRATCH_BUFFER) {
+        if (dev_addr_type == CommandQueueDeviceAddrType::UNRESERVED |
+            dev_addr_type == CommandQueueDeviceAddrType::SCRATCH_BUFFER) {
             device_cq_addrs_[dev_addr_idx] = align(device_cq_addrs_[dev_addr_idx], pcie_alignment);
         } else if (
             dev_addr_type == CommandQueueDeviceAddrType::FABRIC_HEADER_RB ||

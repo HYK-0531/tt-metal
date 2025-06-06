@@ -206,21 +206,7 @@ void DispatchKernel::GenerateStaticConfigs() {
     } else {
         TT_FATAL(false, "DispatchKernel must be one of (or both) H and D variants");
     }
-
-    if (!is_hd() && tt::tt_metal::MetalContext::instance().rtoptions().get_fd_fabric()) {
-        create_edm_connection_sems(edm_connection_attributes_);
-        static_config_.is_2d_fabric =
-            tt::tt_metal::MetalContext::instance().get_control_plane().get_fabric_context().get_fabric_topology() ==
-            tt_fabric::Topology::Mesh;
-        static_config_.is_2d_fabric_dynamic =
-            tt::tt_metal::MetalContext::instance().get_control_plane().get_fabric_context().get_fabric_config() ==
-            tt::tt_metal::FabricConfig::FABRIC_2D_DYNAMIC;
-    } else {
-        static_config_.is_2d_fabric = false;
-        static_config_.is_2d_fabric_dynamic = false;
-    }
-
-    static_config_.scratch_buffer =
+    static_config_.scratch_buffer = 
         my_dispatch_constants.get_device_command_queue_addr(CommandQueueDeviceAddrType::SCRATCH_BUFFER);
 }
 

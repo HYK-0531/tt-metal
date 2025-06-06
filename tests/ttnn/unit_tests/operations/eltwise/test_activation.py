@@ -25,6 +25,22 @@ def run_activation_unary_test(device, h, w, ttnn_function, pcc=0.99):
     assert_with_pcc(torch_output_tensor, output_tensor, pcc)
 
 
+def run_activation_unary_test_nchw(device, input_tensor, ttnn_function, pcc=0.99):
+    torch.manual_seed(0)
+
+    torch_input_tensor = torch.randn(input_tensor, dtype=torch.bfloat16)
+    golden_function = ttnn.get_golden_function(ttnn_function)
+    torch_output_tensor = golden_function(torch_input_tensor)
+
+    input_tensor = ttnn.from_torch(torch_input_tensor, layout=ttnn.TILE_LAYOUT, device=device)
+    output_tensor = ttnn_function(input_tensor)
+    output_tensor = ttnn.to_layout(output_tensor, ttnn.ROW_MAJOR_LAYOUT)
+    output_tensor = ttnn.from_device(output_tensor)
+    output_tensor = ttnn.to_torch(output_tensor)
+
+    assert_with_pcc(torch_output_tensor, output_tensor, pcc)
+
+
 @pytest.mark.parametrize("h", [64])
 @pytest.mark.parametrize("w", [128])
 def test_hardtanh(device, h, w):
@@ -388,3 +404,46 @@ def run_activation_test_threshold(device, h, w, scalar1, scalar2, ttnn_function,
 @pytest.mark.parametrize("w", [128])
 def test_threshold(device, h, w, value, threshold):
     run_activation_test_threshold(device, h, w, value, threshold, ttnn.threshold)
+
+
+def test_threshold(device, h, w, value, threshold):
+    run_activation_test_threshold(device, h, w, value, threshold, ttnn.threshold)
+
+
+@pytest.mark.parametrize(
+    "input_tensor",
+    [
+        (6, 64, 192, 320),
+        (6, 64, 96, 160),
+        (6, 256, 96, 160),
+        (6, 128, 96, 160),
+        (6, 128, 48, 80),
+        (6, 256, 24, 40),
+        (6, 512, 48, 80),
+        (6, 1024, 24, 40),
+        (6, 512, 24, 40),
+        (6, 512, 12, 20),
+        (6, 2048, 12, 20),
+        (6, 512, 12, 20),
+        (6, 256, 12, 20),
+        (6, 512, 6, 10),
+        (1, 100, 20, 128),
+        (1, 300, 6, 512),
+        (1, 1, 512),
+        (1, 300, 256),
+        (1, 1800, 512),
+        (1800, 1, 512),
+        (1, 2000, 256),
+        (1, 100, 256),
+        (2000, 1, 512),
+        (300, 1, 512),
+        (1, 10000, 512),
+        (1, 128),
+        (1, 256),
+    ],
+)
+def test_relu_vadv2(
+    input_tensor,
+    device,
+):
+    run_activation_unary_test_nchw(device, input_tensor, ttnn.relu)

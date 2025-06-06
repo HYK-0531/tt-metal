@@ -507,3 +507,162 @@ def test_vector_linear(device, shape_a, shape_b, shape_bias) -> tuple:
     assert torch.allclose(torch_result, ttnn_result_torch, atol=atol, rtol=rtol, equal_nan=True), (
         f"mismatch in allclose: torch: {torch_result}, ttnn: {ttnn_result_torch}",
     )
+
+
+@pytest.mark.parametrize(
+    "batch_sizes, m_size, k_size, n_size, use_bias",
+    [
+        # ((1,), 1, 512, 36, True),
+        ((1,), 1, 512, 512, True),
+        ((1,), 1, 512, 256, True),
+        ((1,), 1, 256, 512, True),
+        ((1,), 100, 2, 256, True),
+        ((1,), 1, 2, 256, True),
+        ((1,), 300, 2, 256, True),
+        ((1,), 300, 256, 256, True),
+        ((1,), 300, 3072, 256, True),
+        ((1,), 1800, 512, 256, True),
+        ((1,), 1800, 256, 512, True),
+        ((1,), 1800, 2, 256, True),
+        ((1,), 2000, 256, 2, True),
+        ((1,), 2000, 256, 256, True),
+        ((1,), 100, 256, 3, True),
+        ((1,), 100, 256, 256, True),
+        ((1,), 300, 256, 10, True),
+        ((1,), 2000, 256, 32, True),
+        ((1,), 2000, 256, 64, True),
+        ((1,), 10000, 256, 256, True),
+        ((300,), 1, 256, 512, True),  # 0.4
+        ((300,), 1, 512, 256, True),
+        ((1,), 300, 256, 32, True),
+        ((1,), 300, 256, 64, True),
+        ((1,), 300, 256, 3, True),
+        ((1,), 10000, 256, 512, True),
+        ((1,), 10000, 512, 256, True),
+        ((6,), 3587, 256, 64, True),
+        ((6,), 3587, 256, 128, True),
+        ((6,), 240, 256, 256, True),
+        ((1,), 10000, 512, 64, True),
+        ((1,), 10000, 512, 128, True),
+        ((2,), 10000, 256, 256, True),
+        ((2000,), 1, 256, 512, True),  # 0.4
+        ((2000,), 1, 512, 256, True),  # 0.5
+    ],
+)
+def test_linear_vadv2(
+    batch_sizes,
+    m_size,
+    k_size,
+    n_size,
+    use_bias,
+    *,
+    device,
+):
+    input_shape_a = (*batch_sizes, m_size, k_size)
+    input_shape_b = (k_size, n_size)
+
+    torch_input_tensor_a = torch_random(input_shape_a, -0.1, 0.1, dtype=torch.float32)
+    torch_input_tensor_b = torch_random(input_shape_b, -0.1, 0.1, dtype=torch.float32)
+    if use_bias:
+        torch_bias = torch_random((n_size,), -0.1, 0.1, dtype=torch.float32)
+    else:
+        torch_bias = None
+    torch_output_tensor = torch.nn.functional.linear(
+        torch_input_tensor_a, torch_input_tensor_b.T.contiguous(), bias=torch_bias
+    )
+
+    input_tensor_a = ttnn.from_torch(
+        torch_input_tensor_a,
+        dtype=ttnn.bfloat16,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+    )
+    input_tensor_b = ttnn.from_torch(
+        torch_input_tensor_b,
+        dtype=ttnn.bfloat16,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+    )
+    if use_bias:
+        bias = ttnn.from_torch(
+            torch_bias.reshape((1, n_size)),
+            device=device,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+        )
+    else:
+        bias = None
+
+    output_tensor = ttnn.linear(
+        input_tensor_a,
+        input_tensor_b,
+        bias=bias,
+    )
+    output_tensor = ttnn.to_torch(output_tensor)
+
+    assert_with_pcc(torch_output_tensor, output_tensor, 0.999)
+
+
+@pytest.mark.parametrize(
+    "batch_sizes, h, w, in_c, out_c ,use_bias",
+    [
+        ((1,), 100, 20, 256, 128, True),
+        ((1,), 300, 6, 512, 1, True),
+        ((1,), 300, 6, 512, 512, True),
+        ((1,), 300, 6, 512, 12, True),
+        ((1,), 100, 20, 512, 128, True),
+    ],
+)
+def test_linear_vadv2_4d(
+    batch_sizes,
+    h,
+    w,
+    in_c,
+    out_c,
+    use_bias,
+    *,
+    device,
+):
+    input_shape_a = (*batch_sizes, h, w, in_c)
+    input_shape_b = (in_c, out_c)
+
+    torch_input_tensor_a = torch_random(input_shape_a, -0.1, 0.1, dtype=torch.float32)
+    torch_input_tensor_b = torch_random(input_shape_b, -0.1, 0.1, dtype=torch.float32)
+    if use_bias:
+        torch_bias = torch_random((out_c,), -0.1, 0.1, dtype=torch.float32)
+    else:
+        torch_bias = None
+    torch_output_tensor = torch.nn.functional.linear(
+        torch_input_tensor_a, torch_input_tensor_b.T.contiguous(), bias=torch_bias
+    )
+
+    input_tensor_a = ttnn.from_torch(
+        torch_input_tensor_a,
+        dtype=ttnn.bfloat16,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+    )
+    input_tensor_b = ttnn.from_torch(
+        torch_input_tensor_b,
+        dtype=ttnn.bfloat16,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+    )
+    if use_bias:
+        bias = ttnn.from_torch(
+            torch_bias.reshape((1, out_c)),
+            device=device,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+        )
+    else:
+        bias = None
+
+    output_tensor = ttnn.linear(
+        input_tensor_a,
+        input_tensor_b,
+        bias=bias,
+    )
+    output_tensor = ttnn.to_torch(output_tensor)
+
+    assert_with_pcc(torch_output_tensor, output_tensor, 0.999)

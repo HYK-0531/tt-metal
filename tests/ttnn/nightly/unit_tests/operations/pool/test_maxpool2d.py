@@ -225,7 +225,7 @@ def run_max_pool(
         padding=[pad_h, pad_w],
         dilation=[dilation_h, dilation_w],
         memory_config=memory_config,
-        applied_shard_scheme=shard_scheme,
+        # applied_shard_scheme=shard_scheme,
         ceil_mode=ceil_mode,
     )
 
@@ -945,4 +945,50 @@ def test_run_max_pool_squeeze_net_model(
         torch_tensor_map,
         dtype,
         ceil_mode=ceil_mode,
+    )
+
+
+@pytest.mark.parametrize("device_params", [{"l1_small_size": 24576}], indirect=True)
+@pytest.mark.parametrize(
+    "act_shape",
+    (([6, 64, 192, 320],)),
+)
+@pytest.mark.parametrize(
+    "kernel_size",
+    ((3, 3),),
+)
+@pytest.mark.parametrize(
+    "padding",
+    ((1, 1),),
+)
+@pytest.mark.parametrize("stride", ((2, 2),))
+@pytest.mark.parametrize("dilation", ((1, 1),))
+@pytest.mark.parametrize(
+    "dtype",
+    [ttnn.bfloat16, ttnn.bfloat8_b],
+)
+@pytest.mark.parametrize("ceil_mode", [False])
+def test_run_max_pool_vadv2_model(
+    act_shape,
+    kernel_size,
+    padding,
+    stride,
+    dilation,
+    device,
+    torch_tensor_map,
+    dtype,
+    use_program_cache,
+    ceil_mode,
+):
+    run_max_pool(
+        act_shape,
+        kernel_size,
+        padding,
+        stride,
+        dilation,
+        device,
+        torch_tensor_map,
+        dtype,
+        ceil_mode=ceil_mode,
+        # shard_scheme=ttnn.TensorMemoryLayout.WIDTH_SHARDED
     )

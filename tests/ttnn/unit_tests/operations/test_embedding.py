@@ -476,3 +476,30 @@ def test_tg_llama_sharded_rm_embedding(device):
     output_tensor = ttnn.to_torch(output_tensor)
     assert_with_pcc(output_tensor, torch_output_tensor)
     assert device.num_program_cache_entries() == 1
+
+
+@pytest.mark.parametrize("input_shape", [(100,)])
+@pytest.mark.parametrize("embedding_dim", [128])
+@pytest.mark.parametrize("num_embeddings", [100])
+@pytest.mark.parametrize("dtype", [ttnn.bfloat16])
+@pytest.mark.parametrize("input_mem_config", [ttnn.L1_MEMORY_CONFIG])
+@pytest.mark.parametrize("output_mem_config", [ttnn.L1_MEMORY_CONFIG])
+def test_vadv2_embedding_case(
+    device,
+    input_shape,
+    embedding_dim,
+    num_embeddings,
+    dtype,
+    input_mem_config,
+    output_mem_config,
+):
+    torch.manual_seed(1234)
+    torch_input_tensor = torch.randint(0, num_embeddings, input_shape)
+    torch_weights = torch_random((num_embeddings, embedding_dim), -0.1, 0.1, dtype=torch.bfloat16)
+    torch_output_tensor = torch.nn.functional.embedding(torch_input_tensor, torch_weights)
+    input_tensor = ttnn.to_device(ttnn.from_torch(torch_input_tensor), device, memory_config=input_mem_config)
+    weights = ttnn.to_device(ttnn.from_torch(torch_weights, dtype=dtype), device, memory_config=input_mem_config)
+    output_tensor = ttnn.embedding(input_tensor, weights, memory_config=output_mem_config, layout=ttnn.TILE_LAYOUT)
+    output_tensor = ttnn.to_torch(output_tensor)
+
+    assert_with_pcc(torch_output_tensor, output_tensor, 0.99)

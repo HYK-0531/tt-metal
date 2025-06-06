@@ -210,3 +210,63 @@ def test_large_layer_norm_with_bias(device, h, w):
     output_tensor = ttnn.to_torch(output_tensor)
 
     assert_with_pcc(torch_output_tensor, output_tensor, 0.97)
+
+
+@pytest.mark.parametrize(
+    "input_tensor, w",
+    [
+        (
+            (1, 1, 256),
+            256,
+        ),
+        (
+            (1, 300, 256),
+            256,
+        ),
+        (
+            (1, 100, 256),
+            256,
+        ),
+        (
+            (1, 10000, 256),
+            256,
+        ),
+        (
+            (2000, 1, 256),
+            256,
+        ),
+        (
+            (300, 1, 256),
+            256,
+        ),
+        (
+            (1800, 1, 256),
+            256,
+        ),
+        (
+            (1, 100, 20, 128),
+            128,
+        ),
+    ],
+)
+def test_layer_norm_vadv2(device, input_tensor, w):
+    torch.manual_seed(0)
+
+    torch_input_tensor = torch.rand(input_tensor, dtype=torch.bfloat16)
+    torch_weight = torch.rand((w,), dtype=torch.bfloat16)
+    torch_bias = torch.rand((w,), dtype=torch.bfloat16)
+
+    torch_output_tensor = torch.nn.functional.layer_norm(
+        torch_input_tensor, normalized_shape=[w], weight=torch_weight, bias=torch_bias
+    )
+
+    input_tensor = ttnn.from_torch(torch_input_tensor, layout=ttnn.TILE_LAYOUT, device=device)
+    weight = ttnn.from_torch(torch_weight, layout=ttnn.TILE_LAYOUT, device=device)
+    bias = ttnn.from_torch(torch_bias, layout=ttnn.TILE_LAYOUT, device=device)
+
+    output_tensor = ttnn.layer_norm(input_tensor, weight=weight, bias=bias)
+    output_tensor = ttnn.to_layout(output_tensor, ttnn.ROW_MAJOR_LAYOUT)
+    output_tensor = ttnn.from_device(output_tensor)
+    output_tensor = ttnn.to_torch(output_tensor)
+
+    assert_with_pcc(torch_output_tensor, output_tensor, 0.99)

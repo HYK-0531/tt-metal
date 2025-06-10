@@ -339,19 +339,23 @@ def test_fused_all_reduce_create_heads_perf(
 
 
 @pytest.mark.parametrize(
-    "warmup_iters, perf_target_us",
+    "ag_type, warmup_iters, perf_target_us",
     [
-        (5, 9.7),
+        ("256", 15, 1200.9),
+        ("320", 15, 1200.9),
+        ("896", 15, 1200.9),
+        ("32", 15, 1200.9),
     ],
 )
 @pytest.mark.models_device_performance_bare_metal
-def test_reduce_scatter_perf(
+def test_ag_tg_llama_prefill_perf(
+    ag_type,
     warmup_iters,
     perf_target_us,
 ):
     profiler = BenchmarkProfiler()
     benchmark_data = BenchmarkData()
-    step_name = f"reduce_scatter_perf"
+    step_name = f"all_gather_{ag_type}"
 
     subdir = "llama_ccl_perf"
     if is_RING_6U:
@@ -359,7 +363,8 @@ def test_reduce_scatter_perf(
     else:
         command = f"pytest tests/ttnn/unit_tests/operations/ccl/test_llama_reduce_scatter_async_TG.py::test_fabric_reduce_scatter_tg_trace"
     cols = ["DEVICE KERNEL"]
-    op_name = "LlamaReduceScatterDeviceOperation"
+    op_name = "AllGatherAsync"
+    warmup_iters = warmup_iters * 32  # 5 iterations per device
 
     profiler.start("run")
     profiler.start(step_name)
@@ -377,10 +382,10 @@ def test_reduce_scatter_perf(
     logger.info(f"Measured performance: {measured_avg_us:.3f} us vs. target: {perf_target_us} us")
 
     # Save the measurement
-    benchmark_data.add_measurement(profiler, 0, step_name, f"{op_name}-min", measured_min)
-    benchmark_data.add_measurement(profiler, 0, step_name, f"{op_name}-max", measured_max)
-    benchmark_data.add_measurement(profiler, 0, step_name, f"{op_name}-avg", measured_avg)
-    benchmark_data.add_measurement(profiler, 0, step_name, f"{op_name}-std", measured_std)
+    benchmark_data.add_measurement(profiler, 0, step_name, f"{op_name}-{ag_type}-min", measured_min)
+    benchmark_data.add_measurement(profiler, 0, step_name, f"{op_name}-{ag_type}-max", measured_max)
+    benchmark_data.add_measurement(profiler, 0, step_name, f"{op_name}-{ag_type}-avg", measured_avg)
+    benchmark_data.add_measurement(profiler, 0, step_name, f"{op_name}-{ag_type}-std", measured_std)
     benchmark_data.save_partial_run_json(
         profiler,
         run_type=f"tg_llama_ops",

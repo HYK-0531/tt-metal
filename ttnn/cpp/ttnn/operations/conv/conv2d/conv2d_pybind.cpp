@@ -301,6 +301,7 @@ void py_bind_conv2d(py::module& module) {
         py::arg("conv_weight_tensor").noconvert(),
         py::arg("in1_block_h"),
         py::arg("in1_block_w"),
+        py::arg("enable_activation_data_reuse") = false,
         py::arg("output_dtype").noconvert() = std::nullopt);
 
     module.def(
@@ -418,6 +419,7 @@ void py_bind_conv2d(py::module& module) {
             bool,
             bool,
             bool,
+            bool,
             bool>(),
         py::kw_only(),
         py::arg("dtype") = DataType::BFLOAT16,
@@ -440,7 +442,8 @@ void py_bind_conv2d(py::module& module) {
         py::arg("enable_split_reader") = false,
         py::arg("enable_subblock_padding") = false,
         py::arg("in_place") = false,
-        py::arg("enable_kernel_stride_folding") = false);
+        py::arg("enable_kernel_stride_folding") = false,
+        py::arg("enable_activation_data_reuse") = false);
     py_conv_config.def_readwrite(
         "dtype",
         &Conv2dConfig::dtype,
@@ -573,6 +576,7 @@ void py_bind_conv2d(py::module& module) {
 
         ===============================================================
         )doc");
+    py_conv_config.def_readwrite("enable_activation_data_reuse", &Conv2dConfig::enable_activation_data_reuse);
 
     py_conv_config.def("__repr__", [](const Conv2dConfig& config) { return fmt::format("{}", config); });
 

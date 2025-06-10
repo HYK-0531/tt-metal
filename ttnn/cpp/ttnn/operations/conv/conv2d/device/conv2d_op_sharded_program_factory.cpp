@@ -65,7 +65,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     bool enable_act_double_buffer,
     bool enable_weights_double_buffer,
     bool enable_split_reader,
-    bool enable_subblock_padding) {
+    bool enable_subblock_padding,
+    bool enable_activation_data_reuse) {
     tt::tt_metal::IDevice* device = a.device();
     TT_FATAL(a.layout() == Layout::ROW_MAJOR, "Conv activation should be in row major layout");
     TT_FATAL(a.memory_config().is_sharded(), "Conv activation must be sharded.");
@@ -200,7 +201,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
             ashape_with_channels_padded,
             sliding_window_config,
             parallelization_config.num_cores_nhw,
-            out_block_h_ntiles);
+            out_block_h_ntiles,
+            enable_activation_data_reuse);
     TT_FATAL(act_matrix_shape.size() == 3, "act_matrix_shape should have be of size 3");
     TT_FATAL(act_matrix_shape[0] == 1, "act_matrix_shape should have 1 as the first dimension");
     uint32_t act_matrix_height = (uint32_t)act_matrix_shape[1];
@@ -279,7 +281,7 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
 
     const uint32_t num_blocks_act_h = act_matrix_height_ntiles / act_block_h_ntiles;
     const uint32_t num_blocks_out_h = act_matrix_height_ntiles / out_block_h_ntiles;
-    const uint32_t num_blocks_act_w = block_sharded ? 1 : filter_h;
+    const uint32_t num_blocks_act_w = block_sharded || enable_activation_data_reuse ? 1 : filter_h;
     const uint32_t num_blocks_weight_w = weight_matrix_width_ntiles / weight_block_w_ntiles;
 
     // act block info
@@ -301,6 +303,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     uint32_t act_block_num_tiles_split = act_block_h_nsubblocks_split * out_subblock_h_ntiles * act_block_w_ntiles;
     uint32_t act_block_num_tiles_split_last =
         act_block_h_nsubblocks_split_last * out_subblock_h_ntiles * act_block_w_ntiles;
+
+    uint32_t act_block_h_split = act_block_h_nsubblocks_split * out_subblock_h_ntiles;
 
     // weight block info
     uint32_t weight_block_w_datums = weight_matrix_width / num_blocks_weight_w;
@@ -594,13 +598,29 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
 
     uint32_t conv_act_c_read_bytes = conv_act_size_c * a.element_size() / conv_act_c_blocks;
     uint32_t act_block_w_extra_align_bytes =
-        block_sharded
+        block_sharded || enable_activation_data_reuse
             ? (tt::round_up(shard_shape[1] * filter_h * filter_w, tt::constants::TILE_WIDTH) -
                (shard_shape[1] * filter_h * filter_w)) *
                   a.element_size()
             : (tt::round_up(shard_shape[1] * filter_w, tt::constants::TILE_WIDTH) - (shard_shape[1] * filter_w)) *
                   a.element_size();
     const uint32_t act_block_w_extra_align_scalars = act_block_w_extra_align_bytes / a.element_size();
+
+    ReuseDataOptConfig reuse_data_opt_config;
+    if (enable_activation_data_reuse) {
+        uint32_t image_width = sliding_window_config.get_output_shape()[2];
+        uint32_t image_width_tiles = image_width / tt::constants::TILE_HEIGHT;
+        uint32_t opt_act_cb_num_tiles = image_width_tiles * act_block_w_ntiles / conv_act_c_blocks;
+        uint32_t opt_reuse_loops = std::ceil(static_cast<float>(act_block_h_split) / image_width_tiles);
+        uint32_t opt_reuse_diff = (filter_w * conv_act_c_read_bytes) / 16;
+
+        reuse_data_opt_config.enabled = true;
+        reuse_data_opt_config.image_width_tiles = image_width_tiles;
+        reuse_data_opt_config.act_cb_num_tiles = opt_act_cb_num_tiles;
+        reuse_data_opt_config.reuse_loops = opt_reuse_loops;
+        reuse_data_opt_config.reuse_diff = opt_reuse_diff;
+    }
+
     // When using block float format, we must handle cases where the data doesn't align to 16-scalar boundaries.
     // If act_block_w_extra_align_bytes contains a number of scalars that isn't a multiple of 16,
     // we need to zero out the temporary circular buffers used during the tiling process.
@@ -623,7 +643,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         .output_layout = (untilize_out ? Layout::ROW_MAJOR : Layout::TILE),
         .enable_act_double_buffer = enable_act_double_buffer,
         .enable_weights_double_buffer = enable_weights_double_buffer,
-        .enable_split_reader = enable_split_reader};
+        .enable_split_reader = enable_split_reader,
+        .enable_activation_data_reuse = enable_activation_data_reuse};
     std::vector<CBInfo> cb_info = get_cb_info(
         compute_kernel_config,
         block_config,
@@ -634,7 +655,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         a.dtype(),
         shard_shape,
         has_bias,
-        is_conv_1d_depthwise_conv);
+        is_conv_1d_depthwise_conv,
+        reuse_data_opt_config);
 
     access_cb_info_by_name(cb_info, Conv2dCb::READER_INDICES).page_size = conv_sharded_input_top_left_indices[0].size();
 
@@ -649,7 +671,9 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
 
     string reader_kernel;
     string compute_kernel =
-        "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/conv_bmm_tilize_col_major_out_blocks.cpp";
+        enable_activation_data_reuse
+            ? "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/reuse_data/conv_bmm_tilize_col_major_out_blocks.cpp"
+            : "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/conv_bmm_tilize_col_major_out_blocks.cpp";
     string writer_mcast_sender_kernel;
     string writer_mcast_receiver_kernel;
 
@@ -697,19 +721,31 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
 
         } else {
             // Height sharded conv
-            TT_FATAL(
-                act_block_w_datums == tt::round_up(conv_act_size_c * filter_w, tt::constants::TILE_WIDTH), "Error");
+            uint32_t expected_act_block_w_datums =
+                enable_activation_data_reuse
+                    ? tt::round_up(conv_act_size_c * filter_w * filter_h, tt::constants::TILE_WIDTH)
+                    : tt::round_up(conv_act_size_c * filter_w, tt::constants::TILE_WIDTH);
 
-            reader_kernel =
-                "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
-                "reader_conv_activations_padded_with_halo_3x3_weights_v2.cpp";
+            TT_FATAL(act_block_w_datums == expected_act_block_w_datums, "Error");
+
+            reader_kernel = enable_activation_data_reuse
+                                ? "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/reuse_data/"
+                                  "reader_conv_activations_padded_with_halo_3x3_weights_v2.cpp"
+                                : "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
+                                  "reader_conv_activations_padded_with_halo_3x3_weights_v2.cpp";
 
             writer_mcast_sender_kernel =
-                "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
-                "reader_writer_tiled_out_1d_mcast_sender_conv_weights_tiled_col_to_rm_blocks.cpp";
+                enable_activation_data_reuse
+                    ? "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/reuse_data/"
+                      "reader_writer_tiled_out_1d_mcast_sender_conv_weights_tiled_col_to_rm_blocks.cpp"
+                    : "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
+                      "reader_writer_tiled_out_1d_mcast_sender_conv_weights_tiled_col_to_rm_blocks.cpp";
             writer_mcast_receiver_kernel =
-                "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
-                "reader_writer_tiled_out_1d_mcast_receiver_conv_weights_tiled_col_to_rm_blocks.cpp";
+                enable_activation_data_reuse
+                    ? "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/reuse_data/"
+                      "reader_writer_tiled_out_1d_mcast_receiver_conv_weights_tiled_col_to_rm_blocks.cpp"
+                    : "ttnn/cpp/ttnn/operations/conv/conv2d/device/kernels/"
+                      "reader_writer_tiled_out_1d_mcast_receiver_conv_weights_tiled_col_to_rm_blocks.cpp";
         }
     } else {
         TT_THROW("Sharded input not supported for this conv yet!");
@@ -746,8 +782,12 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         get_cb_info_by_name(cb_info, Conv2dCb::READER_INDICES).index,
         get_cb_info_by_name(cb_info, Conv2dCb::ACT_TILIZED).index,
         get_cb_info_by_name(cb_info, Conv2dCb::ACT_ROW_MAJOR_BFLOAT16).index,
-        get_cb_info_by_name(cb_info, Conv2dCb::L1_ARRAY).index,
-    };
+        get_cb_info_by_name(cb_info, Conv2dCb::L1_ARRAY).index};
+
+    if (enable_activation_data_reuse) {
+        reader_compile_time_args.push_back(reuse_data_opt_config.reuse_loops);
+        reader_compile_time_args.push_back(reuse_data_opt_config.act_cb_num_tiles);
+    }
 
     std::map<string, string> reader_defines;
     std::map<string, string> writer_defines;
@@ -824,7 +864,14 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
             (uint32_t)needs_act_block_zero_out,
             (uint32_t)dilation_h,
             (uint32_t)dilation_w,
-            (uint32_t)stride_w};
+            (uint32_t)stride_w,
+        };
+        if (enable_activation_data_reuse) {
+            split_reader_args.push_back(filter_h);
+            split_reader_args.push_back(reuse_data_opt_config.reuse_loops);
+            split_reader_args.push_back(reuse_data_opt_config.act_cb_num_tiles);
+        }
+
         writer_compile_time_args.insert(
             writer_compile_time_args.end(), split_reader_args.begin(), split_reader_args.end());
     } else {
@@ -864,10 +911,15 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         get_cb_info_by_name(cb_info, Conv2dCb::ACT_SECOND_READER).index,
         get_cb_info_by_name(cb_info, Conv2dCb::MATMUL_PARTIALS).index,
         get_cb_info_by_name(cb_info, Conv2dCb::ACT_TILIZED).index,
-
         get_cb_info_by_name(cb_info, Conv2dCb::OUT).index,
         get_cb_info_by_name(cb_info, Conv2dCb::TEMP_SUM).index,
-        partials_cb_uses_output};
+        partials_cb_uses_output,
+    };
+
+    if (enable_activation_data_reuse) {
+        compute_kernel_args.push_back(reuse_data_opt_config.reuse_diff);
+        compute_kernel_args.push_back(reuse_data_opt_config.image_width_tiles);
+    }
 
     const tt::tt_metal::NOC writer_mcast_noc = tt::tt_metal::detail::GetPreferredNOCForDRAMRead(device->arch());
     const tt::tt_metal::NOC reader_noc =
@@ -1175,7 +1227,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     bool enable_act_double_buffer,
     bool enable_weights_double_buffer,
     bool enable_split_reader,
-    bool enable_subblock_padding) {
+    bool enable_subblock_padding,
+    bool enable_activation_data_reuse) {
     tt::tt_metal::Program program = tt::tt_metal::CreateProgram();
 
     ttnn::operations::sliding_window::ParallelConfig parallel_config{
@@ -1235,7 +1288,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         enable_act_double_buffer,
         enable_weights_double_buffer,
         enable_split_reader,
-        enable_subblock_padding);
+        enable_subblock_padding,
+        enable_activation_data_reuse);
 }
 }  // namespace conv2d
 

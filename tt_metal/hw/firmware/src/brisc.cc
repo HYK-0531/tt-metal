@@ -437,6 +437,14 @@ int main() {
                 cmd_buf = DYNAMIC_NOC_BRISC_AT_CMD_BUF;
             }
             prev_noc_mode = noc_mode;
+            if (enables) {
+                uint32_t tt_l1_ptr* cb_l1_base =
+                    (uint32_t tt_l1_ptr*)(kernel_config_base + launch_msg_address->kernel_config.remote_cb_offset);
+                uint32_t end_cb_index = launch_msg_address->kernel_config.min_remote_cb_start_index;
+                experimental::setup_remote_cb_interfaces<true>(
+                    cb_l1_base, end_cb_index, noc_index, noc_mode, true, cmd_buf);
+                barrier_remote_cb_interface_setup(noc_index, end_cb_index);
+            }
 
             uint32_t tt_l1_ptr* cb_l1_base =
                 (uint32_t tt_l1_ptr*)(kernel_config_base + launch_msg_address->kernel_config.local_cb_offset);
@@ -447,12 +455,6 @@ int main() {
             if (enables & DISPATCH_CLASS_MASK_TENSIX_ENABLE_DM0) {
                 uint32_t local_cb_mask = launch_msg_address->kernel_config.local_cb_mask;
                 setup_local_cb_read_write_interfaces<true, true, false>(cb_l1_base, 0, local_cb_mask);
-                cb_l1_base =
-                    (uint32_t tt_l1_ptr*)(kernel_config_base + launch_msg_address->kernel_config.remote_cb_offset);
-                uint32_t end_cb_index = launch_msg_address->kernel_config.min_remote_cb_start_index;
-                experimental::setup_remote_cb_interfaces<true>(
-                    cb_l1_base, end_cb_index, noc_index, noc_mode, true, cmd_buf);
-                barrier_remote_cb_interface_setup(noc_index, end_cb_index);
                 start_ncrisc_kernel_run(enables);
                 int index = static_cast<std::underlying_type<TensixProcessorTypes>::type>(TensixProcessorTypes::DM0);
                 uint32_t kernel_lma = (kernel_config_base +
@@ -469,14 +471,6 @@ int main() {
 #endif
                 // Brisc is responsible for issuing any noc cmds needed when initializing remote cbs
                 // So have brisc setup remote cb interfaces even when brisc is not in use
-                if (launch_msg_address->kernel_config.enables) {
-                    cb_l1_base =
-                        (uint32_t tt_l1_ptr*)(kernel_config_base + launch_msg_address->kernel_config.remote_cb_offset);
-                    uint32_t end_cb_index = launch_msg_address->kernel_config.min_remote_cb_start_index;
-                    experimental::setup_remote_cb_interfaces<true>(
-                        cb_l1_base, end_cb_index, noc_index, noc_mode, true, cmd_buf);
-                    barrier_remote_cb_interface_setup(noc_index, end_cb_index);
-                }
                 start_ncrisc_kernel_run(enables);
                 wait_for_go_message();
             }

@@ -190,7 +190,7 @@ def create_tt_model(
             1,  # repeat_batches
             128 * 1024,  # max_seq_len
             1,  # batch_size
-            50,  # max_generated_tokens
+            200,  # max_generated_tokens
             True,  # paged_attention
             {"page_block_size": 64, "page_max_num_blocks": 2048},  # page_params
             {"temperature": 0, "top_p": 0.08},  # sampling_params (argmax)
@@ -343,7 +343,7 @@ def test_demo_text(
     if os.environ.get("MESH_DEVICE") == "TG" and batch_size not in [1, 32]:
         pytest.skip("Llama TG only supports batch-32")
 
-    enable_trace = False  # Use tracing for better perf
+    enable_trace = True  # Use tracing for better perf
     prefill_enable_trace = True  # repeat_batches > 1
     print_to_file = False  # Enable this flag to print the output of all users to a file
     instruct = num_layers == 80 and instruct  # if using instruct weights it must be full model
@@ -661,7 +661,6 @@ def test_demo_text(
                     reset_inputs=True,
                     tt_out_logits_saved=tt_out_logits_saved,
                 )
-                print(f"{out_tok_cpu=}")
             except Exception as e:
                 logger.error(f"Error during decoding: {str(e)}")
                 break
@@ -715,7 +714,6 @@ def test_demo_text(
                     user_tok not in tokenizer.stop_tokens and user_done[user] == False
                 ):  # Read until an eos token (e.g. <|eot_id|>); create_tokenizer adds stop_tokens to HF tokenizers
                     all_outputs[user].append(user_tok)
-                    print(f"{user_tok=}")
                 else:
                     if (
                         stop_at_eos

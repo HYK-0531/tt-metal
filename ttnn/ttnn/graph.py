@@ -69,7 +69,7 @@ def visualize_node(
     node_type = node["node_type"]
     params = node["params"]
 
-    label = node_type
+    label = f"{node['counter']}\n{node_type}"
     if node_type == "function_start":
         function_name = params["name"]
         label += f"\n{function_name}"

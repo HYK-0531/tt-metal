@@ -183,6 +183,7 @@ void GraphArgumentSerializer::initialize() {
     GraphArgumentSerializer::register_type<tt::tt_metal::Shape>();
     GraphArgumentSerializer::register_type<tt::tt_metal::Tensor>();
     GraphArgumentSerializer::register_type<tt::tt_metal::Tile>();
+    GraphArgumentSerializer::register_type<tt::tt_metal::distributed::MeshDevice>();
     GraphArgumentSerializer::register_type<tt::stl::StrongType<unsigned char, ttnn::QueueIdTag>>();
     GraphArgumentSerializer::register_type<ttnn::types::CoreGrid>();
     GraphArgumentSerializer::register_type<

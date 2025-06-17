@@ -31,11 +31,12 @@ class Vertex:
     def to_dict(self) -> Dict[str, Any]:
         """Convert the vertex back to a dictionary representation."""
         return {
-            "counter": self.id,
-            "node_type": self.node_type,
-            "connections": self.connections,
+            "index": self.id,
+            "name": self.params.get("name"),
+            # "node_type": self.node_type,
+            "children": self.connections,
             "arguments": self.arguments,
-            "params": self.params,
+            # "params": self.params,
         }
 
     def __str__(self) -> str:
@@ -192,6 +193,22 @@ class Graph:
         """Convert the graph back to a list of dictionaries."""
         return [vertex.to_dict() for vertex in self.vertices.values()]
 
+    def fix_tensors(self) -> None:
+        # Replace each argument starting with "Tensor(" with index of incoming node
+        for vertex in self.vertices.values():
+            cnt_tensor_args = sum(1 for arg in vertex.arguments if arg.startswith("Tensor("))
+            if cnt_tensor_args == 0:
+                continue
+
+            parent_vertices = self.get_parent_vertices(vertex.id)
+            assert len(parent_vertices) == cnt_tensor_args
+
+            parent_index = 0
+            for i, arg in enumerate(vertex.arguments):
+                if arg.startswith("Tensor("):
+                    vertex.arguments[i] = f"tensor: {parent_vertices[parent_index].id}"
+                    parent_index += 1
+
 
 def load_graph_from_json(json_file_path: str) -> Graph:
     """
@@ -260,6 +277,8 @@ def main():
     clusters = graph.get_clusters()
 
     simplified_graph = create_simplified_graph_from_clusterized(graph)
+
+    simplified_graph.fix_tensors()
 
     # Output simplified graph if requested
     output_file = "simplified_graph.json"

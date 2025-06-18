@@ -27,6 +27,15 @@ def test_segformer_classification_demo(device, imagenet_label_dict, iterations, 
     input_loc = str(model_location_generator("ImageNet_data"))
     correct, torch_correct, ttnn_correct = 0, 0, 0
     data_loader = get_data_loader(input_loc, batch_size, iterations)
+    reference_model.load_state_dict(torch_model.state_dict())
+    reference_model.eval()
+    parameters = preprocess_model_parameters(
+        initialize_model=lambda: reference_model,
+        custom_preprocessor=create_custom_preprocessor(device),
+        device=None,
+    )
+    parameters = move_to_device(parameters, device)
+    ttnn_model = TtSegformerForImageClassification(torch_model.config, parameters)
     for iter in range(iterations):
         predictions = []
         torch_predictions = []
@@ -41,16 +50,7 @@ def test_segformer_classification_demo(device, imagenet_label_dict, iterations, 
             device=device,
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
-        reference_model.load_state_dict(torch_model.state_dict())
-        reference_model.eval()
         torch_output = reference_model(torch_input_tensor)
-        parameters = preprocess_model_parameters(
-            initialize_model=lambda: reference_model,
-            custom_preprocessor=create_custom_preprocessor(device),
-            device=None,
-        )
-        parameters = move_to_device(parameters, device)
-        ttnn_model = TtSegformerForImageClassification(torch_model.config, parameters)
         ttnn_output = ttnn_model(
             ttnn_input_tensor,
             output_attentions=None,

@@ -110,12 +110,14 @@ struct SenderChannelFromReceiverCounterBasedCreditsReceiver {
         completions_received_and_processed(0) {}
 
     FORCE_INLINE uint32_t get_num_unprocessed_acks_from_receiver() {
+        invalidate_l1_cache();
         return *acks_received_counter_ptr - acks_received_and_processed;
     }
 
     FORCE_INLINE void increment_num_processed_acks(size_t num_acks) { acks_received_and_processed += num_acks; }
 
     FORCE_INLINE uint32_t get_num_unprocessed_completions_from_receiver() {
+        invalidate_l1_cache();
         return *completions_received_counter_ptr - completions_received_and_processed;
     }
 

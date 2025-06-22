@@ -62,7 +62,9 @@ public:
         }
         tt::tt_metal::detail::SetFabricConfig(
             fabric_config, tt::tt_metal::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE, num_routing_planes);
+        std::cout << "Create devices in fixture" << std::endl;
         devices_map_ = tt::tt_metal::detail::CreateDevices(ids);
+        std::cout << "Done creating devices in fixture" << std::endl;
         for (auto& [id, device] : devices_map_) {
             devices_.push_back(device);
         }

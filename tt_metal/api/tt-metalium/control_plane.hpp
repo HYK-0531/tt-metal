@@ -64,8 +64,8 @@ public:
     std::vector<MeshId> get_user_physical_mesh_ids() const;
 
     // Query for the MeshId and HostRankId of the local mesh; returns std::nullopt if binding is not set
-    MeshId get_local_mesh_id_binding() const;
-    HostRankId get_local_host_rank_id_binding() const;
+    std::optional<MeshId> get_local_mesh_id_binding() const;
+    std::optional<HostRankId> get_local_host_rank_id_binding() const;
 
     // Queries that are MeshScope-aware (i.e. return results for local mesh or global mesh)
     MeshShape get_physical_mesh_shape(MeshId mesh_id, MeshScope scope = MeshScope::GLOBAL) const;
@@ -82,6 +82,8 @@ public:
     // Returns the direction in which the data should be forwarded from the src to reach the dest
     std::optional<RoutingDirection> get_forwarding_direction(
         FabricNodeId src_fabric_node_id, FabricNodeId dst_fabric_node_id) const;
+
+    RoutingDirection get_routing_direction_from_exit_node(const FabricNodeId& exit_node, MeshId dest_mesh_id) const;
 
     // Return eth channels that can forward the data from src to dest.
     // This will be a subset of the active routers in a given direction since some channels could be
@@ -110,6 +112,9 @@ public:
 
     size_t get_num_available_routing_planes_in_direction(
         FabricNodeId fabric_node_id, RoutingDirection routing_direction) const;
+
+    std::vector<chan_id_t> get_active_intermesh_links_in_direction(
+        const FabricNodeId& fabric_node_id, RoutingDirection routing_direction) const;
 
     std::set<std::pair<chan_id_t, eth_chan_directions>> get_active_fabric_eth_channels(
         FabricNodeId fabric_node_id) const;
@@ -183,6 +188,9 @@ private:
     std::unordered_map<chip_id_t, std::vector<std::pair<CoreCoord, chan_id_t>>> intermesh_eth_links_;
     // Stores a table of all local intermesh links (board_id, chan_id) and the corresponding remote intermesh links
     IntermeshLinkTable intermesh_link_table_;
+
+    std::unordered_map<MeshId, std::map<EthChanDescriptor, EthChanDescriptor>> peer_intermesh_link_tables_;
+
     std::unordered_map<chip_id_t, uint64_t> chip_id_to_asic_id_;
     // custom logic to order eth channels
     void order_ethernet_channels();
@@ -227,18 +235,31 @@ private:
     // Populate the local intermesh link to remote intermesh link table
     void generate_local_intermesh_link_table();
 
+    // All to All exchange of intermesh link tables between all hosts in the system
+    void exchange_intermesh_link_tables();
+
     // Initialize internal map of physical chip_id to intermesh ethernet links
     void initialize_intermesh_eth_links();
 
     // Check if intermesh links are available by reading SPI ROM config from first chip
     bool is_intermesh_enabled() const;
 
+    // Check if the provided mesh is local to this host
+    bool is_local_mesh(MeshId mesh_id) const;
+
+    void assign_direction_to_fabric_eth_core(
+        const FabricNodeId& fabric_node_id, const CoreCoord& eth_core, RoutingDirection direction);
+
+    void assign_intermesh_link_directions_to_local_host(const FabricNodeId& fabric_node_id);
+
+    void assign_intermesh_link_directions_to_remote_host(const FabricNodeId& fabric_node_id);
+
     // Initialize the local mesh binding from the environment variables
     // Returns std::nullopt if not in multi-host context
-    LocalMeshBinding initialize_local_mesh_binding();
+    std::optional<LocalMeshBinding> initialize_local_mesh_binding();
 
     std::unique_ptr<FabricContext> fabric_context_;
-    LocalMeshBinding local_mesh_binding_;
+    std::optional<LocalMeshBinding> local_mesh_binding_;
 };
 
 class GlobalControlPlane {

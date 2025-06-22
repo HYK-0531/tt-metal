@@ -11,6 +11,7 @@
 #include "tt_metal/test_utils/env_vars.hpp"
 #include <tt-metalium/tt_backend_api_types.hpp>
 #include "impl/context/metal_context.hpp"
+#include <tt-metalium/distributed_context.hpp>
 
 namespace tt::tt_fabric {
 namespace fabric_router_tests {

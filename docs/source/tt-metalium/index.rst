@@ -16,6 +16,7 @@ Welcome to TT-Metalium documentation!
    :caption: TT-Metalium
 
    tt_metal/programming_model/index.rst
+   tt_metal/fundamental_concepts/index.rst
    tt_metal/apis/index
    tt_metal/examples/index
    tools/index

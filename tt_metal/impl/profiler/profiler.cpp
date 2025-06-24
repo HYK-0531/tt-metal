@@ -121,11 +121,6 @@ void sortDeviceEvents(std::vector<std::reference_wrapper<const tracy::TTDeviceEv
             return a.get() < b.get();
         });
 
-    for (uint32_t i = 0; i < (num_threads / 2) - 1; ++i) {
-        threads[i].join();
-    }
-
-    chunk_idx = 0;
     for (uint32_t i = 0; i < (num_threads / 4) - 1; ++i) {
         threads[i] = std::thread([&device_events, chunk_size, chunk_idx]() {
             std::inplace_merge(

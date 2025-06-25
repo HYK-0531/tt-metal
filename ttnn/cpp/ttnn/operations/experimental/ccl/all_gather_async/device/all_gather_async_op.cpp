@@ -246,25 +246,6 @@ tt::tt_metal::operation::ProgramWithCallbacks AllGatherAsync::create_program_at(
     log_trace(tt::LogOp, "version: {}", static_cast<uint32_t>(version));
 
     switch (version) {
-        case AllGatherAsyncVersion::MINIMAL_INTERLEAVED_32: {
-            log_trace(
-                tt::LogOp,
-                "Detected all gather specialized shape. all_gather_async_minimal_interleaved_dim3_1_1_32_any is "
-                "called");
-            return all_gather_async_minimal_interleaved_dim3_1_1_32_any(
-                input_tensors[0],
-                target_device,
-                forward_device,
-                backward_device,
-                output_tensors[0],
-                this->dim,
-                this->num_links,
-                target_ring_size,
-                device_index,
-                this->topology,
-                this->semaphore.at(0),
-                this->sub_device_id);
-        }
         case AllGatherAsyncVersion::MINIMAL_INTERLEAVED_ANY: {
             log_trace(
                 tt::LogOp,

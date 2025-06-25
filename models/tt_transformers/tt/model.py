@@ -365,7 +365,7 @@ class Transformer(LightweightModule):
                     topology=self.args.ccl_topology(),
                 )
             else:
-                print("start model 359")
+                # print("start model 359")
                 input_mem_cfg = tt_logits.memory_config()
                 use_all_gather_async_minimal_interleaved = (
                     not tt_logits.is_sharded() and tt_logits.layout == ttnn.TILE_LAYOUT
@@ -404,7 +404,7 @@ class Transformer(LightweightModule):
                         topology=self.args.ccl_topology(),
                         subdevice_id=self.worker_sub_device_id,
                     )
-                print("end model 359")
+                # print("end model 359")
 
         tt_logits = ttnn.untilize(tt_logits, use_multicore=True)
 

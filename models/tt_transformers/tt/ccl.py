@@ -40,7 +40,7 @@ def tt_all_reduce(
             input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.L1_MEMORY_CONFIG)
             input_tensor_sharded.deallocate(True)
 
-        print("start ccl 43")
+        # print("start ccl 43")
         use_reduce_scatter_minimal_async_interleaved = not input_tensor.is_sharded()
         if use_reduce_scatter_minimal_async_interleaved:
             rs_input_dtype = input_tensor.dtype
@@ -92,7 +92,7 @@ def tt_all_reduce(
                 topology=topology,
                 subdevice_id=worker_sub_device_id,
             )
-        print("end ccl 43")
+        # print("end ccl 43")
 
         input_tensor.deallocate(True)
         return reduced

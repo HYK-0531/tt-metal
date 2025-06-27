@@ -34,6 +34,11 @@ def to_torch(
 
     result = ttnn.to_torch(tensor, mesh_composer=mesh_composer)
 
+    if isinstance(dtype, ttnn.DataType):
+        if dtype == ttnn.DataType.BFLOAT16:
+            dtype = torch.bfloat16
+        elif dtype == ttnn.DataType.FLOAT32:
+            dtype = torch.float32
     # ttnn.to_torch ignores the dtype argument if a mesh composer is supplied
     if dtype is not None:
         result = result.to(dtype)

@@ -7,6 +7,37 @@ def remove_inline_comments(text):
     return re.sub(r"//.*", "", text).rstrip()
 
 
+def is_variable_written_later(filename, line_number, variable_name, source_lines):
+    """
+    Checks if a variable is written to after its declaration line in the source file.
+
+    Args:
+        filename (str): The path to the source file.
+        line_number (int): The line number where the variable is declared.
+        variable_name (str): The name of the variable to check.
+        source_lines (list): A list of strings, where each string is a line
+            from the source file.
+
+    Returns:
+        bool: True if the variable is written to on a subsequent line,
+            False otherwise.
+    """
+
+    for i in range(line_number, len(source_lines)):  # Start *after* the declaration
+        line = remove_inline_comments(source_lines[i])
+        # Simple check for assignment. Could be improved for more complex cases.
+        if variable_name + " =" in line or variable_name + "=" in line or variable_name + " " in line:
+            # Exclude assignments within the same line as declaration to not count the initializing assignment
+            if i + 1 != line_number:
+                # Make sure we are not inside a comment
+                if "//" not in line or line.find("//") > line.find(variable_name):
+                    logging.info(f"Variable '{variable_name}' is written to on line {i+1} of {filename}")
+                    return True  # Found a write
+
+    logging.info(f"Variable '{variable_name}' is NOT written to after line {line_number} of {filename}")
+    return False
+
+
 def comment_out_unused_variables(log_file, num_variables_to_comment=5, output_log_file="build_removing_variables.log"):
     """
     Reads a build log, finds lines with "unused variable" warnings, and comments out the
@@ -23,6 +54,71 @@ def comment_out_unused_variables(log_file, num_variables_to_comment=5, output_lo
     logging.basicConfig(
         filename=output_log_file, filemode="w", level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
+    common_variable_types = [
+        "int",
+        "short",
+        "long",
+        "long long",
+        "unsigned int",
+        "unsigned short",
+        "unsigned long",
+        "unsigned long long",
+        "char",
+        "signed char",
+        "unsigned char",
+        "wchar_t",
+        "float",
+        "double",
+        "long double",
+        "bool",  # C++ only
+        "void",
+        "int8_t",
+        "int16_t",
+        "int32_t",
+        "int64_t",
+        "uint8_t",
+        "uint16_t",
+        "uint32_t",
+        "uint64_t",
+        "int_least8_t",
+        "int_least16_t",
+        "int_least32_t",
+        "int_least64_t",
+        "uint_least8_t",
+        "uint_least16_t",
+        "uint_least32_t",
+        "uint_least64_t",
+        "int_fast8_t",
+        "int_fast16_t",
+        "int_fast32_t",
+        "int_fast64_t",
+        "uint_fast8_t",
+        "uint_fast16_t",
+        "uint_fast32_t",
+        "uint_fast64_t",
+        "intptr_t",
+        "uintptr_t",
+        # C++ Standard Library Types (most common)
+        "std::string",  # string class
+        "std::wstring",  # wide string class
+        "std::vector",  # dynamic array
+        "std::array",  # fixed size array
+        "std::list",  # doubly-linked list
+        "std::deque",  # double ended queue
+        "std::queue",  # queue
+        "std::stack",  # stack
+        "std::set",  # set (unique elements)
+        "std::multiset",  # set (multiple elements allowed)
+        "std::map",  # map (key-value pairs, unique keys)
+        "std::multimap",  # map (key-value pairs, multiple keys allowed)
+        "std::pair",  # for storing pairs of values
+        "std::tuple",  # for storing multiple values
+        "std::optional"  # for storing values that may or may not exist
+        # Smart Pointers
+        "std::unique_ptr",  # Smart pointer
+        "std::shared_ptr",  # Smart pointer
+        "std::weak_ptr",  # Smart pointer
+    ]
 
     count = 0
     with open(log_file, "r") as f:
@@ -53,7 +149,7 @@ def comment_out_unused_variables(log_file, num_variables_to_comment=5, output_lo
 
                     if (
                         line_number > 2
-                        and source_lines[line_number - 2].strip() != ""
+                        and remove_inline_comments(source_lines[line_number - 2]).strip() != ""
                         and (
                             (
                                 remove_inline_comments(source_lines[line_number - 2].strip())[-1]
@@ -71,12 +167,31 @@ def comment_out_unused_variables(log_file, num_variables_to_comment=5, output_lo
                         logging.info(f"Line {line_number} in {filename}:{line_number} is not a single line. Skipping.")
                         continue
 
+                    common_type = False
+                    for variable_type in common_variable_types:
+                        if variable_type in original_line:
+                            common_type = True
+                            break
+                    if not common_type:
+                        logging.info(
+                            f"Line {line_number} in {filename}:{line_number} is not a common variable type. Skipping."
+                        )
+                        continue
+
                     # Extract the variable name from the warning
                     variable_name_match = re.search(r"variable '(\w+)'", line)
                     if not variable_name_match:
                         logging.info(f"Could not extract variable name from warning: {line.strip()}")
                         continue
                     variable_name = variable_name_match.group(1)
+
+                    if "-Wunused-but-set-variable" in line and is_variable_written_later(
+                        filename, line_number, variable_name, source_lines
+                    ):
+                        logging.info(
+                            f"Variable '{variable_name}' is written to after line {line_number} of {filename}. Skipping."
+                        )
+                        continue
 
                     # Check if the line is already commented out
                     if "//" in original_line.lstrip()[0:2]:
@@ -107,6 +222,10 @@ def comment_out_unused_variables(log_file, num_variables_to_comment=5, output_lo
                         logging.info(
                             f"Line {line_number} in {filename}:{line_number} contains an un-nested comma. Skipping."
                         )
+                        continue
+
+                    if "tt_metal" in original_line.strip():
+                        logging.info(f"Line {line_number} in {filename}:{line_number} contains tt_metal. Skipping.")
                         continue
 
                     # Add comment to the line

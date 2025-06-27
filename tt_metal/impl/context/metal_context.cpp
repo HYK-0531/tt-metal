@@ -897,14 +897,16 @@ void MetalContext::initialize_and_launch_firmware(chip_id_t device_id) {
     std::unordered_set<tt::umd::CoreCoord> dram_cores;
     auto num_dram_channels = cluster_->get_soc_desc(device_id).get_num_dram_views();
     for (uint32_t dram_channel = 0; dram_channel < num_dram_channels; dram_channel++) {
-        auto worker_dram_ep = soc_d.get_preferred_worker_core_for_dram_view(dram_channel);
-        auto eth_dram_ep = soc_d.get_preferred_eth_core_for_dram_view(dram_channel);
-        auto physical_worker_dram_ep =
-            soc_d.translate_coord_to(worker_dram_ep, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
-        auto physical_eth_dram_ep =
-            soc_d.translate_coord_to(eth_dram_ep, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
-        dram_cores.insert(physical_worker_dram_ep);
-        dram_cores.insert(physical_eth_dram_ep);
+        for (uint32_t noc = 0; noc < hal_->get_num_nocs(); noc++) {
+            auto worker_dram_ep = soc_d.get_preferred_worker_core_for_dram_view(dram_channel, noc);
+            auto eth_dram_ep = soc_d.get_preferred_eth_core_for_dram_view(dram_channel, noc);
+            auto physical_worker_dram_ep =
+                soc_d.translate_coord_to(worker_dram_ep, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
+            auto physical_eth_dram_ep =
+                soc_d.translate_coord_to(eth_dram_ep, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
+            dram_cores.insert(physical_worker_dram_ep);
+            dram_cores.insert(physical_eth_dram_ep);
+        }
     }
 
     const std::vector<tt::umd::CoreCoord>& eth_cores =

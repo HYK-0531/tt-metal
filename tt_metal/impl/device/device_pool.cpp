@@ -277,7 +277,7 @@ void DevicePool::initialize(
 
 void DevicePool::initialize_fabric_and_dispatch_fw() const {
     this->initialize_active_devices();
-    this->wait_for_fabric_router_sync();
+    // this->wait_for_fabric_router_sync();
 }
 
 void DevicePool::initialize_host(IDevice* dev) const {

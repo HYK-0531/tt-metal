@@ -8,6 +8,7 @@ import ttnn
 
 # Constants
 TILE_SIZE = 32
+NORM_CATEGORIES = {"attention_norm", "mlp_norm", "q_norm", "k_norm"}
 
 
 # Compute kernel configurations
@@ -500,3 +501,8 @@ def save_and_get_path(path, tensor):
 def sub_state_dict(state_dict, prefix):
     """Get a subset of the state dict with a given prefix."""
     return {k.replace(prefix, ""): v for k, v in state_dict.items() if k.startswith(prefix)}
+
+
+def round_to_nearest_tile_size(value):
+    """Round a value to the nearest multiple of TILE_SIZE."""
+    return math.ceil(value / TILE_SIZE) * TILE_SIZE

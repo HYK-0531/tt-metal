@@ -55,7 +55,7 @@ class DeepseekV3RMSNorm(nn.Module):
         DeepseekV3RMSNorm is equivalent to T5LayerNorm
         """
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.weight = nn.Parameter(torch.randn(hidden_size))
         self.variance_epsilon = eps
 
     def forward(self, hidden_states):

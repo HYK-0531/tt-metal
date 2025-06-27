@@ -6,8 +6,7 @@ import torch
 
 import ttnn
 from models.common.lightweightmodule import LightweightModule
-from models.demos.deepseek_v3_impl.model import ModelArgs, precompute_freqs_cis
-from models.tt_transformers.tt.common import gather_cos_sin
+from models.demos.deepseek_v3.reference.modeling_deepseek import DeepseekV3YarnRotaryEmbedding
 from models.utility_functions import nearest_32
 
 
@@ -20,11 +19,32 @@ def get_rot_transformation_mat():
     return rot_emb_matrix
 
 
-def get_cos_sin_matrix(reference_args: ModelArgs):
-    freqs_cis = precompute_freqs_cis(reference_args)
-    freqs = freqs_cis.angle()
-    cos, sin = torch.cos(freqs), torch.sin(freqs)
-    cos, sin = gather_cos_sin(torch.arange(reference_args.max_seq_len), cos, sin)
+def get_cos_sin_matrix(hf_config):
+    args = {
+        "dim": hf_config.qk_rope_head_dim,
+        "max_position_embeddings": hf_config.max_seq_len,
+        "base": hf_config.rope_theta * 1.0,
+        "device": "cpu",
+        "scaling_factor": hf_config.rope_scaling["factor"],
+        "original_max_position_embeddings": hf_config.rope_scaling["original_max_position_embeddings"],
+        "beta_fast": hf_config.rope_scaling["beta_fast"],
+        "beta_slow": hf_config.rope_scaling["beta_slow"],
+        "mscale": hf_config.rope_scaling["mscale"],
+        "mscale_all_dim": hf_config.rope_scaling["mscale_all_dim"],
+    }
+
+    reference_rope = DeepseekV3YarnRotaryEmbedding(**args)
+
+    # [max_seq_len, dim], where dim is [t1, .., td//2, t1, .., td//2]
+    cos = reference_rope.cos_cached
+    sin = reference_rope.sin_cached
+
+    # Undo the HF permute
+    cos = cos[:, : cos.shape[1] // 2]
+    cos = torch.stack((cos, cos), dim=-1).flatten(-2)
+
+    sin = sin[:, : sin.shape[1] // 2]
+    sin = torch.stack((sin, sin), dim=-1).flatten(-2)
 
     return cos, sin
 
@@ -40,13 +60,13 @@ class RotarySetup(LightweightModule):
         self,
         device,
         batch_size: int,
-        reference_args,
+        hf_config,
         datatype=ttnn.bfloat16,
     ):
         super().__init__()
 
         self.batch_size = batch_size
-        self.dim = reference_args.qk_rope_head_dim
+        self.dim = hf_config.qk_rope_head_dim
         self.device = device
         self.num_devices = device.get_num_devices()
 
@@ -58,7 +78,7 @@ class RotarySetup(LightweightModule):
         self.core_grid = device.compute_with_storage_grid_size()
 
         # Generate the cos/sin matrices needed for ttnn.embedding op
-        cos_matrix, sin_matrix = get_cos_sin_matrix(reference_args)
+        cos_matrix, sin_matrix = get_cos_sin_matrix(hf_config)
 
         self.cos_matrix = ttnn.from_torch(
             cos_matrix,

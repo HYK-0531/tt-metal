@@ -19,11 +19,12 @@ from models.demos.deepseek_v3.tt.rope import RotarySetup
 from models.demos.t3000.llama2_70b.reference.llama.llama31_8b.model import RMSNorm as ReferenceRMSNorm
 from models.common.rmsnorm import RMSNorm as RMSNorm
 from models.demos.deepseek_v3_impl.model import (
-    ModelArgs,
     precompute_freqs_cis,
     apply_rotary_emb,
 )
 from models.utility_functions import nearest_y
+from transformers import AutoConfig
+from types import SimpleNamespace
 
 
 TP = 8
@@ -31,8 +32,8 @@ DP = 4
 
 
 class ModelConfig:
-    def __init__(self, model_args: ModelArgs):
-        self.args = model_args
+    def __init__(self, hf_config):
+        self.args = hf_config
         self.args.qk_head_dim = self.args.qk_nope_head_dim + self.args.qk_rope_head_dim
 
         self.grid_size = (8, 8)
@@ -44,8 +45,8 @@ class ModelConfig:
         #################
 
         # wq_a
-        self.configs["WQA_IN0_SHAPE"] = (1, 1, self.bsz // DP, self.args.dim // TP)
-        self.configs["WQA_IN1_SHAPE"] = (1, 1, self.args.dim // TP, self.args.q_lora_rank)
+        self.configs["WQA_IN0_SHAPE"] = (1, 1, self.bsz // DP, self.args.hidden_size // TP)
+        self.configs["WQA_IN1_SHAPE"] = (1, 1, self.args.hidden_size // TP, self.args.q_lora_rank)
         self.configs["WQA_IN0_DTYPE"] = ttnn.bfloat8_b
         self.configs["WQA_IN1_DTYPE"] = ttnn.bfloat4_b
         self.configs["WQA_PROGRAM_CFG"] = None
@@ -55,7 +56,12 @@ class ModelConfig:
 
         # wq_b
         self.configs["WQB_IN0_SHAPE"] = (1, 1, self.bsz // DP, self.args.q_lora_rank)
-        self.configs["WQB_IN1_SHAPE"] = (1, 1, self.args.q_lora_rank, (self.args.n_heads * self.args.qk_head_dim) // TP)
+        self.configs["WQB_IN1_SHAPE"] = (
+            1,
+            1,
+            self.args.q_lora_rank,
+            (self.args.num_attention_heads * self.args.qk_head_dim) // TP,
+        )
         self.configs["WQB_IN0_DTYPE"] = ttnn.bfloat8_b
         self.configs["WQB_IN1_DTYPE"] = ttnn.bfloat4_b
         self.configs["WQB_PROGRAM_CFG"] = None
@@ -64,11 +70,11 @@ class ModelConfig:
         self.configs["WQB_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
 
         # wkv_a
-        self.configs["WKV_A_IN0_SHAPE"] = (1, 1, self.bsz // DP, self.args.dim // TP)
+        self.configs["WKV_A_IN0_SHAPE"] = (1, 1, self.bsz // DP, self.args.hidden_size // TP)
         self.configs["WKV_A_IN1_SHAPE"] = (
             1,
             1,
-            self.args.dim // TP,
+            self.args.hidden_size // TP,
             self.args.kv_lora_rank + self.args.qk_rope_head_dim,
         )
         self.configs["WKV_A_IN0_DTYPE"] = ttnn.bfloat8_b
@@ -79,10 +85,15 @@ class ModelConfig:
         self.configs["WKV_A_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
 
         # wkv_b1
-        self.configs["WKV_B1_IN0_SHAPE"] = (1, self.args.n_heads // TP, self.bsz // DP, self.args.qk_nope_head_dim)
+        self.configs["WKV_B1_IN0_SHAPE"] = (
+            1,
+            self.args.num_attention_heads // TP,
+            self.bsz // DP,
+            self.args.qk_nope_head_dim,
+        )
         self.configs["WKV_B1_IN1_SHAPE"] = (
             1,
-            self.args.n_heads // TP,
+            self.args.num_attention_heads // TP,
             self.args.qk_nope_head_dim,
             self.args.kv_lora_rank,
         )
@@ -94,10 +105,15 @@ class ModelConfig:
         self.configs["WKV_B1_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
 
         # wkv_b2
-        self.configs["WKV_B2_IN0_SHAPE"] = (1, self.args.n_heads // TP, self.bsz // DP, self.args.kv_lora_rank)
+        self.configs["WKV_B2_IN0_SHAPE"] = (
+            1,
+            self.args.num_attention_heads // TP,
+            self.bsz // DP,
+            self.args.kv_lora_rank,
+        )
         self.configs["WKV_B2_IN1_SHAPE"] = (
             1,
-            self.args.n_heads // TP,
+            self.args.num_attention_heads // TP,
             self.args.kv_lora_rank,
             self.args.v_head_dim,
         )
@@ -109,8 +125,13 @@ class ModelConfig:
         self.configs["WKV_B2_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
 
         # wo
-        self.configs["WO_IN0_SHAPE"] = (1, self.bsz // DP, self.args.n_heads * self.args.v_head_dim)
-        self.configs["WO_IN1_SHAPE"] = (1, 1, self.args.n_heads * self.args.v_head_dim, self.args.dim // TP)
+        self.configs["WO_IN0_SHAPE"] = (1, self.bsz // DP, self.args.num_attention_heads * self.args.v_head_dim)
+        self.configs["WO_IN1_SHAPE"] = (
+            1,
+            1,
+            self.args.num_attention_heads * self.args.v_head_dim,
+            self.args.hidden_size // TP,
+        )
         self.configs["WO_IN0_DTYPE"] = ttnn.bfloat8_b
         self.configs["WO_IN1_DTYPE"] = ttnn.bfloat4_b
         self.configs["WO_PROGRAM_CFG"] = None
@@ -119,7 +140,12 @@ class ModelConfig:
         self.configs["WO_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
 
         # q_rope
-        self.configs["QROPE_SHAPE"] = (1, self.bsz // DP, self.args.n_heads // TP, self.args.qk_rope_head_dim)
+        self.configs["QROPE_SHAPE"] = (
+            1,
+            self.bsz // DP,
+            self.args.num_attention_heads // TP,
+            self.args.qk_rope_head_dim,
+        )
         self.configs["QROPE_DTYPE"] = ttnn.bfloat16
 
         q_rope_shard_height = nearest_y(self.configs["QROPE_SHAPE"][2], ttnn.TILE_SIZE)
@@ -185,10 +211,9 @@ class ModelConfig:
         # )
 
 
-config_path = "models/demos/deepseek_v3_impl/configs/config_671B.json"
-with open(config_path) as f:
-    model_args = ModelArgs(**json.load(f))
-cfg = ModelConfig(model_args)
+hugging_face_config = AutoConfig.from_pretrained("deepseek-ai/DeepSeek-R1-0528", trust_remote_code=True)
+hugging_face_config.max_seq_len = 16 * 1024  # Set max sequence length for testing
+cfg = ModelConfig(hugging_face_config)
 
 
 #################
@@ -276,14 +301,24 @@ def run_rope_impl(
 
     logger.info("Running rope with the following configurations:")
     logger.info(f"Shape: {shape}, Dtype: {dtype}, Memory Config: {mem_config}")
-    logger.info(f"Max Seq Len: {cfg.args.max_seq_len}, Rope Theta: {cfg.args.rope_theta}")
 
     #################
     ### Torch
     #################
     position_ids = torch.randint(0, cfg.args.max_seq_len, (bsz,))
     input_torch = torch.randn(shape).float()
-    freqs_cis = precompute_freqs_cis(cfg.args)[position_ids, :]
+
+    # Args expected by DeepSeek impl RoPE
+    rope_args = SimpleNamespace(
+        qk_rope_head_dim=cfg.args.qk_rope_head_dim,
+        max_seq_len=cfg.args.max_seq_len,
+        beta_fast=cfg.args.rope_scaling["beta_fast"],
+        beta_slow=cfg.args.rope_scaling["beta_slow"],
+        rope_theta=cfg.args.rope_theta,
+        rope_factor=cfg.args.rope_scaling["factor"],
+        original_seq_len=cfg.args.rope_scaling["original_max_position_embeddings"],
+    )
+    freqs_cis = precompute_freqs_cis(rope_args)[position_ids, :]
     out_torch = apply_rotary_emb(input_torch, freqs_cis)
 
     #################
@@ -292,7 +327,7 @@ def run_rope_impl(
     rope_setup = RotarySetup(
         device=device,
         batch_size=bsz,
-        reference_args=cfg.args,
+        hf_config=cfg.args,
     )
 
     tt_cos, tt_sin = rope_setup.get_rot_mats(position_ids)

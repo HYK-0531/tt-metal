@@ -215,7 +215,7 @@ def test_forward_pass(
     rope_setup = RotarySetup(
         device=mesh_device,
         batch_size=batch_size,
-        reference_args=reference_args,
+        hf_config=hf_config,
     )
 
     rot_idxs = torch.tensor(position_ids, dtype=torch.int32)  # [1, batch_size]

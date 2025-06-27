@@ -24,10 +24,10 @@ void MAIN {
 
         pack_untilize_block<per_core_block_tile_cnt>(src_cb_id, 1, out_cb_id);
 
-        // cb_push_back(out_cb_id, per_core_block_tile_cnt);
+        cb_push_back(out_cb_id, per_core_block_tile_cnt);
         // cb_pop_front(src_cb_id, per_core_block_tile_cnt);
     }
-    cb_push_back(out_cb_id, per_core_block_tile_cnt * per_core_block_cnt);
+    //    cb_push_back(out_cb_id, per_core_block_tile_cnt * per_core_block_cnt);
     cb_pop_front(src_cb_id, per_core_block_tile_cnt * per_core_block_cnt);
 
     pack_untilize_uninit(out_cb_id);

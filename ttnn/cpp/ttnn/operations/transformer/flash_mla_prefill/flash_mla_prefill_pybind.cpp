@@ -23,6 +23,7 @@ void py_bind_flash_mla_prefill(py::module& module) {
         Args:
             input_tensor_q (ttnn.Tensor): the input tensor.          [b x nqh x s x dh]
             input_tensor_k (ttnn.Tensor): the input tensor.          [b x nkv x s x dh]
+            head_dim_v (uint32_t): the head dimension of V.
 
         Keyword args:
             attn_mask (ttnn.Tensor, optional): Defaults to `None`. [b x 1 x s x s]. Head broadcasting is implied.
@@ -48,6 +49,7 @@ void py_bind_flash_mla_prefill(py::module& module) {
             [](const OperationType& self,
                const ttnn::Tensor& input_tensor_q,
                const ttnn::Tensor& input_tensor_k,
+               const uint32_t head_dim_v,
                std::optional<ttnn::Tensor> attn_mask,
                bool is_causal,
                std::optional<float> scale,
@@ -59,6 +61,7 @@ void py_bind_flash_mla_prefill(py::module& module) {
                     queue_id,
                     input_tensor_q,
                     input_tensor_k,
+                    head_dim_v,
                     attn_mask,
                     is_causal,
                     scale,
@@ -68,6 +71,7 @@ void py_bind_flash_mla_prefill(py::module& module) {
             },
             py::arg("input_tensor_q").noconvert(),
             py::arg("input_tensor_k").noconvert(),
+            py::arg("head_dim_v").noconvert(),
             py::kw_only(),
             py::arg("attn_mask").noconvert() = std::nullopt,
             py::arg("is_causal").noconvert() = true,
@@ -90,6 +94,7 @@ void py_bind_flash_mla_prefill(py::module& module) {
             input_tensor_k (ttnn.Tensor): the input tensor.          [b x nkv x s x dh]
             page_table_tensor (ttnn.Tensor): the page table tensor.  [b x num_pages]
             chunk_start_idx (int): Absolute position in the sequence where this chunk starts.
+            head_dim_v (uint32_t): the head dimension of V.
 
         Keyword args:
             scale (float, optional): Defaults to `None`.
@@ -112,6 +117,7 @@ void py_bind_flash_mla_prefill(py::module& module) {
             [](const ChunkedOperationType& self,
                const ttnn::Tensor& input_tensor_q,
                const ttnn::Tensor& input_tensor_k,
+               const uint32_t head_dim_v,
                const ttnn::Tensor& page_table_tensor,
                int64_t chunk_start_idx,
                std::optional<float> scale,
@@ -123,6 +129,7 @@ void py_bind_flash_mla_prefill(py::module& module) {
                     queue_id,
                     input_tensor_q,
                     input_tensor_k,
+                    head_dim_v,
                     page_table_tensor,
                     chunk_start_idx,
                     scale,
@@ -132,6 +139,7 @@ void py_bind_flash_mla_prefill(py::module& module) {
             },
             py::arg("input_tensor_q").noconvert(),
             py::arg("input_tensor_k").noconvert(),
+            py::arg("head_dim_v").noconvert(),
             py::arg("page_table_tensor").noconvert(),
             py::arg("chunk_start_idx"),
             py::kw_only(),

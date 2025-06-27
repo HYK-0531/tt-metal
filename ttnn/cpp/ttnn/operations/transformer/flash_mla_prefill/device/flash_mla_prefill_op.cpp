@@ -268,6 +268,7 @@ operation::ProgramWithCallbacks FlashMLAPrefill::create_program(
     return detail::flash_mla_prefill_multi_core(
         input_tensor_q,
         input_tensor_k,
+        this->head_dim_v,
         output_tensor,
         attn_mask,
         page_table,
@@ -359,6 +360,7 @@ operation::Hash FlashMLAPrefill::compute_program_hash(
     const std::vector<std::optional<const Tensor>>& optional_input_tensors) const {
     bool is_chunked_prefill = this->chunk_start_idx.has_value();
     return operation::hash_operation<FlashMLAPrefill>(
+        this->head_dim_v,
         this->scale,
         this->output_mem_config,
         this->program_config,

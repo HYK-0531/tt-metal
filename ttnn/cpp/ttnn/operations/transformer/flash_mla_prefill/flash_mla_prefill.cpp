@@ -17,6 +17,7 @@ ttnn::Tensor ExecuteFlashMLAPrefill::invoke(
     QueueId queue_id,
     const ttnn::Tensor& input_tensor_q,
     const ttnn::Tensor& input_tensor_k,
+    const uint32_t head_dim_v,
     const std::optional<ttnn::Tensor>& attn_mask,
     bool is_causal,
     std::optional<float> scale,
@@ -31,6 +32,7 @@ ttnn::Tensor ExecuteFlashMLAPrefill::invoke(
 
     return tt::tt_metal::operation::run(
                FlashMLAPrefill{
+                   .head_dim_v = head_dim_v,
                    .scale = scale,
                    .output_mem_config = memory_config.value_or(tt::tt_metal::operation::DEFAULT_OUTPUT_MEMORY_CONFIG),
                    .program_config = std::move(program_config),
@@ -47,6 +49,7 @@ ttnn::Tensor ExecuteFlashMLAPrefill::invoke(
 ttnn::Tensor ExecuteFlashMLAPrefill::invoke(
     const ttnn::Tensor& input_tensor_q,
     const ttnn::Tensor& input_tensor_k,
+    const uint32_t head_dim_v,
     const std::optional<ttnn::Tensor>& attn_mask,
     bool is_causal,
     std::optional<float> scale,
@@ -57,6 +60,7 @@ ttnn::Tensor ExecuteFlashMLAPrefill::invoke(
         DefaultQueueId,
         input_tensor_q,
         input_tensor_k,
+        head_dim_v,
         std::move(attn_mask),
         is_causal,
         scale,
@@ -69,6 +73,7 @@ ttnn::Tensor ExecuteChunkedFlashMLAPrefill::invoke(
     QueueId queue_id,
     const ttnn::Tensor& input_tensor_q,
     const ttnn::Tensor& input_tensor_k,
+    const uint32_t head_dim_v,
     const ttnn::Tensor& page_table_tensor,
     int64_t chunk_start_idx,
     std::optional<float> scale,
@@ -83,6 +88,7 @@ ttnn::Tensor ExecuteChunkedFlashMLAPrefill::invoke(
 
     return tt::tt_metal::operation::run(
                FlashMLAPrefill{
+                   .head_dim_v = head_dim_v,
                    .scale = scale,
                    .output_mem_config = memory_config.value_or(tt::tt_metal::operation::DEFAULT_OUTPUT_MEMORY_CONFIG),
                    .program_config = std::move(program_config),
@@ -99,6 +105,7 @@ ttnn::Tensor ExecuteChunkedFlashMLAPrefill::invoke(
 ttnn::Tensor ExecuteChunkedFlashMLAPrefill::invoke(
     const ttnn::Tensor& input_tensor_q,
     const ttnn::Tensor& input_tensor_k,
+    const uint32_t head_dim_v,
     const ttnn::Tensor& page_table_tensor,
     int64_t chunk_start_idx,
     std::optional<float> scale,
@@ -109,6 +116,7 @@ ttnn::Tensor ExecuteChunkedFlashMLAPrefill::invoke(
         DefaultQueueId,
         input_tensor_q,
         input_tensor_k,
+        head_dim_v,
         page_table_tensor,
         chunk_start_idx,
         scale,

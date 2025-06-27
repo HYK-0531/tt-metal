@@ -14,6 +14,7 @@
 namespace ttnn::operations::transformer {
 
 struct FlashMLAPrefill {
+    const uint32_t head_dim_v;
     const std::optional<float> scale;
     const tt::tt_metal::MemoryConfig output_mem_config;
     const std::optional<SDPAProgramConfig> program_config;

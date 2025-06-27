@@ -123,6 +123,7 @@ def run_flash_mla_prefill_impl(
     tt_out = ttnn.transformer.flash_mla_prefill(
         tt_q,
         tt_k,
+        kv_lora_rank,
         scale=scale,
         program_config=sdpa_program_config,
         compute_kernel_config=compute_kernel_config,

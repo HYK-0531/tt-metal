@@ -16,6 +16,7 @@ struct ExecuteFlashMLAPrefill {
         QueueId queue_id,
         const ttnn::Tensor& input_tensor_q,
         const ttnn::Tensor& input_tensor_k,
+        const uint32_t head_dim_v,
         const std::optional<ttnn::Tensor>& attn_mask = std::nullopt,
         bool is_causal = true,
         std::optional<float> scale = std::nullopt,
@@ -26,6 +27,7 @@ struct ExecuteFlashMLAPrefill {
     static ttnn::Tensor invoke(
         const ttnn::Tensor& input_tensor_q,
         const ttnn::Tensor& input_tensor_k,
+        const uint32_t head_dim_v,
         const std::optional<ttnn::Tensor>& attn_mask = std::nullopt,
         bool is_causal = true,
         std::optional<float> scale = std::nullopt,
@@ -39,6 +41,7 @@ struct ExecuteChunkedFlashMLAPrefill {
         QueueId queue_id,
         const ttnn::Tensor& input_tensor_q,
         const ttnn::Tensor& input_tensor_k,
+        const uint32_t head_dim_v,
         const ttnn::Tensor& page_table_tensor,
         int64_t chunk_start_idx,
         std::optional<float> scale = std::nullopt,
@@ -49,6 +52,7 @@ struct ExecuteChunkedFlashMLAPrefill {
     static ttnn::Tensor invoke(
         const ttnn::Tensor& input_tensor_q,
         const ttnn::Tensor& input_tensor_k,
+        const uint32_t head_dim_v,
         const ttnn::Tensor& page_table_tensor,
         int64_t chunk_start_idx,
         std::optional<float> scale = std::nullopt,

@@ -45,7 +45,7 @@ operation::ProgramWithCallbacks reduce_multi_core_h(
     tt_metal::IDevice* device = a.device();
 
     bool in_sharded = a.is_sharded();
-    bool use_nd_sharding = in_sharded && a.nd_shard_spec().has_value();
+    bool use_nd_sharding = in_sharded && !a.shard_spec().has_value();
     bool out_sharded = output.is_sharded();
     auto compute_with_storage_grid_size = device->compute_with_storage_grid_size();
     uint32_t num_cores_x = compute_with_storage_grid_size.x;

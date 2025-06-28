@@ -253,7 +253,6 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
     std::vector<KernelHandle> writer_kernel_ids;
     std::vector<KernelHandle> reduce_kernel_ids;
     std::vector<KernelHandle> mux_kernel_ids;
-    std::vector<size_t> mux_termination_signal_addresses;
 
     if (fuse_op) {
         fused_op_signaler->init_reduce_scatter(program, mesh_device, sender_worker_core_range_set);
@@ -275,7 +274,7 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
             uint32_t num_buffers_full_size_channels = num_full_size_channels * 8;
             size_t buffer_size_bytes_full_size_channel = tt::tt_fabric::get_max_buffer_size_bytes_full_size_channel();
             const uint32_t l1_unreserved_base_address =
-                mesh_device->allocator()->get_base_allocator_addr(tt::tt_metal::HalMemType::L1);
+                sender_device->allocator()->get_base_allocator_addr(tt::tt_metal::HalMemType::L1);
             const size_t mux_base_l1_address = l1_unreserved_base_address;
             uint32_t num_full_size_channel_iters = 1;
 
@@ -289,7 +288,7 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
             if (num_full_size_channel_iters > 1) {
                 mux_kernel_config.set_num_full_size_channel_iters(num_full_size_channel_iters);
             }
-            mux_termination_signal_addresses.push_back(mux_kernel_config.get_termination_signal_address());
+            size_t mux_termination_signal_address = mux_kernel_config.get_termination_signal_address();
 
             auto mux_kernel_id = tt::tt_metal::CreateKernel(
                 program,
@@ -306,7 +305,7 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
                 mux_kernel_config.get_start_address_to_clear(), mux_kernel_config.get_num_bytes_to_clear())};
             for (const auto& [start_address, num_bytes] : addresses_to_clear) {
                 std::vector<uint32_t> zero_vec((num_bytes / sizeof(uint32_t)), 0);
-                tt::tt_metal::detail::WriteToDeviceL1(mesh_device, mux_logical_core, start_address, zero_vec);
+                tt::tt_metal::detail::WriteToDeviceL1(sender_device, mux_logical_core, start_address, zero_vec);
             }
             std::vector<uint32_t> mux_rt_args = {};
             if (dir) {  // forward
@@ -393,6 +392,8 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
                     num_batches,                                             // num_batches
                     tiles_to_write_per_packet,                               // contig_pages_advanced
                     dir,                                                     // direction
+                    mux_termination_signal_address,  // termination address for this link dir mux
+                    !worker                          // master worker
                 };
                 append_fabric_mux_connection_ct_args(
                     drain_sync_core,

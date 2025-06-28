@@ -37,18 +37,20 @@ constexpr uint32_t ring_size = get_compile_time_arg_val(11);
 constexpr uint32_t num_batches = get_compile_time_arg_val(12);
 constexpr uint32_t contig_pages_advanced = get_compile_time_arg_val(13);
 constexpr bool direction = get_compile_time_arg_val(14);
+constexpr size_t fabric_mux_termination_address = get_compile_time_arg_val(15);
+constexpr bool fabric_mux_worker_master = get_compile_time_arg_val(16);
 
-constexpr uint8_t fabric_mux_x = get_compile_time_arg_val(15);
-constexpr uint8_t fabric_mux_y = get_compile_time_arg_val(16);
-constexpr uint8_t fabric_mux_num_buffers_per_channel = get_compile_time_arg_val(17);
-constexpr size_t fabric_mux_channel_buffer_size_bytes = get_compile_time_arg_val(18);
-constexpr size_t fabric_mux_channel_base_address = get_compile_time_arg_val(19);
-constexpr size_t fabric_mux_connection_info_address = get_compile_time_arg_val(20);
-constexpr size_t fabric_mux_connection_handshake_address = get_compile_time_arg_val(21);
-constexpr size_t fabric_mux_flow_control_address = get_compile_time_arg_val(22);
-constexpr size_t fabric_mux_buffer_index_address = get_compile_time_arg_val(23);
-constexpr size_t fabric_mux_status_address = get_compile_time_arg_val(24);
-constexpr uint8_t fabric_mux_channel_id = get_compile_time_arg_val(25);
+constexpr uint8_t fabric_mux_x = get_compile_time_arg_val(17);
+constexpr uint8_t fabric_mux_y = get_compile_time_arg_val(18);
+constexpr uint8_t fabric_mux_num_buffers_per_channel = get_compile_time_arg_val(19);
+constexpr size_t fabric_mux_channel_buffer_size_bytes = get_compile_time_arg_val(20);
+constexpr size_t fabric_mux_channel_base_address = get_compile_time_arg_val(21);
+constexpr size_t fabric_mux_connection_info_address = get_compile_time_arg_val(22);
+constexpr size_t fabric_mux_connection_handshake_address = get_compile_time_arg_val(23);
+constexpr size_t fabric_mux_flow_control_address = get_compile_time_arg_val(24);
+constexpr size_t fabric_mux_buffer_index_address = get_compile_time_arg_val(25);
+constexpr size_t fabric_mux_status_address = get_compile_time_arg_val(26);
+constexpr uint8_t fabric_mux_channel_id = get_compile_time_arg_val(27);
 
 void kernel_main() {
     ///////////////////////////////////////////////////
@@ -288,6 +290,11 @@ void kernel_main() {
     }
 
     tt::tt_fabric::fabric_client_disconnect(mux_connection_handle);
+
+    if (fabric_mux_worker_master) {
+        uint64_t dest_addr = get_noc_addr(fabric_mux_x, fabric_mux_y, fabric_mux_termination_address);
+        noc_inline_dw_write(dest_addr, tt::tt_fabric::TerminationSignal::IMMEDIATELY_TERMINATE);
+    }
 
     noc_async_write_barrier();
 }

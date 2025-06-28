@@ -209,7 +209,7 @@ MetalContext::MetalContext() {
         Cluster::is_base_routing_fw_enabled(Cluster::get_cluster_type_from_cluster_desc(rtoptions_));
     hal_ = std::make_unique<Hal>(get_platform_architecture(rtoptions_), is_base_routing_fw_enabled);
     cluster_ = std::make_unique<Cluster>(rtoptions_, *hal_);
-    distributed_context_ = distributed::multihost::DistributedContext::get_current_world();
+    //distributed_context_ = distributed::multihost::DistributedContext::get_current_world();
 }
 
 distributed::multihost::DistributedContext& MetalContext::get_distributed_context() {

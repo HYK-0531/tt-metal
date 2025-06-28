@@ -231,6 +231,7 @@ void test_dummy_EnqueueProgram_with_runtime_args(
     distributed::MeshCoordinate zero_coord = distributed::MeshCoordinate::zero_coordinate(mesh_device->shape().dims());
     distributed::MeshCoordinateRange device_range = distributed::MeshCoordinateRange(zero_coord, zero_coord);
     Program program;
+    auto device = mesh_device->get_devices()[0];
     auto eth_noc_xy = mesh_device->ethernet_core_from_logical_core(eth_core_coord);
 
     constexpr uint32_t num_runtime_args0 = 9;
@@ -255,7 +256,7 @@ void test_dummy_EnqueueProgram_with_runtime_args(
     Finish(cq);
 
     vector<uint32_t> dummy_kernel0_args_readback = tt::llrt::read_hex_vec_from_core(
-        mesh_device->id(),
+        device->id(),
         eth_noc_xy,
         MetalContext::instance().hal().get_dev_addr(
             tt::tt_metal::HalProgrammableCoreType::ACTIVE_ETH, tt::tt_metal::HalL1MemAddrType::UNRESERVED),
@@ -1331,25 +1332,25 @@ TEST_F(UnitMeshCommandQueueFixture, TensixTestRuntimeArgsCorrectlySentSingleCore
     CoreRangeSet cr_set({cr});
 
     DummyProgramConfig dummy_program_config = {.cr_set = cr_set};
-    for (auto device : devices_) {
+    for (auto& device : devices_) {
         EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(
             device, device->mesh_command_queue(), dummy_program_config, 9, 12, 15, 1));
     }
 }
 
-TEST_F(MeshCommandQueueOnFabricMultiDeviceFixture, TensixTestBasicDispatchFunctions) {
-    for (auto device : devices_) {
+TEST_F(CommandQueueOnFabricMultiDeviceFixture, TensixTestBasicDispatchFunctions) {
+    for (auto& device : devices_) {
         local_test_functions::test_basic_dispatch_functions(device, 0);
     }
 }
 
-// TEST_F(MultiCommandQueueOnFabricMultiDeviceFixture, TensixTestBasicDispatchFunctions) {
-//     for (IDevice* device : devices_) {
-//         for (int cq_id = 0; cq_id < device->num_hw_cqs(); ++cq_id) {
-//             local_test_functions::test_basic_dispatch_functions(device, cq_id);
-//         }
-//     }
-// }
+TEST_F(MultiCommandQueueOnFabricMultiDeviceFixture, TensixTestBasicDispatchFunctions) {
+    for (auto& device : devices_) {
+        for (int cq_id = 0; cq_id < device->num_hw_cqs(); ++cq_id) {
+            local_test_functions::test_basic_dispatch_functions(device, cq_id);
+        }
+    }
+}
 
 }  // end namespace single_core_tests
 

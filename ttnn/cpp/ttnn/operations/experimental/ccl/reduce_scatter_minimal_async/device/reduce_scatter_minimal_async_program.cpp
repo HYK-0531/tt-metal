@@ -147,7 +147,7 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
     // Each sender is reader + compute + writer
     uint32_t num_directions_per_link = 2;
     uint32_t num_mux_cores_per_direction_per_link = 1;
-    uint32_t num_workers_per_direction = 2;
+    uint32_t num_workers_per_direction = 1;
     uint32_t num_cores_per_link =
         num_directions_per_link * (num_mux_cores_per_direction_per_link + num_workers_per_direction);
     uint32_t num_workers_per_link = num_directions_per_link * num_workers_per_direction;
@@ -354,10 +354,8 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
                     intermediate_tensor.buffer()->address(),  // intermediate_tensor_address
                     link * num_cores_per_link +
                         dir * (num_mux_cores_per_direction_per_link + num_workers_per_direction),
-                    semaphore.at((worker + (dir * num_workers_per_direction + link * num_workers_per_link)) * 2)
-                        .address(),  // out_ready_semaphore
-                    semaphore.at((worker + (dir * num_workers_per_direction + link * num_workers_per_link)) * 2 + 1)
-                        .address(),  // batch_ready_semaphore
+                    semaphore.at(dir).address(),                      // out_ready_semaphore
+                    semaphore.at(num_directions_per_link).address(),  // batch_ready_semaphore
                     link * num_workers_per_direction + worker,
                     num_links * num_workers_per_direction,
                     input_tensor_Wt / ring_size,  // slice_Wt
@@ -413,14 +411,12 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
                 writer_kernel_ids.push_back(worker_sender_writer_kernel_id);
 
                 std::vector<uint32_t> writer_rt_args = {
-                    intermediate_tensor.buffer()->address(),  // intermediate_tensor_address
-                    output_tensor.buffer()->address(),        // output_tensor_address
-                    drain_sync_core.x,                        // out_ready_sem_noc0_x
-                    drain_sync_core.y,                        // out_ready_sem_noc0_y
-                    semaphore.at((worker + (dir * num_workers_per_direction + link * num_workers_per_link)) * 2)
-                        .address(),  // out_ready_semaphore
-                    semaphore.at((worker + (dir * num_workers_per_direction + link * num_workers_per_link)) * 2 + 1)
-                        .address(),  // batch_ready_semaphore
+                    intermediate_tensor.buffer()->address(),          // intermediate_tensor_address
+                    output_tensor.buffer()->address(),                // output_tensor_address
+                    drain_sync_core.x,                                // out_ready_sem_noc0_x
+                    drain_sync_core.y,                                // out_ready_sem_noc0_y
+                    semaphore.at(dir).address(),                      // out_ready_semaphore
+                    semaphore.at(num_directions_per_link).address(),  // batch_ready_semaphore
                     link * num_workers_per_direction + worker,
                     num_links * num_workers_per_direction,
                     input_tensor_Wt / ring_size,  // slice_Wt

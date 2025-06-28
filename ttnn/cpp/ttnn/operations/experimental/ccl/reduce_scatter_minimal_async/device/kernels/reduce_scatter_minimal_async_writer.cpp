@@ -9,6 +9,8 @@
 #include "cpp/ttnn/operations/ccl/kernel_common/worker_sync_utils.hpp"
 #include "cpp/ttnn/operations/ccl/ccl_host_types.hpp"
 #include "cpp/ttnn/operations/ccl/shared_with_host/hetergeneous_data_structs.hpp"
+#include "tt_metal/fabric/hw/inc/tt_fabric_status.h"
+#include "tt_metal/fabric/hw/inc/tt_fabric_mux_interface.hpp"
 #include <cstdint>
 #include <utility>
 
@@ -69,10 +71,10 @@ void kernel_main() {
     int32_t start_tiles_read = get_arg_val<int32_t>(arg_idx++);
     uint32_t start_tiles_to_read = get_arg_val<uint32_t>(arg_idx++);
 
-    uint32_t local_fabric_mux_status_address = get_arg_val<uint32_t>(args_idx++);
-    uint32_t local_flow_control_address = get_arg_val<uint32_t>(args_idx++);
-    uint32_t local_teardown_address = get_arg_val<uint32_t>(args_idx++);
-    uint32_t local_buffer_index_address = get_arg_val<uint32_t>(args_idx++);
+    uint32_t local_fabric_mux_status_address = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t local_flow_control_address = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t local_teardown_address = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t local_buffer_index_address = get_arg_val<uint32_t>(arg_idx++);
 
     auto mux_connection_handle = tt::tt_fabric::build_connection_to_fabric_endpoint<fabric_mux_num_buffers_per_channel>(
         fabric_mux_x,

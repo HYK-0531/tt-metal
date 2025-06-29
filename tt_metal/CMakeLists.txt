@@ -119,7 +119,6 @@ target_sources(
             api/tt-metalium/vector_aligned.hpp
             api/tt-metalium/work_split.hpp
             api/tt-metalium/distributed_context.hpp
-            ${API_GENERATED_HEADERS}
 )
 
 # TODO(afuller): this should be self-describing modules.

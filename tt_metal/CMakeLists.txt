@@ -119,7 +119,6 @@ target_sources(
             api/tt-metalium/vector_aligned.hpp
             api/tt-metalium/work_split.hpp
             api/tt-metalium/distributed_context.hpp
-            api/tt-metalium/serialized_descriptors/mesh_coordinate.fbs
             ${API_GENERATED_HEADERS}
 )
 

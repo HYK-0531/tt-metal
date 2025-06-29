@@ -321,6 +321,9 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
                 CoreCoord core = all_cores[mux_core_offset + num_mux_cores_per_direction_per_link + worker];
                 drain_sync_core = mesh_device->worker_core_from_logical_core(core);
 
+                uint32_t worker_id = link * num_workers_per_direction + worker;
+                uint32_t num_workers = num_links * num_workers_per_direction;
+
                 // Reader
                 auto sender_reader_kernel_config = tt::tt_metal::ReaderDataMovementConfig{};
                 sender_reader_kernel_config.compile_args = {
@@ -349,25 +352,19 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
                 reader_kernel_ids.push_back(worker_sender_reader_kernel_id);
 
                 std::vector<uint32_t> reader_rt_args = {
-                    input_tensor.buffer()->address(),         // input_tensor_address
-                    intermediate_tensor.buffer()->address(),  // intermediate_tensor_address
-                    link * num_cores_per_link +
-                        dir * (num_mux_cores_per_direction_per_link + num_workers_per_direction),
+                    input_tensor.buffer()->address(),                 // input_tensor_address
+                    intermediate_tensor.buffer()->address(),          // intermediate_tensor_address
                     semaphore.at(dir).address(),                      // out_ready_semaphore
                     semaphore.at(num_directions_per_link).address(),  // batch_ready_semaphore
-                    link * num_workers_per_direction + worker,
-                    num_links * num_workers_per_direction,
-                    input_tensor_Wt / ring_size,  // slice_Wt
-                    (((link * num_workers_per_direction) + worker) * batch_slice_num_pages /
-                     (num_links * num_workers_per_direction)) %
+                    worker_id,                                        // link
+                    num_workers,                                      // num_links
+                    input_tensor_Wt / ring_size,                      // slice_Wt
+                    (worker_id * batch_slice_num_pages / num_workers) %
                         (input_tensor_Wt / ring_size),  // start_pages_read_in_row
-                    (((link * num_workers_per_direction) + worker) * batch_slice_num_pages /
-                     (num_links * num_workers_per_direction)) /
-                        (input_tensor_Wt / ring_size) * input_tensor_Wt,  // start_row_offset
-                    (((link * num_workers_per_direction) + worker) * batch_slice_num_pages /
-                     (num_links * num_workers_per_direction)),  // start_tiles_read
-                    (((link * num_workers_per_direction) + worker + 1) * batch_slice_num_pages /
-                     (num_links * num_workers_per_direction))  // start_tiles_to_read
+                    (worker_id * batch_slice_num_pages / num_workers) / (input_tensor_Wt / ring_size) *
+                        input_tensor_Wt,                                   // start_row_offset
+                    worker_id * batch_slice_num_pages / num_workers,       // start_tiles_read
+                    (worker_id + 1) * batch_slice_num_pages / num_workers  // start_tiles_to_read
                 };
                 if (fuse_op) {
                     fused_op_signaler->push_reduce_scatter_fused_op_rt_args(reader_rt_args);
@@ -396,7 +393,7 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
                     !worker                          // master worker
                 };
                 append_fabric_mux_connection_ct_args(
-                    drain_sync_core,
+                    mux_virtual_core,
                     num_buffers_full_size_channels,
                     buffer_size_bytes_full_size_channel,
                     tt::tt_fabric::FabricMuxChannelType::FULL_SIZE_CHANNEL,
@@ -418,19 +415,15 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
                     drain_sync_core.y,                                // out_ready_sem_noc0_y
                     semaphore.at(dir).address(),                      // out_ready_semaphore
                     semaphore.at(num_directions_per_link).address(),  // batch_ready_semaphore
-                    link * num_workers_per_direction + worker,
-                    num_links * num_workers_per_direction,
-                    input_tensor_Wt / ring_size,  // slice_Wt
-                    (((link * num_workers_per_direction) + worker) * batch_slice_num_pages /
-                     (num_links * num_workers_per_direction)) %
+                    worker_id,                                        // link
+                    num_workers,                                      // num_links
+                    input_tensor_Wt / ring_size,                      // slice_Wt
+                    (worker_id * batch_slice_num_pages / num_workers) %
                         (input_tensor_Wt / ring_size),  // start_pages_read_in_row
-                    (((link * num_workers_per_direction) + worker) * batch_slice_num_pages /
-                     (num_links * num_workers_per_direction)) /
-                        (input_tensor_Wt / ring_size) * input_tensor_Wt,  // start_row_offset
-                    (((link * num_workers_per_direction) + worker) * batch_slice_num_pages /
-                     (num_links * num_workers_per_direction)),  // tiles_read
-                    (((link * num_workers_per_direction) + worker + 1) * batch_slice_num_pages /
-                     (num_links * num_workers_per_direction))  // tiles_to_read
+                    (worker_id * batch_slice_num_pages / num_workers) / (input_tensor_Wt / ring_size) *
+                        input_tensor_Wt,                                   // start_row_offset
+                    worker_id * batch_slice_num_pages / num_workers,       // tiles_read
+                    (worker_id + 1) * batch_slice_num_pages / num_workers  // tiles_to_read
                 };
                 append_fabric_mux_connection_rt_args(core, program, writer_rt_args);
                 tt::tt_metal::SetRuntimeArgs(program, worker_sender_writer_kernel_id, {core}, writer_rt_args);

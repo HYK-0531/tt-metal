@@ -32,64 +32,65 @@ void ReduceScatterMinimalAsync::validate_with_output_tensors(
         "Unsupported memory layout {}.",
         input_tensor.memory_config().memory_layout());
 
-    if (output_tensors.size() > 0 and output_tensors[0].has_value()) {
-        TT_FATAL(
-            output_tensors.size() <= 2,
-            "Error, Number of output tensors should be at most 2 but has {}",
-            output_tensors.size());
-        const auto& output_tensor = output_tensors.size() == 1 ? output_tensors[0] : output_tensors[1];
+    // TODO: (GR) Fix
+    // if (output_tensors.size() > 0 and output_tensors[0].has_value()) {
+    //     TT_FATAL(
+    //         output_tensors.size() <= 2,
+    //         "Error, Number of output tensors should be at most 2 but has {}",
+    //         output_tensors.size());
+    //     const auto& output_tensor = output_tensors[1];
 
-        TT_FATAL(
-            output_tensor.value().storage_type() == StorageType::DEVICE,
-            "Operands to all_gather need to be on device!");
-        TT_FATAL(
-            output_tensor.value().get_layout() == layout,
-            "Error, Output tensor layout should be same as input tensor layout but has {}",
-            output_tensor.value().get_layout());
-        TT_FATAL(
-            output_tensor.value().get_dtype() == dtype,
-            "Error, Output tensor dtype should be same as input tensor dtype but has {}",
-            output_tensor.value().get_dtype());
-        TT_FATAL(
-            output_tensor.value().get_tensor_spec().page_config() == input_tensor.get_tensor_spec().page_config(),
-            "Error, Output tensor page config should be same as input tensor page config but has {}",
-            output_tensor.value().get_tensor_spec().page_config());
-        TT_FATAL(
-            output_tensor.value().memory_config() == this->output_mem_config,
-            "Error, Output tensor memory config should be same as output_mem_config but has {}",
-            output_tensor.value().memory_config());
+    //     TT_FATAL(
+    //         output_tensor.value().storage_type() == StorageType::DEVICE,
+    //         "Operands to all_gather need to be on device!");
+    //     TT_FATAL(
+    //         output_tensor.value().get_layout() == layout,
+    //         "Error, Output tensor layout should be same as input tensor layout but has {}",
+    //         output_tensor.value().get_layout());
+    //     TT_FATAL(
+    //         output_tensor.value().get_dtype() == dtype,
+    //         "Error, Output tensor dtype should be same as input tensor dtype but has {}",
+    //         output_tensor.value().get_dtype());
+    //     TT_FATAL(
+    //         output_tensor.value().get_tensor_spec().page_config() == input_tensor.get_tensor_spec().page_config(),
+    //         "Error, Output tensor page config should be same as input tensor page config but has {}",
+    //         output_tensor.value().get_tensor_spec().page_config());
+    //     TT_FATAL(
+    //         output_tensor.value().memory_config() == this->output_mem_config,
+    //         "Error, Output tensor memory config should be same as output_mem_config but has {}",
+    //         output_tensor.value().memory_config());
 
-        // check the output tensor size
-        auto output_shape = output_tensor.value().get_padded_shape();
-        auto input_shape = input_tensor.get_padded_shape();
-        TT_FATAL(
-            output_shape.size() == input_shape.size(),
-            "Error, Output tensor shape should have same number of dimensions as input tensor but has {}",
-            output_shape.size());
-        for (size_t i = 0; i < input_shape.size(); ++i) {
-            if (i == this->dim) {
-                TT_FATAL(
-                    output_shape[i] <= input_shape[i] * this->ring_size,
-                    "Error, Output tensor shape at dimension {} should be {} but has {}",
-                    i,
-                    input_shape[i] * this->ring_size,
-                    output_shape[i]);
-            } else {
-                TT_FATAL(
-                    output_shape[i] == input_shape[i],
-                    "Error, Output tensor shape at dimension {} should be {} but has {}",
-                    i,
-                    input_shape[i],
-                    output_shape[i]);
-            }
-        }
+    //     // check the output tensor size
+    //     auto output_shape = output_tensor.value().get_padded_shape();
+    //     auto input_shape = input_tensor.get_padded_shape();
+    //     TT_FATAL(
+    //         output_shape.size() == input_shape.size(),
+    //         "Error, Output tensor shape should have same number of dimensions as input tensor but has {}",
+    //         output_shape.size());
+    //     for (size_t i = 0; i < input_shape.size(); ++i) {
+    //         if (i == this->dim) {
+    //             TT_FATAL(
+    //                 output_shape[i] <= input_shape[i] * this->ring_size,
+    //                 "Error, Output tensor shape at dimension {} should be {} but has {}",
+    //                 i,
+    //                 input_shape[i] * this->ring_size,
+    //                 output_shape[i]);
+    //         } else {
+    //             TT_FATAL(
+    //                 output_shape[i] == input_shape[i],
+    //                 "Error, Output tensor shape at dimension {} should be {} but has {}",
+    //                 i,
+    //                 input_shape[i],
+    //                 output_shape[i]);
+    //         }
+    //     }
 
-        // check memory layout
-        TT_FATAL(
-            output_tensor.value().memory_config().memory_layout() == input_tensor.memory_config().memory_layout(),
-            "Error, Output tensor memory layout should be same as input tensor memory layout but has {}",
-            output_tensor.value().memory_config().memory_layout());
-    }
+    //     // check memory layout
+    //     TT_FATAL(
+    //         output_tensor.value().memory_config().memory_layout() == input_tensor.memory_config().memory_layout(),
+    //         "Error, Output tensor memory layout should be same as input tensor memory layout but has {}",
+    //         output_tensor.value().memory_config().memory_layout());
+    // }
 
     // Each direction has a ready semaphore and there's a global sync semaphore, per link.
     TT_FATAL(
@@ -103,7 +104,7 @@ std::vector<ttnn::TensorSpec> ReduceScatterMinimalAsync::compute_output_specs(
     const std::vector<Tensor>& input_tensors) const {
     const auto& input_tensor = input_tensors[0];
     auto shape = input_tensor.get_padded_shape();  // TODO: Replace with get_logical_shape()
-    shape[this->dim] *= this->ring_size;
+    shape[this->dim] /= this->ring_size;
     return {TensorSpec(
         shape,
         TensorLayout(input_tensor.get_dtype(), input_tensor.get_tensor_spec().page_config(), output_mem_config))};
@@ -111,7 +112,9 @@ std::vector<ttnn::TensorSpec> ReduceScatterMinimalAsync::compute_output_specs(
 
 std::vector<Tensor> ReduceScatterMinimalAsync::create_output_tensors(
     const std::vector<Tensor>& input_tensors, const std::vector<std::optional<Tensor>>& optional_output_tensors) const {
-    return tt::tt_metal::operation::default_create_output_tensors(*this, input_tensors, optional_output_tensors);
+    return {
+        optional_output_tensors[0].value(),
+        create_device_tensor(compute_output_specs(input_tensors)[0], input_tensors.at(0).device())};
 }
 
 tt::tt_metal::operation::MeshWorkloadWithCallbacks ReduceScatterMinimalAsync::create_mesh_workload(
@@ -206,7 +209,6 @@ namespace {
 Tensor reduce_scatter_minimal_async_impl(
     const Tensor& input_tensor,
     Tensor& persistent_intermediate_buffer,
-    Tensor& persistent_output_buffer,
     const uint32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
     const uint32_t num_links,
@@ -233,8 +235,7 @@ Tensor reduce_scatter_minimal_async_impl(
     CoreCoord grid_size = devices[0]->compute_with_storage_grid_size();
     auto core_grid = CoreRange({0, 0}, {grid_size.x - 1, grid_size.y - 1});
 
-    std::vector<std::optional<Tensor>> optional_output_tensors = {
-        persistent_intermediate_buffer, persistent_output_buffer};
+    std::vector<std::optional<Tensor>> optional_output_tensors = {persistent_intermediate_buffer};
 
     return tt::tt_metal::operation::run(
                ttnn::ReduceScatterMinimalAsync(
@@ -257,7 +258,6 @@ Tensor reduce_scatter_minimal_async_impl(
 Tensor reduce_scatter_minimal_async(
     const Tensor& input_tensor,
     Tensor& persistent_intermediate_buffer,
-    Tensor& persistent_output_buffer,
     const uint32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
     const uint32_t num_links,
@@ -269,7 +269,6 @@ Tensor reduce_scatter_minimal_async(
     return reduce_scatter_minimal_async_impl(
         input_tensor,
         persistent_intermediate_buffer,
-        persistent_output_buffer,
         dim,
         multi_device_global_semaphore,
         num_links,

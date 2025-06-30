@@ -19,6 +19,7 @@
 #include "compute_kernel_api/untilize.h"
 #include "compute_kernel_api/matmul.h"
 
+#include "ttnn/operations/kernel_helper_functions/reduce_cb.hpp"
 namespace NAMESPACE {
 void MAIN {
     // clang-format off
@@ -314,51 +315,54 @@ void MAIN {
                 reconfig_data_format_srcb(cb_input_mask, cb_scaler);
 
                 // Partial/E[x]
-                index_h_offset = 0;
-                reduce_init(cb_x, cb_scaler, cb_ex_partial);
-                cb_reserve_back(cb_ex_partial, 1);
-                tile_regs_acquire();
-                cb_wait_front(cb_scaler, 1);
-                cb_wait_front(cb_x, out_block_hw_normal);
 
-                for (uint32_t h = 0; h < out_block_h_actual; ++h) {
-                    for (uint32_t w = 0; w < block_w; ++w) {
-                        uint32_t index = index_h_offset + w;
-                        reduce_tile(cb_x, cb_scaler, index, scaler0, dst0);
-                    }
-                    index_h_offset += block_w;
-                }
-                tile_regs_commit();
-                tile_regs_wait();
-                pack_tile(dst0, cb_ex_partial);
-                tile_regs_release();
-                cb_pop_front(cb_x, out_block_hw_normal);
-                cb_push_back(cb_ex_partial, 1);
-                reduce_uninit();
+                pairwise_reduce_cb(cb_x, cb_scaler, cb_x, cb_ex_partial, out_block_h_actual * block_w, 4);
+                // index_h_offset = 0;
+                // reduce_init(cb_x, cb_scaler, cb_ex_partial);
+                // cb_reserve_back(cb_ex_partial, 1);
+                // tile_regs_acquire();
+                // cb_wait_front(cb_scaler, 1);
+                // cb_wait_front(cb_x, out_block_hw_normal);
+                //
+                // for (uint32_t h = 0; h < out_block_h_actual; ++h) {
+                //     for (uint32_t w = 0; w < block_w; ++w) {
+                //         uint32_t index = index_h_offset + w;
+                //         reduce_tile(cb_x, cb_scaler, index, scaler0, dst0);
+                //     }
+                //     index_h_offset += block_w;
+                // }
+                // tile_regs_commit();
+                // tile_regs_wait();
+                // pack_tile(dst0, cb_ex_partial);
+                // tile_regs_release();
+                // cb_pop_front(cb_x, out_block_hw_normal);
+                // cb_push_back(cb_ex_partial, 1);
+                // reduce_uninit();
 
                 cb_wait_front(cb_ex_partial, 1);
             }
             // End Local Redcue
             // Start Global Reduce
             if constexpr (is_mcast_sender) {
-                reduce_init(cb_ex_external, cb_scaler_global, cb_ex_global);
-                cb_reserve_back(cb_ex_global, 1);
-                if (num_cores_per_mcast_group > 1) {
-                    cb_reserve_back(cb_ex, 1);
-                }
-                tile_regs_acquire();
-                cb_wait_front(cb_scaler_global, 1);
-                cb_wait_front(cb_ex_external, cb_ex_external_tiles_required);
-                for (uint32_t external_i = 0; external_i < cb_ex_external_tiles_required; external_i++) {
-                    reduce_tile(cb_ex_external, cb_scaler_global, external_i, scaler0, dst0);
-                }
-                cb_pop_front(cb_ex_external, cb_ex_external_tiles_required);
-                tile_regs_commit();
-                tile_regs_wait();
-                pack_tile(dst0, cb_ex_global);
-                tile_regs_release();
-                reduce_uninit();
-                cb_push_back(cb_ex_global, 1);
+                pairwise_reduce_cb(cb_ex_external, cb_scaler_global, cb_ex_external, cb_ex_global);
+                // reduce_init(cb_ex_external, cb_scaler_global, cb_ex_global);
+                // cb_reserve_back(cb_ex_global, 1);
+                // if (num_cores_per_mcast_group > 1) {
+                //     cb_reserve_back(cb_ex, 1);
+                // }
+                // tile_regs_acquire();
+                // cb_wait_front(cb_scaler_global, 1);
+                // cb_wait_front(cb_ex_external, cb_ex_external_tiles_required);
+                // for (uint32_t external_i = 0; external_i < cb_ex_external_tiles_required; external_i++) {
+                //     reduce_tile(cb_ex_external, cb_scaler_global, external_i, scaler0, dst0);
+                // }
+                // cb_pop_front(cb_ex_external, cb_ex_external_tiles_required);
+                // tile_regs_commit();
+                // tile_regs_wait();
+                // pack_tile(dst0, cb_ex_global);
+                // tile_regs_release();
+                // reduce_uninit();
+                // cb_push_back(cb_ex_global, 1);
                 if (num_cores_per_mcast_group > 1) {
                     cb_push_back(cb_ex, 1);
                 }

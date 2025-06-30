@@ -23,7 +23,7 @@ jobs:
         test-info: [
           {name: "sentence_bert", arch: wormhole_b0, cmd: run_sentencebert},
         ]
-        model-type: xxx
+        model-type: llm_javelin
     name: "${{ matrix.test-info.name }}"
     defaults:
       run:

@@ -232,11 +232,50 @@ class MLA_1D(AbstractModule):
         """
         # Extract dimensions from HF config
         dim = hf_config.hidden_size
+        hidden_dim = hf_config.intermediate_size
         num_devices = mesh_device.get_num_devices()
+        grid_size = mesh_device.compute_with_storage_grid_size()
+
+        num_heads = hf_config.num_attention_heads
+        kv_lora_rank = hf_config.kv_lora_rank
+        qk_nope_head_dim = hf_config.qk_nope_head_dim
+        qk_rope_head_dim = hf_config.qk_rope_head_dim
+        qk_head_dim = qk_nope_head_dim + qk_rope_head_dim
+        v_head_dim = hf_config.v_head_dim
+        mscale = hf_config.rope_scaling["mscale"]
+        rope_factor = hf_config.rope_scaling["factor"]
 
         config = {"mode": "prefill"}
 
-        # TODO: Need to implement
+        config["wq_a"] = LinearConfig(
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            program_config=None,
+        )
+
+        config["wq_b"] = LinearConfig(
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            program_config=None,
+        )
+
+        config["wkv_a"] = LinearConfig(
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            program_config=None,
+        )
+
+        config["wkv_b1"] = LinearConfig(
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            program_config=None,
+        )
+
+        config["wkv_b2"] = LinearConfig(
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            program_config=None,
+        )
+
+        config["wo"] = LinearConfig(
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            program_config=None,
+        )
 
         return config
 
@@ -482,17 +521,19 @@ class MLA_1D(AbstractModule):
 
         return tt_cache
 
-    def forward(self, x, position_ids, rope_tensors, cfg, mesh_device):
+    def forward(self, x, position_idxs, user_id, rope_tensors, cfg, mesh_device):
         """Decode is very straightforward but prefill reshapes and has dynamic program configs
         so we implement forward as two functions for clarity.
         """
         if cfg["mode"] == "decode":
-            return self._forward_decode(x, position_ids, rope_tensors, cfg, mesh_device)
+            assert user_id is None, "User ID should be None in decode mode"
+            return self._forward_decode(x, position_idxs, rope_tensors, cfg, mesh_device)
         else:
             assert cfg["mode"] == "prefill"
-            return self._forward_prefill(x, cfg, mesh_device)
+            assert position_idxs is None, "Position indices should be None in prefill mode"
+            return self._forward_prefill(x, user_id, rope_tensors, cfg, mesh_device)
 
-    def _forward_decode(self, x, position_ids, rope_tensors, cfg, mesh_device):
+    def _forward_decode(self, x, position_idxs, rope_tensors, cfg, mesh_device):
         """Straightforward forward pass for decode mode"""
 
         bsz = x.shape[2]
@@ -560,7 +601,7 @@ class MLA_1D(AbstractModule):
         ttnn.experimental.paged_update_cache(
             self.kvpe_cache,
             tt_kvpe,
-            update_idxs=position_ids,
+            update_idxs=position_idxs,
         )
 
         # FlashMLA
@@ -568,7 +609,7 @@ class MLA_1D(AbstractModule):
         attn_out = ttnn.transformer.flash_mla_decode(
             tt_q,
             self.kvpe_cache,
-            cur_pos=position_ids,
+            cur_pos=position_idxs,
             **cfg["flash_mla"],
         )  #  [1, bsz, num_heads, kv_lora_rank]
         ttnn.deallocate(tt_q)
@@ -585,13 +626,15 @@ class MLA_1D(AbstractModule):
 
         return out
 
-    def _forward_prefill(self, x, cfg, mesh_device):
+    def _forward_prefill(self, x, user_id, rope_tensors, cfg, mesh_device):
         """Forward pass of the MLP.
 
         Prefill mode we reshape to respect cfg["max_rows"] and generate program configs from the seq-len lambda.
 
         Args:
             x: Input tensor
+            user_id: Batch index for cache updates
+            rope_tensors: Dictionary containing RoPE tensors
             cfg: RunConfig containing weights and op configurations
             mesh_device: TTNN mesh device for multi-device operations
 
@@ -599,4 +642,64 @@ class MLA_1D(AbstractModule):
             Output tensor after MLP computation
         """
 
-        return x
+        seq_len = x.shape[2]
+
+        # wq_a and wq_b
+        tt_q = ttnn.linear(x, **cfg["wq_a"])
+        # TODO: Add norm
+        tt_q = ttnn.linear(tt_q, **cfg["wq_b"])
+
+        # TODO: Use local heads here
+        tt_q = ttnn.reshape(tt_q, (1, seq_len, self.num_heads, self.qk_head_dim))
+        tt_q = ttnn.permute(tt_q, (0, 2, 1, 3))  # [1, num_heads, seq_len, qk_head_dim]
+
+        tt_q_nope = ttnn.slice(tt_q, [0, 0, 0, 0], [1, self.num_heads, seq_len, self.qk_nope_head_dim])
+        tt_q_rope = ttnn.slice(tt_q, [0, 0, 0, self.qk_nope_head_dim], [1, self.num_heads, seq_len, self.qk_head_dim])
+
+        # wkv_b1
+        tt_q_nope = ttnn.linear(tt_q_nope, **cfg["wkv_b1"])  # [1, num_heads, seq_len, kv_lora_rank]
+
+        # Q RoPE
+        tt_q_rope = ttnn.experimental.rotary_embedding_llama(
+            tt_q_rope,
+            rope_tensors["cos_matrix"],
+            rope_tensors["sin_matrix"],
+            rope_tensors["trans_matrix"],
+            is_decode_mode=False,
+        )
+
+        # Q ready for FlashMLA
+        tt_q = ttnn.concat([tt_q_nope, tt_q_rope], dim=-1)
+
+        # KVPE Stuff
+        tt_kv = ttnn.linear(x, **cfg["wkv_a"])
+        tt_kv_nope = ttnn.slice(tt_kv, [0, 0, 0, 0], [1, 1, seq_len, self.kv_lora_rank])
+        tt_kv_rope = ttnn.slice(
+            tt_kv, [0, 0, 0, self.kv_lora_rank], [1, 1, seq_len, self.kv_lora_rank + self.qk_rope_head_dim]
+        )
+        ttnn.deallocate(tt_kv)
+
+        # KV RoPE
+        tt_kv_rope = ttnn.experimental.rotary_embedding_llama(
+            tt_kv_rope,
+            rope_tensors["cos_matrix"],
+            rope_tensors["sin_matrix"],
+            rope_tensors["trans_matrix"],
+            is_decode_mode=False,
+        )
+
+        tt_kvpe = ttnn.concat([tt_kv_nope, tt_kv_rope], dim=-1)
+        # TODO: Add Norm here for KVPE
+        ttnn.deallocate(tt_kv_nope)
+        ttnn.deallocate(tt_kv_rope)
+
+        tt_kvpe = ttnn.typecast(tt_kvpe, dtype=self.kvpe_cache.dtype)
+
+        # Update KVPE Cache
+        ttnn.fill_cache(
+            self.kvpe_cache,
+            tt_kvpe,
+            batch_idx=user_id,
+        )
+
+        return tt_q

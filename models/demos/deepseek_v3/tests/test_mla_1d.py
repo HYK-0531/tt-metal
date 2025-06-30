@@ -4,6 +4,7 @@
 import json
 import tempfile
 from pathlib import Path
+from random import randint
 
 import pytest
 import torch
@@ -134,7 +135,8 @@ def test_run_config_creation(reference, hf_config, temp_dir, mesh_device):
 @pytest.mark.parametrize(
     "mode, seq_len, batch_size",
     [
-        ("decode", 1024, 32),
+        ("decode", 1, 32),
+        ("prefill", 128, 1),
     ],
 )
 @pytest.mark.parametrize(
@@ -152,6 +154,9 @@ def test_forward_pass(
     mesh_device,
 ):
     reference_args, reference_model = reference
+
+    if mode == "prefill":
+        assert batch_size == 1, "Prefill mode only supports batch size of 1"
 
     ############################
     ### Set up configs
@@ -173,13 +178,15 @@ def test_forward_pass(
     ############################
     ### Torch inputs
     ############################
-    start_pos = seq_len
-    freqs_cis = precompute_freqs_cis(reference_args)[start_pos, :]
+    start_pos = randint(0, hf_config.max_seq_len) if mode == "decode" else 0
 
+    freqs_cis = precompute_freqs_cis(reference_args)
     if mode == "prefill":
-        torch_input = torch.randn(batch_size, seq_len, hf_config.hidden_size)
+        freqs_cis = freqs_cis[:seq_len, :]
     else:
-        torch_input = torch.randn(batch_size, 1, hf_config.hidden_size)
+        freqs_cis = freqs_cis[start_pos, :]
+
+    torch_input = torch.randn(batch_size, seq_len, hf_config.hidden_size)
     torch_input = torch_input.to(dtype=torch.bfloat16)
 
     ############################
@@ -195,7 +202,10 @@ def test_forward_pass(
     ############################
     ### TTNN inputs
     ############################
-    torch_input = torch_input.permute(1, 0, 2).unsqueeze(0)
+    if mode == "decode":
+        # TT Shape: [1, seq_len, batch_size, hidden_size]
+        torch_input = torch_input.permute(1, 0, 2)
+    torch_input = torch_input.unsqueeze(0)
 
     # if num_devices == 1:
     #     torch_input = torch_input[..., :torch_input.shape[-1] // TG_GRID[0]]
@@ -209,7 +219,9 @@ def test_forward_pass(
         memory_config=ttnn.DRAM_MEMORY_CONFIG,
         layout=ttnn.TILE_LAYOUT,
     )
-    position_ids = [start_pos] * batch_size  # TODO: Only support same position for all users
+    position_idxs = (
+        [start_pos] * batch_size if mode == "decode" else None
+    )  # TODO: Only support same position for all users
 
     # RoPE stuff
     rope_setup = RotarySetup(
@@ -218,20 +230,25 @@ def test_forward_pass(
         hf_config=hf_config,
     )
 
-    rot_idxs = torch.tensor(position_ids, dtype=torch.int32)  # [1, batch_size]
-    rot_mats = rope_setup.get_rot_mats(rot_idxs)
+    if mode == "prefill":
+        rot_mats = rope_setup.get_rot_mats_table(seq_len)
+    else:
+        rot_idxs = torch.tensor(position_idxs, dtype=torch.int32)
+        rot_mats = rope_setup.get_rot_mats(rot_idxs)
     rope_tensors = {
         "cos_matrix": rot_mats[0],
         "sin_matrix": rot_mats[1],
-        "trans_matrix": rope_setup.get_both_trans_mats()["decode"],
+        "trans_matrix": rope_setup.get_both_trans_mats()[mode],
     }
+
+    user_id = None if mode == "decode" else 0  # TODO: randint(0, MLA_1D.MAX_BATCH_SIZE)
 
     ############################
     ### TTNN forward pass
     ############################
     tt_mla = MLA_1D(hf_config, mesh_device)
 
-    tt_output = tt_mla.forward(tt_input, position_ids, rope_tensors, run_config, mesh_device)
+    tt_output = tt_mla.forward(tt_input, position_idxs, user_id, rope_tensors, run_config, mesh_device)
     tt_output_torch = ttnn.to_torch(tt_output)
 
     if mode == "prefill":
@@ -256,7 +273,10 @@ def test_forward_pass(
         logger.info("Checking KVPE cache PCC")
 
         pcc_required_kvpe = 0.98
-        range_to_check = range(start_pos, start_pos + 1)
+        if mode == "prefill":
+            range_to_check = range(start_pos, seq_len)
+        else:
+            range_to_check = range(start_pos, start_pos + 1)
 
         tt_cache = ttnn.to_torch(tt_mla.kvpe_cache).squeeze(1)  # [bsz, max_seq_len, head_dim + rope_head_dim]
         tt_cache_kv = tt_cache[:, range_to_check, : hf_config.kv_lora_rank]

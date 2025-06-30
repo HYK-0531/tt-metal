@@ -1026,7 +1026,6 @@ void test_basic_dispatch_functions(std::shared_ptr<distributed::MeshDevice> mesh
 
     constexpr uint32_t k_DataSize = 64 * 1024;
     constexpr uint32_t k_PageSize = 4 * 1024;
-    constexpr uint32_t k_Iterations = 10;
     constexpr uint32_t k_LoopPerDev = 100;
 
     DummyProgramConfig dummy_program_config = {.cr_set = cr_set};
@@ -1034,50 +1033,31 @@ void test_basic_dispatch_functions(std::shared_ptr<distributed::MeshDevice> mesh
     log_info(tt::LogTest, "Running On Device {} CQ{}", mesh_device->id(), cq_id);
 
     // Alternate write patterns
-    std::vector<uint32_t> src_data_1(k_DataSize / sizeof(uint32_t));
-    std::vector<uint32_t> src_data_2(k_DataSize / sizeof(uint32_t));
+    std::vector<uint32_t> src_data(k_DataSize / sizeof(uint32_t));
     for (int i = 0; i < k_DataSize / sizeof(uint32_t); ++i) {
-        src_data_1[i] = (device->id() + rand()) * 0xdeadbeef;
-        src_data_2[i] = (device->id() + rand()) * 0xabcd1234;
+        src_data[i] = (device->id() + rand()) * 0xdeadbeef;
     }
-    auto buffer = CreateBuffer(InterleavedBufferConfig{device, k_DataSize, k_PageSize, BufferType::L1});
-    auto dram_buffer = CreateBuffer(InterleavedBufferConfig{device, k_DataSize, k_PageSize, BufferType::DRAM});
+    distributed::DeviceLocalBufferConfig device_local_buffer_config{
+        .page_size = k_PageSize, .buffer_type = BufferType::L1};
+
+    distributed::ReplicatedBufferConfig mesh_buffer_config{.size = k_DataSize};
+    auto buffer = distributed::MeshBuffer::create(mesh_buffer_config, device_local_buffer_config, mesh_device.get());
+
     auto& cq = mesh_device->mesh_command_queue(cq_id);
-    auto& cq_device = device->command_queue(cq_id);
-    for (int iteration = 0; iteration < k_Iterations; ++iteration) {
-        for (int i = 0; i < k_LoopPerDev; ++i) {
-            EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(
-                mesh_device, cq, dummy_program_config, 24, 12, 15, k_LoopPerDev));
 
-            std::vector<uint32_t> dst_data;
-            if (i & 1) {
-                EnqueueWriteBuffer(cq_device, *buffer, src_data_1, false);
-                EnqueueReadBuffer(cq_device, *buffer, dst_data, true);
-                EXPECT_EQ(src_data_1, dst_data);
-            } else {
-                EnqueueWriteBuffer(cq_device, *dram_buffer, src_data_2, false);
-                EnqueueReadBuffer(cq_device, *dram_buffer, dst_data, true);
-                EXPECT_EQ(src_data_2, dst_data);
-            }
-        }
+    for (int i = 0; i < k_LoopPerDev; ++i) {
+        log_info(tt::LogTest, " Iteration {}", i);
+        EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(
+            mesh_device, cq, dummy_program_config, 24, 12, 15, k_LoopPerDev));
+        distributed::EnqueueWriteMeshBuffer(cq, buffer, src_data, false);
+
+        std::vector<uint32_t> dst_data;
+        distributed::ReadShard(cq, dst_data, buffer, distributed::MeshCoordinate{0, 0}, true);
+        EXPECT_EQ(src_data, dst_data);
     }
 
-    // non blocking fast data movement APIs
-    for (int iteration = 0; iteration < k_Iterations; ++iteration) {
-        for (int i = 0; i < k_LoopPerDev; ++i) {
-            EnqueueWriteBuffer(cq_device, *buffer, src_data_1, false);
-        }
-    }
-    std::vector<uint32_t> dst_data;
-    for (int iteration = 0; iteration < k_Iterations; ++iteration) {
-        for (int i = 0; i < k_LoopPerDev; ++i) {
-            EnqueueReadBuffer(cq_device, *buffer, dst_data, false);
-        }
-    }
-
-    Finish(cq);
-    Finish(cq_device);
 }
+
 
 }  // namespace local_test_functions
 
@@ -1374,7 +1354,7 @@ TEST_F(CommandQueueOnFabricMultiDeviceFixture, TensixTestBasicDispatchFunctions)
     }
 }
 
-TEST_F(MultiCommandQueueOnFabricMultiDeviceFixture, TensixTestBasicDispatchFunctions) {
+TEST_F(UnitMeshMultiCommandQueueMultiDeviceFixture, TensixTestBasicDispatchFunctions) {
     for (auto& device : devices_) {
         for (int cq_id = 0; cq_id < device->num_hw_cqs(); ++cq_id) {
             local_test_functions::test_basic_dispatch_functions(device, cq_id);

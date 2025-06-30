@@ -443,7 +443,7 @@ operation::ProgramWithCallbacks groupnorm_multi_core_sharded(
     uint32_t in0_CB_size = a.buffer()->aligned_size_per_bank();  // use buffer size to handle both RM and Tile
     uint32_t in_CB_size = in0_block_tiles * in_single_tile_size;
     // in2 - scaler
-    uint32_t in2_CB_size = single_tile_size;
+    uint32_t in2_CB_size = 2 * single_tile_size;
     // in3 - eps
     uint32_t in3_CB_size = single_tile_size;
     // gamma

@@ -311,7 +311,7 @@ void MAIN {
 #else
                 cb_pop_front(cb_in0, out_block_hw_normal);
 #endif
-                cb_push_back(cb_x, out_block_hw_normal);
+                cb_push_back(cb_x, out_block_h_actual * block_w);
                 reconfig_data_format_srcb(cb_input_mask, cb_scaler);
 
                 // Partial/E[x]
@@ -344,7 +344,8 @@ void MAIN {
             // End Local Redcue
             // Start Global Reduce
             if constexpr (is_mcast_sender) {
-                pairwise_reduce_cb(cb_ex_external, cb_scaler_global, cb_ex_external, cb_ex_global);
+                pairwise_reduce_cb(
+                    cb_ex_external, cb_scaler_global, cb_ex_external, cb_ex_global, cb_ex_external_tiles_required, 4);
                 // reduce_init(cb_ex_external, cb_scaler_global, cb_ex_global);
                 // cb_reserve_back(cb_ex_global, 1);
                 // if (num_cores_per_mcast_group > 1) {
@@ -465,51 +466,54 @@ void MAIN {
                     index_h_offset += block_w;
                 }
                 cb_pop_front(cb_x, out_block_hw_normal);
-                cb_push_back(cb_xmm, out_block_hw_normal);
+                cb_push_back(cb_xmm, out_block_h_actual * block_w);
 
+                pairwise_reduce_cb(cb_xmm, cb_scaler, cb_xmm, cb_ex2_partial, out_block_h_actual * block_w, 4);
                 // Partial-Var(x)
-                index_h_offset = 0;
-                reduce_init(cb_xmm, cb_scaler, cb_ex2_partial);
-                cb_reserve_back(cb_ex2_partial, 1);
-                tile_regs_acquire();
-                cb_wait_front(cb_xmm, out_block_hw_normal);
-                cb_wait_front(cb_scaler, 1);  // TODO DELETE THIS
-                for (uint32_t h = 0; h < out_block_h_actual; ++h) {
-                    for (uint32_t w = 0; w < block_w; ++w) {
-                        uint32_t index = index_h_offset + w;
-                        reduce_tile(cb_xmm, cb_scaler, index, scaler0, dst0);
-                    }
-                    index_h_offset += block_w;
-                }
-                tile_regs_commit();
-                tile_regs_wait();
-                pack_tile(dst0, cb_ex2_partial);
-                tile_regs_release();
-                cb_push_back(cb_ex2_partial, 1);
-                cb_pop_front(cb_xmm, out_block_hw_normal);
-                reduce_uninit();
+                // index_h_offset = 0;
+                // reduce_init(cb_xmm, cb_scaler, cb_ex2_partial);
+                // cb_reserve_back(cb_ex2_partial, 1);
+                // tile_regs_acquire();
+                // cb_wait_front(cb_xmm, out_block_hw_normal);
+                // cb_wait_front(cb_scaler, 1);  // TODO DELETE THIS
+                // for (uint32_t h = 0; h < out_block_h_actual; ++h) {
+                //     for (uint32_t w = 0; w < block_w; ++w) {
+                //         uint32_t index = index_h_offset + w;
+                //         reduce_tile(cb_xmm, cb_scaler, index, scaler0, dst0);
+                //     }
+                //     index_h_offset += block_w;
+                // }
+                // tile_regs_commit();
+                // tile_regs_wait();
+                // pack_tile(dst0, cb_ex2_partial);
+                // tile_regs_release();
+                // cb_push_back(cb_ex2_partial, 1);
+                // cb_pop_front(cb_xmm, out_block_hw_normal);
+                // reduce_uninit();
             }
             // End Local Reduce
             // Start Global Reduce
             if constexpr (is_mcast_sender) {
-                reduce_init(cb_ex_external, cb_scaler_global, cb_ex2_global);
-                cb_reserve_back(cb_ex2_global, 1);
+                // reduce_init(cb_ex_external, cb_scaler_global, cb_ex2_global);
+                // cb_reserve_back(cb_ex2_global, 1);
                 if (num_cores_per_mcast_group > 1) {
                     cb_reserve_back(cb_ex2, 1);
                 }
-                tile_regs_acquire();
-                cb_wait_front(cb_scaler_global, 1);
-                cb_wait_front(cb_ex_external, cb_ex_external_tiles_required);  // TODO DELETE THIS AND ADD POP
-                for (uint32_t external_i = 0; external_i < cb_ex_external_tiles_required; external_i++) {
-                    reduce_tile(cb_ex_external, cb_scaler_global, external_i, scaler0, dst0);
-                }
-                cb_pop_front(cb_ex_external, cb_ex_external_tiles_required);
-                tile_regs_commit();
-                tile_regs_wait();
-                pack_tile(dst0, cb_ex2_global);
-                tile_regs_release();
-                reduce_uninit();
-                cb_push_back(cb_ex2_global, 1);
+                pairwise_reduce_cb(
+                    cb_ex_external, cb_scaler_global, cb_ex_external, cb_ex2_global, cb_ex_external_tiles_required, 4);
+                // tile_regs_acquire();
+                // cb_wait_front(cb_scaler_global, 1);
+                // cb_wait_front(cb_ex_external, cb_ex_external_tiles_required);  // TODO DELETE THIS AND ADD POP
+                // for (uint32_t external_i = 0; external_i < cb_ex_external_tiles_required; external_i++) {
+                //     reduce_tile(cb_ex_external, cb_scaler_global, external_i, scaler0, dst0);
+                // }
+                // cb_pop_front(cb_ex_external, cb_ex_external_tiles_required);
+                // tile_regs_commit();
+                // tile_regs_wait();
+                // pack_tile(dst0, cb_ex2_global);
+                // tile_regs_release();
+                // reduce_uninit();
+                // cb_push_back(cb_ex2_global, 1);
                 if (num_cores_per_mcast_group > 1) {
                     cb_push_back(cb_ex2, 1);
                 }

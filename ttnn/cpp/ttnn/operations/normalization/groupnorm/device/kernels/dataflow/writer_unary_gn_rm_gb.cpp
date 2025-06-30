@@ -125,11 +125,14 @@ void kernel_main() {
                 constexpr uint32_t cb_in_2 = tt::CBIndex::c_2;
                 const uint32_t scalar_w = get_arg_val<uint32_t>(1);
                 generate_reduce_scaler(cb_in_2, scalar_w);
+                constexpr uint32_t scaler_one = 0x3f803f80;
+                generate_reduce_scaler(cb_in_2, scaler_one);
 
                 if constexpr (is_mcast_sender) {
                     constexpr uint32_t cb_in_4 = tt::CBIndex::c_4;
                     const uint32_t scalar_c = get_arg_val<uint32_t>(0);
                     generate_reduce_scaler(cb_in_4, scalar_c);
+                    generate_reduce_scaler(cb_in_4, scaler_one);
                 }
 
                 constexpr uint32_t eps_cb_id = tt::CBIndex::c_3;

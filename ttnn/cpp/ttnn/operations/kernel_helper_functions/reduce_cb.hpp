@@ -13,6 +13,7 @@
 
 // pairwise_reduce_cb
 // DISCLAIMER EXAMPLE USES SMALL TILE SHAPES PURELY FOR EXPLANATION REASONS
+// Only tested with 32x32 tiles
 // Imagine you had the following tiles
 // [[1,1,1,1][1,1,1,1][1,1,1,1][1,1,1,1]]
 // first we apply scaler multiplier of n

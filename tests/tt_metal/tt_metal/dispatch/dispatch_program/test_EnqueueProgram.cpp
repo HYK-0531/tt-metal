@@ -1023,30 +1023,60 @@ void test_my_coordinates(
 void test_basic_dispatch_functions(std::shared_ptr<distributed::MeshDevice> mesh_device, int cq_id) {
     CoreRange cr({0, 0}, {0, 0});
     CoreRangeSet cr_set({cr});
-    auto device = mesh_device->get_devices()[0];
+
     constexpr uint32_t k_DataSize = 64 * 1024;
     constexpr uint32_t k_PageSize = 4 * 1024;
+    constexpr uint32_t k_Iterations = 10;
     constexpr uint32_t k_LoopPerDev = 100;
 
     DummyProgramConfig dummy_program_config = {.cr_set = cr_set};
+    auto device = mesh_device->get_devices()[0];
+    log_info(tt::LogTest, "Running On Device {} CQ{}", mesh_device->id(), cq_id);
 
-    log_info(tt::LogTest, "Running On Device {}", mesh_device->id());
-
-    std::vector<uint32_t> src_data(k_DataSize / sizeof(uint32_t));
+    // Alternate write patterns
+    std::vector<uint32_t> src_data_1(k_DataSize / sizeof(uint32_t));
+    std::vector<uint32_t> src_data_2(k_DataSize / sizeof(uint32_t));
     for (int i = 0; i < k_DataSize / sizeof(uint32_t); ++i) {
-        src_data[i] = (mesh_device->id() + 1) * 0xdeadbeef;
+        src_data_1[i] = (device->id() + rand()) * 0xdeadbeef;
+        src_data_2[i] = (device->id() + rand()) * 0xabcd1234;
     }
     auto buffer = CreateBuffer(InterleavedBufferConfig{device, k_DataSize, k_PageSize, BufferType::L1});
+    auto dram_buffer = CreateBuffer(InterleavedBufferConfig{device, k_DataSize, k_PageSize, BufferType::DRAM});
     auto& cq = mesh_device->mesh_command_queue(cq_id);
-    for (int i = 0; i < k_LoopPerDev; ++i) {
-        log_info(tt::LogTest, " Iteration {}", i);
-        EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(
-            mesh_device, cq, dummy_program_config, 24, 12, 15, k_LoopPerDev));
-        EnqueueWriteBuffer(device->command_queue(), *buffer, src_data, false);
-        std::vector<uint32_t> dst_data;
-        EnqueueReadBuffer(device->command_queue(), *buffer, dst_data, true);
-        EXPECT_EQ(src_data, dst_data);
+    auto& cq_device = device->command_queue(cq_id);
+    for (int iteration = 0; iteration < k_Iterations; ++iteration) {
+        for (int i = 0; i < k_LoopPerDev; ++i) {
+            EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(
+                mesh_device, cq, dummy_program_config, 24, 12, 15, k_LoopPerDev));
+
+            std::vector<uint32_t> dst_data;
+            if (i & 1) {
+                EnqueueWriteBuffer(cq_device, *buffer, src_data_1, false);
+                EnqueueReadBuffer(cq_device, *buffer, dst_data, true);
+                EXPECT_EQ(src_data_1, dst_data);
+            } else {
+                EnqueueWriteBuffer(cq_device, *dram_buffer, src_data_2, false);
+                EnqueueReadBuffer(cq_device, *dram_buffer, dst_data, true);
+                EXPECT_EQ(src_data_2, dst_data);
+            }
+        }
     }
+
+    // non blocking fast data movement APIs
+    for (int iteration = 0; iteration < k_Iterations; ++iteration) {
+        for (int i = 0; i < k_LoopPerDev; ++i) {
+            EnqueueWriteBuffer(cq_device, *buffer, src_data_1, false);
+        }
+    }
+    std::vector<uint32_t> dst_data;
+    for (int iteration = 0; iteration < k_Iterations; ++iteration) {
+        for (int i = 0; i < k_LoopPerDev; ++i) {
+            EnqueueReadBuffer(cq_device, *buffer, dst_data, false);
+        }
+    }
+
+    Finish(cq);
+    Finish(cq_device);
 }
 
 }  // namespace local_test_functions

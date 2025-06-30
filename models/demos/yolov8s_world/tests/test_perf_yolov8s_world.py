@@ -32,6 +32,7 @@ def get_expected_times(name):
     return base[name]
 
 
+@pytest.mark.skip("Program cache is disabled (#23288)")
 @run_for_wormhole_b0()
 @pytest.mark.models_performance_bare_metal
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 32768}], indirect=True)

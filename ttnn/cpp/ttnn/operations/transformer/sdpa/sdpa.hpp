@@ -21,6 +21,7 @@ struct ExecuteScaledDotProductAttention {
         const std::optional<ttnn::Tensor>& attn_mask = std::nullopt,
         bool is_causal = true,
         std::optional<float> scale = std::nullopt,
+        std::optional<float> attn_logit_softcapping = std::nullopt,
         const std::optional<MemoryConfig>& memory_config = std::nullopt,
         std::optional<SDPAProgramConfig> program_config = std::nullopt,
         std::optional<DeviceComputeKernelConfig> compute_kernel_config = std::nullopt);
@@ -32,6 +33,7 @@ struct ExecuteScaledDotProductAttention {
         const std::optional<ttnn::Tensor>& attn_mask = std::nullopt,
         bool is_causal = true,
         std::optional<float> scale = std::nullopt,
+        std::optional<float> attn_logit_softcapping = std::nullopt,
         const std::optional<MemoryConfig>& memory_config = std::nullopt,
         std::optional<SDPAProgramConfig> program_config = std::nullopt,
         std::optional<DeviceComputeKernelConfig> compute_kernel_config = std::nullopt);

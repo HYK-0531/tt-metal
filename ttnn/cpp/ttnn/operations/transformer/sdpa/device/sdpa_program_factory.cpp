@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <cmath>
+#include <limits>
 
 #include <tt-metalium/buffer.hpp>
 #include <tt-metalium/constants.hpp>
@@ -31,6 +32,7 @@ operation::ProgramWithCallbacks sdpa_multi_core(
     const std::optional<const Tensor>& page_table,
     const std::optional<int64_t>& chunk_start_idx,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     bool is_causal,
     std::size_t q_chunk_size,
     std::size_t k_chunk_size,
@@ -315,11 +317,14 @@ operation::ProgramWithCallbacks sdpa_multi_core(
     class bfloat16 bfloat_identity_scalar(1.0f);
     uint32_t packed_identity_scalar = pack_two_bfloat16_into_uint32({bfloat_identity_scalar, bfloat_identity_scalar});
 
-    union {
+    union FloatUint32 {
         float f;
         uint32_t u;
-    } scale_union;
-    scale_union.f = scale.value_or(1.0f);
+    };
+
+    FloatUint32 scale_union = {.f = scale.value_or(1.0f)};
+    FloatUint32 softcapping_union = {.f = attn_logit_softcapping.value_or(1.0f)};
+    log_info(tt::LogOp, "softcapping_union: {}", softcapping_union.f);
 
     std::vector<uint32_t> reader_compile_time_args = {// interleaved accessor args
                                                       B,
@@ -394,6 +399,7 @@ operation::ProgramWithCallbacks sdpa_multi_core(
         (std::uint32_t)use_padded_mask,
         (uint32_t)is_chunked,
         scale_union.u,
+        softcapping_union.u,
     };
 
     std::map<string, string> defines;
@@ -410,6 +416,13 @@ operation::ProgramWithCallbacks sdpa_multi_core(
         (is_causal && (q_per_core * q_parallel_factor == q_num_chunks) && (q_per_core % 2 == 0));
     if (balanced_q_parallel) {
         defines["BALANCED_Q_PARALLEL"] = "1";
+    }
+    // If attn_logit_softcapping is provided and it's larger than zero
+    if (attn_logit_softcapping.has_value() &&
+        (attn_logit_softcapping.value() > std::numeric_limits<float>::epsilon())) {
+        defines["ATTN_LOGIT_SOFTCAPPING_ENABLED"] = "1";
+    } else {
+        defines["ATTN_LOGIT_SOFTCAPPING_ENABLED"] = "0";
     }
 
     log_debug(tt::LogOp, "BALANCED_Q_PARALLEL: {}", balanced_q_parallel);

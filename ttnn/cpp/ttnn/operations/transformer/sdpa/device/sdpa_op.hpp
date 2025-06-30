@@ -15,6 +15,7 @@ namespace ttnn::operations::transformer {
 
 struct ScaledDotProductAttention {
     const std::optional<float> scale;
+    const std::optional<float> attn_logit_softcapping;
     const tt::tt_metal::MemoryConfig output_mem_config;
     const std::optional<SDPAProgramConfig> program_config;
     const bool is_causal;

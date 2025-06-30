@@ -1468,6 +1468,17 @@ class ModelArgs:
 
         self.state_dict_text_prefix = self._get_text_prefix()
 
+        self.rms_norm_add_unit_offset = False
+
+        self.query_pre_attn_scalar = text_config.get("query_pre_attn_scalar", None)
+        self.attn_logit_softcapping = text_config.get("attn_logit_softcapping", None)
+
+        # Gemma3 specific params
+        if "gemma-3" in self.base_model_name.lower():
+            self.rms_norm_add_unit_offset = True
+            self.mlp_activation_type = ttnn.UnaryOpType.GELU
+            self.attn_logit_softcapping = 50.0
+
     @property
     def use_scaled_rope(self):
         return self.rope_scaling_factor is not None

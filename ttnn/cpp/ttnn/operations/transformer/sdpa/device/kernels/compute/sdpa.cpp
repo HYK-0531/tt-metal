@@ -3,12 +3,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
+#include <bit>
 
 #define REDUCE_OP (PoolType::MAX)
 #define REDUCE_DIM (ReduceDim::REDUCE_ROW)
 
 #include "compute_kernel_api.h"
 #include "compute_common.hpp"
+#include "debug/dprint.h"
 
 namespace NAMESPACE {
 void MAIN {
@@ -42,6 +44,7 @@ void MAIN {
     constexpr uint32_t use_padded_mask = get_compile_time_arg_val(24) == 1;
     constexpr uint32_t is_chunked = get_compile_time_arg_val(25) == 1;
     constexpr uint32_t scale_fp32 = get_compile_time_arg_val(26);
+    constexpr uint32_t softcapping_fp32 = get_compile_time_arg_val(27);
 
     const uint32_t core_id = get_arg_val<uint32_t>(0);
     const uint32_t local_batch_start = get_arg_val<uint32_t>(1);
@@ -138,6 +141,10 @@ void MAIN {
                         qk_subblock_h,
                         qk_subblock_w,
                         true /*transpose*/);
+
+#if ATTN_LOGIT_SOFTCAPPING_ENABLED
+                    softcap_tanh_inplace<softcapping_fp32>(cb_qk_im, qk_chunk_tiles);
+#endif
 
                     /**
                      * Note

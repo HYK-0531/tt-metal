@@ -83,7 +83,7 @@ sfpi_inline vFloat calculate_exponential_body_improved(vFloat val) {
     return out;
 }
 
-template <bool APPROXIMATION_MODE, bool FAST_APPROX, uint32_t scale = 0x3F800000>
+template <bool APPROXIMATION_MODE, bool FAST_APPROX, bool, uint32_t scale = 0x3F800000>
 void exp_init() {
     _init_exponential_<APPROXIMATION_MODE, FAST_APPROX, scale>();
 }

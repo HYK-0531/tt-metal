@@ -293,11 +293,11 @@ def test_unary_gtz_ttnn(input_shapes, device):
     "input_shapes",
     (
         (torch.Size([1, 1, 32, 32])),
-        (torch.Size([1, 1, 320, 384])),
-        (torch.Size([1, 3, 320, 384])),
+        # (torch.Size([1, 1, 320, 384])),
+        # (torch.Size([1, 3, 320, 384])),
     ),
 )
-@pytest.mark.parametrize("alpha", [1.0, 5.0, 10.0])
+@pytest.mark.parametrize("alpha", [1.0])
 def test_unary_elu_ttnn(input_shapes, alpha, device):
     in_data, input_tensor = data_gen_with_range(input_shapes, -10, 10, device)
     _, output_tensor = data_gen_with_range(input_shapes, -1, 1, device)

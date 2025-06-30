@@ -4,11 +4,11 @@
 
 #pragma once
 
-#include "ckernel_sfpu_exp.h"
+// #include "ckernel_sfpu_exp.h"
 #include "ckernel_sfpu_recip.h"
 #include "sfpi.h"
 #include "sfpi_fp16.h"
-#include "ckernel_sfpu_floor.h"
+// #include "ckernel_sfpu_floor.h"
 
 // - exp_hybrid: 2 segments on input with rank 2 polynomial approximation on reduced range
 // - exp_21f: most accurate version (< 1%)
@@ -18,7 +18,7 @@
 // --- 1.4 times slower than `exp`
 // --- register spill when called from some other functions (e.g. `pow` LLK)
 // --- overflow when large inputs, resulting in +inf or (0 for x -> -inf).
-// --> suggested changes by Nathan : sfpu::float_to_int32 performs 2 calls. Switch to 16-bits bfloat16 constants
+// --> suggested changes by Nathan : sfpu::_float_to_int32_ performs 2 calls. Switch to 16-bits bfloat16 constants
 
 namespace ckernel {
 namespace sfpu {
@@ -28,7 +28,7 @@ enum ExpVariant { EXP_ACCURATE_BASE, EXP_ACCURATE_HYBRID0, EXP_APPROX, EXP_APPRO
 static constexpr ExpVariant SELECTED_EXP = EXP_ACCURATE_BASE;
 
 sfpi_inline sfpi::vFloat _sfpu_exp_21f_(sfpi::vFloat val) {
-    sfpi::vInt z = sfpu::float_to_int32(val * sfpi::vFloat(0x00b8aa3b) + sfpi::vFloat(0x3f800000));
+    sfpi::vInt z = sfpu::_float_to_int32_(val * sfpi::vFloat(0x00b8aa3b) + sfpi::vFloat(0x3f800000));
     sfpi::vInt zii = z & 0x7f800000;
     sfpi::vInt zif = z & sfpi::vInt(0x007fffff);  // extra mantissa
 
@@ -36,7 +36,7 @@ sfpi_inline sfpi::vFloat _sfpu_exp_21f_(sfpi::vFloat val) {
     sfpi::vFloat d2 = sfpi::int32_to_float(sfpi::vInt(0xf94ee7) + zif);
     sfpi::vFloat d3 = sfpi::int32_to_float(sfpi::vInt(0x560) + zif);
     d2 = d1 * d2;
-    zif = sfpu::float_to_int32(d2 * d3);
+    zif = sfpu::_float_to_int32_(d2 * d3);
 
     zii |= zif;  // restore exponent
 
@@ -48,12 +48,12 @@ sfpi_inline sfpi::vFloat _sfpu_exp_21f_(sfpi::vFloat val) {
 sfpi_inline sfpi::vFloat _sfpu_exp_21f_alt_(sfpi::vFloat val) {
     // sfpi::vFloat val_debiased = val * sfpi::vConstFloatPrgm2;
     // val_debiased = addexp(val_debiased, 127);
-    // sfpi::vInt z = sfpu::float_to_int32(val_debiased);
+    // sfpi::vInt z = sfpu::_float_to_int32_(val_debiased);
     // return val;
 
     sfpi::vFloat val_debiased = val * sfpi::vConstFloatPrgm2 + sfpi::vFloat(0x3f800000);
     // val_debiased = addexp(val_debiased, 127);
-    sfpi::vInt z = sfpu::float_to_int32(val_debiased);
+    sfpi::vInt z = sfpu::_float_to_int32_(val_debiased);
 
     sfpi::vInt zii = z & 0x7f800000;
     sfpi::vInt zif = z & sfpi::vInt(0x007fffff);  // extra mantissa
@@ -63,7 +63,7 @@ sfpi_inline sfpi::vFloat _sfpu_exp_21f_alt_(sfpi::vFloat val) {
     sfpi::vFloat d2 = sfpi::int32_to_float(sfpi::vInt(0xf94ee7) + zif);
     sfpi::vFloat d3 = sfpi::int32_to_float(sfpi::vInt(0x560) + zif);
     d2 = d1 * d2;
-    zif = sfpu::float_to_int32(d2 * d3);
+    zif = sfpu::_float_to_int32_(d2 * d3);
 
     zii |= zif;  // restore exponent
 
@@ -101,7 +101,7 @@ sfpi_inline sfpi::vFloat _sfpu_exp_hybrid_(sfpi::vFloat val) {
     return val;
 }
 
-sfpi_inline sfpi::vFloat _sfpu_exp_(sfpi::vFloat val) {
+sfpi_inline sfpi::vFloat _sfpu_custom_exp_(sfpi::vFloat val) {
     // If exponent is > -1 extract it and replace with -1
     sfpi::vInt exp = exexp(val);
     v_if(exp >= 0) { val = setexp(val, 126); }
@@ -134,7 +134,7 @@ sfpi_inline sfpi::vFloat _sfpu_exp_(sfpi::vFloat val) {
 }
 
 template <bool APPROXIMATION_MODE>
-sfpi_inline sfpi::vFloat _calculate_exponential_body_(sfpi::vFloat in) {
+sfpi_inline sfpi::vFloat _calculate_custom_exponential_body_(sfpi::vFloat in) {
     sfpi::vFloat out;
 
     if constexpr (APPROXIMATION_MODE) {
@@ -156,7 +156,7 @@ sfpi_inline sfpi::vFloat _calculate_exponential_body_(sfpi::vFloat in) {
         out = sfpi::reinterpret<sfpi::vFloat>(tmp << (10 - FRAC_BITS));
     } else {
         // Force sign to 0 (make number positive)
-        out = _sfpu_exp_(sfpi::setsgn(in, 0));
+        out = _sfpu_custom_exp_(sfpi::setsgn(in, 0));
 
         v_if(in < 0) { out = _sfpu_reciprocal_(out); }
         v_endif;
@@ -165,7 +165,7 @@ sfpi_inline sfpi::vFloat _calculate_exponential_body_(sfpi::vFloat in) {
     return out;
 }
 
-template <bool APPROXIMATION_MODE, bool SCALE_EN, int ITERATIONS, bool FAST_APPROX = true>
+template <bool APPROXIMATION_MODE, bool SCALE_EN, int ITERATIONS = 8, bool FAST_APPROX = true>
 void calculate_custom_exponential(const int iterations, uint16_t exp_base_scale_factor = 0) {
     if constexpr (FAST_APPROX && APPROXIMATION_MODE) {
         // Sanitize the input values by loading from DEST, comparing against the value -88.5, and if the input value is
@@ -315,7 +315,7 @@ void calculate_custom_exponential(const int iterations, uint16_t exp_base_scale_
 
                 // Force sign to 0 (make number positive)
                 if constexpr (SELECTED_EXP == ExpVariant::EXP_ACCURATE_BASE) {
-                    result = _sfpu_exp_(sfpi::setsgn(val, 0));
+                    result = _sfpu_custom_exp_(sfpi::setsgn(val, 0));
                 } else if constexpr (SELECTED_EXP == ExpVariant::EXP_ACCURATE_HYBRID0) {
                     result = _sfpu_exp_hybrid_(sfpi::setsgn(val, 0));
                 }

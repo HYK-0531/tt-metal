@@ -18,12 +18,12 @@ assert not (LINE_RS or LINE_AG) or is_RING_6U, "LINE_RS and LINE_AG supported on
 
 # AG KEYS THAT SHOULD USE LINE WHEN RING_AG IS 1
 USE_LINE_AG = {
-    "QKV",
+    # "QKV",
     # "WO",
     # "FF1",
     # "FF3",
     # "FF2",
-    "LAYERNORM",
+    # "LAYERNORM",
 }
 
 
@@ -1019,10 +1019,10 @@ class TT_CCL:
 
         # ttnn.synchronize_device(self.mesh_device, sub_device_ids=[self.worker_sub_device_id])
         num_links = 4
-        # print(f"+ !! RING AG: {buffer_key} - {input_tensor_mesh.shape} {num_links} links ")
+        print(f"+ !! RING AG: {buffer_key} - {input_tensor_mesh.shape} {num_links} links ")
         ttnn_tensor_out = ttnn.experimental.all_gather_async(
             input_tensor=input_tensor_mesh,
-            persistent_intermediate_buffer=persistent_buffers["intermediate"],
+            # persistent_intermediate_buffer=persistent_buffers["intermediate"],
             persistent_output_buffer=persistent_buffers["output"],
             dim=dim,
             multi_device_global_semaphore=self.gather_semaphore_handles[cluster_axis][self.gather_idx[cluster_axis]],
@@ -1040,7 +1040,9 @@ class TT_CCL:
         # ttnn.synchronize_device(self.mesh_device, sub_device_ids=[self.worker_sub_device_id])
         return ttnn_tensor_out
 
-    def all_gather_concat(self, input_tensor_mesh, dim, cluster_axis, memory_config, num_links=1, num_heads=8):
+    def all_gather_concat(
+        self, input_tensor_mesh, dim, cluster_axis, memory_config, num_links=1, num_heads=8, use_noc1_only=False
+    ):
         ttnn_tensor_out = ttnn.experimental.all_gather_concat(
             input_tensor_mesh,
             self.all_gather_concat_inter_tensor[0],

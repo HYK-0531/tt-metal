@@ -94,10 +94,10 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async(
     std::optional<IDevice*> forward_device,
     std::optional<IDevice*> backward_device,
     Tensor& output_tensor,
-    uint32_t dim,
-    uint32_t num_links,
-    uint32_t ring_size,
-    uint32_t ring_index,
+    const uint32_t dim,
+    const uint32_t num_links,
+    const uint32_t ring_size,
+    const uint32_t ring_index,
     ccl::Topology topology,
     const std::vector<GlobalSemaphore>& semaphore,
     const std::optional<tt::tt_metal::SubDeviceId>& sub_device_id,
@@ -111,15 +111,15 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
     std::optional<IDevice*> forward_device,
     std::optional<IDevice*> backward_device,
     Tensor& output_tensor,
-    uint32_t dim,
-    uint32_t num_links,
-    uint32_t ring_size,
-    uint32_t ring_index,
+    const uint32_t dim,
+    const uint32_t num_links,
+    const uint32_t ring_size,
+    const uint32_t ring_index,
     ccl::Topology topology,
     const std::vector<GlobalSemaphore>& semaphore,
     const std::optional<tt::tt_metal::SubDeviceId>& sub_device_id,
     std::optional<experimental::ccl::ReduceScatterFusedOpSignaler>& fused_op_signaler,
-    CoreCoord core_grid_offset = CoreCoord(0, 0));
+    const CoreCoord core_grid_offset = CoreCoord(0, 0));
 
 namespace operations {
 namespace experimental {
@@ -129,11 +129,11 @@ Tensor reduce_scatter_minimal_async(
     const Tensor& input_tensor,
     Tensor& persistent_intermediate_buffer,
     Tensor& persistent_output_buffer,
-    uint32_t dim,
+    const uint32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
-    uint32_t num_links = 1,
+    const uint32_t num_links = 1,
     const std::optional<MemoryConfig>& memory_config = std::nullopt,
-    ttnn::ccl::Topology topology = ttnn::ccl::Topology::Ring,
+    const ttnn::ccl::Topology topology = ttnn::ccl::Topology::Ring,
     std::optional<tt::tt_metal::SubDeviceId> sub_device_id = std::nullopt,
     std::optional<uint32_t> cluster_axis = std::nullopt);
 

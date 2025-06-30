@@ -202,7 +202,7 @@ def run_distilbert_question_and_answering_inference_squad_v2(
     attention_mask = True
     token_type_ids = False
     inputs_squadv2 = squadv2_1K_samples_input(tokenizer, sequence_size, attention_mask, token_type_ids, batch_size)
-    squad_metric = evaluate.load("squad_v2")
+    squad_metric = evaluate.load("/mnt/MLPerf/tt_dnn-models/squad_v2")
     position_ids = torch.arange(config.max_position_embeddings).expand((1, -1))
     position_ids = torch.cat([position_ids] * batch_size, dim=0)
 

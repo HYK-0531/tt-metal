@@ -7,6 +7,11 @@ if [[ -z "$TT_METAL_HOME" ]]; then
   exit 1
 fi
 
+run_sentencebert() {
+    local test_marker=$2
+    env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/demos/sentence_bert/tests -m $test_marker
+}
+
 run_perf_models_other() {
     local tt_arch=$1
     local test_marker=$2

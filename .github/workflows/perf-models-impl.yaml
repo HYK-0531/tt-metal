@@ -21,14 +21,18 @@ jobs:
       fail-fast: false
       matrix:
         test-info: [
-          {name: "N300 WH B0", arch: wormhole_b0, runs-on: ["N300", "pipeline-perf", "bare-metal", "in-service"], machine-type: "bare_metal"},
+          {name: "sentence_bert", arch: wormhole_b0, cmd: run_sentencebert},
         ]
         model-type: [llm_javelin, cnn_javelin, other]
     name: "${{ matrix.model-type }} ${{ matrix.test-info.name }}"
     defaults:
       run:
         shell: bash
-    runs-on: ${{ matrix.test-info.runs-on }}
+    runs-on:
+      - in-service
+      - N300
+      - pipeline-perf
+      - bare-metal
     steps:
       - name: ⬇️ Checkout
         uses: actions/checkout@v4
@@ -64,7 +68,10 @@ jobs:
             -e GTEST_OUTPUT=xml:generated/test_reports/
             -e GITHUB_ACTIONS=true
           install_wheel: true
-          run_args: ./tests/scripts/run_tests.sh --tt-arch ${{ matrix.test-info.arch }} --pipeline-type ${{ matrix.model-type }}_models_performance_${{ matrix.test-info.machine-type }}
+          run_args: |
+            source ${{ github.workspace }}/tests/scripts/single_card/run_single_card_demo_tests.sh ${{ matrix.test-info.arch }} ${{ matrix.model-type }}
+            ${{ matrix.test-info.cmd }}
+      # ./tests/scripts/run_tests.sh --tt-arch ${{ matrix.test-info.arch }} --pipeline-type ${{ matrix.model-type }}_models_performance_bare_metal
       # TODO: Fix the pipeline before enabling notifications.
       #- uses: tenstorrent/tt-metal/.github/actions/slack-report@main
       #  if: ${{ failure() }}
@@ -83,7 +90,7 @@ jobs:
         uses: actions/upload-artifact@v4
         timeout-minutes: 10
         with:
-          name: perf-report-csv-${{ matrix.model-type }}-${{ matrix.test-info.arch }}-${{ matrix.test-info.machine-type }}
+          name: perf-report-csv-${{ matrix.model-type }}-${{ matrix.test-info.arch }}-bare_metal
           path: "${{ steps.check-perf-report.outputs.perf_report_filename }}"
       - uses: tenstorrent/tt-metal/.github/actions/upload-artifact-with-job-uuid@main
         timeout-minutes: 10

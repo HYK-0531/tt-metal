@@ -86,6 +86,9 @@ struct WorkerToFabricEdmSenderImpl {
 
         auto worker_teardown_sem_addr =
             reinterpret_cast<volatile uint32_t* const>(get_semaphore<my_core_type>(get_arg_val<uint32_t>(arg_idx++)));
+        DPRINT << "WorkerToFabricEdmSenderImpl build from args constructor worker_teardown_sem_addr "
+               << (uint32_t)worker_teardown_sem_addr << " value "
+               << *reinterpret_cast<volatile tt_l1_ptr uint32_t*>(worker_teardown_sem_addr) << ENDL();
         const auto worker_buffer_index_semaphore_addr = get_semaphore<my_core_type>(get_arg_val<uint32_t>(arg_idx++));
         return WorkerToFabricEdmSenderImpl(
             is_persistent_fabric,
@@ -150,6 +153,8 @@ struct WorkerToFabricEdmSenderImpl {
         this->edm_copy_of_wr_counter_addr = connected_to_persistent_fabric
                                                 ? edm_buffer_index_id
                                                 : get_semaphore<my_core_type>(edm_buffer_index_id);
+        DPRINT << "is_persistent_fabric " << (uint32_t)connected_to_persistent_fabric << " edm_buffer_index_id "
+               << (uint32_t)edm_buffer_index_id << ENDL();
         this->from_remote_buffer_free_slots_ptr = from_remote_buffer_free_slots_ptr;
         this->worker_teardown_addr = worker_teardown_addr;
         this->edm_buffer_base_addr = edm_buffer_base_addr;
@@ -227,9 +232,14 @@ struct WorkerToFabricEdmSenderImpl {
     FORCE_INLINE bool edm_has_space_for_packet() const {
         invalidate_l1_cache();
         if constexpr (!I_USE_STREAM_REG_FOR_CREDIT_RECEIVE) {
+            // DPRINT << "buffer_slot_write_counter.counter " << this->buffer_slot_write_counter.counter << "
+            // from_remote_buffer_free_slots_ptr " << *this->from_remote_buffer_free_slots_ptr << "
+            // num_buffers_per_channel " << (uint32_t)this->num_buffers_per_channel << ENDL();
             return (this->buffer_slot_write_counter.counter - *this->from_remote_buffer_free_slots_ptr) <
                    this->num_buffers_per_channel;
         } else {
+            // DPRINT << "edm_buffer_local_free_slots_read_ptr " << *this->edm_buffer_local_free_slots_read_ptr <<
+            // ENDL();
             return *this->edm_buffer_local_free_slots_read_ptr != 0;
         }
     }
@@ -301,6 +311,7 @@ struct WorkerToFabricEdmSenderImpl {
             reinterpret_cast<tt::tt_fabric::EDMChannelWorkerLocationInfo*>(edm_worker_location_info_addr);
         if constexpr (!I_USE_STREAM_REG_FOR_CREDIT_RECEIVE) {
             const uint64_t remote_buffer_index_addr = dest_noc_addr_coord_only | edm_copy_of_wr_counter_addr;
+            DPRINT << "edm_copy_of_wr_counter_addr " << (uint32_t)edm_copy_of_wr_counter_addr << ENDL();
             // piggy back off of worker_teardown_addr just to temporarily store the read-back write pointer
             // then once we get it we will use that address for the teardown ack
             // Note this is safe because only the worker can initiate teardown (and it will not do it until)
@@ -372,6 +383,7 @@ struct WorkerToFabricEdmSenderImpl {
         // As EDM will potentially increment the register as well
         if constexpr (!I_USE_STREAM_REG_FOR_CREDIT_RECEIVE) {
             this->buffer_slot_write_counter.reset();
+            DPRINT << "open_finish: worker_teardown_addr " << *this->worker_teardown_addr << ENDL();
             this->buffer_slot_write_counter.counter = *this->worker_teardown_addr;
             this->buffer_slot_write_counter.index = BufferIndex{static_cast<uint8_t>(this->buffer_slot_write_counter.counter % static_cast<uint32_t>(this->num_buffers_per_channel))};
             this->buffer_slot_index = this->buffer_slot_write_counter.get_buffer_index();

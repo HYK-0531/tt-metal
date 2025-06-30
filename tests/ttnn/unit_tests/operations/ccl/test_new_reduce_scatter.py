@@ -139,17 +139,24 @@ def run_reduce_scatter_impl(
 
     if enable_trace:
         # Compile the op
+        logger.info(f"Compiling Op")
         for i in range(num_iters):
             tt_reduce_scatter_output_tensor = run_op(i)
+
         logger.info(f"Done compiling Op")
 
+        # import time
+        # time.sleep(10)
+
         # Capture the trace
+        logger.info(f"Capturing trace")
         trace_id = ttnn.begin_trace_capture(t3k_mesh_device, cq_id=0)
         for i in range(num_iters):
             tt_reduce_scatter_output_tensor = run_op(i)
             tt_reduce_scatter_output_list.append(tt_reduce_scatter_output_tensor)
         ttnn.end_trace_capture(t3k_mesh_device, trace_id, cq_id=0)
         logger.info(f"Done capturing trace")
+        ttnn.synchronize_device(t3k_mesh_device, sub_device_ids=sub_device_stall_group)
 
         # Execute trace
         ttnn.execute_trace(t3k_mesh_device, trace_id, cq_id=0, blocking=False)
@@ -162,12 +169,8 @@ def run_reduce_scatter_impl(
             tt_reduce_scatter_output_tensor = run_op(i)
             tt_reduce_scatter_output_list.append(tt_reduce_scatter_output_tensor)
 
-            logger.info(f"Waiting for op")
-            ttnn.synchronize_device(t3k_mesh_device, sub_device_ids=sub_device_stall_group)
-            logger.info(f"Done op")
-
-            logger.info(f"Done iteration {i}")
-
+    ttnn.synchronize_device(t3k_mesh_device, sub_device_ids=sub_device_stall_group)
+    logger.info(f"Done synchronizing devices")
     for i in range(num_iters):
         tt_rs_out_tensor = tt_reduce_scatter_output_list[i]
         torch_rs_out_tensor = torch_reduce_scatter_output_list[i]
@@ -200,8 +203,10 @@ def run_reduce_scatter_impl(
         (8, 1, [4, 1, 1024, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
         (8, 1, [2, 1, 2048, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
         (8, 1, [1, 1, 4096, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
+        (8, 1, [1, 1, 1024, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
+        (8, 1, [1, 1, 352, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
     ],
-    ids=["batch_8", "batch_4", "batch_2", "batch_1"],
+    ids=["batch_8", "batch_4", "batch_2", "batch_1", "sd_spatial", "sd_prompt"],
 )
 @pytest.mark.parametrize(
     "mem_config_input, mem_config_rs",
@@ -216,7 +221,7 @@ def run_reduce_scatter_impl(
     "enable_trace, num_iters",
     [
         (True, 10),
-        (False, 1),
+        (False, 10),
     ],
     ids=["perf", "check"],
 )

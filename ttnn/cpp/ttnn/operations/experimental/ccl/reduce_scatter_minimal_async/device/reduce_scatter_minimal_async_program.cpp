@@ -161,14 +161,14 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
     uint32_t core_id = 0;
     for (uint32_t link = 0; link < num_links; link++) {
         for (uint32_t dir = 0; dir < num_directions_per_link; dir++) {
-            const auto& mux_core = all_cores[core_id++];
+            const auto& mux_core = all_cores.at(core_id++);
             if (dir) {
                 mux_forward_core_ranges.insert(CoreRange(mux_core));
             } else {
                 mux_backward_core_ranges.insert(CoreRange(mux_core));
             }
             for (uint32_t worker = 0; worker < num_workers_per_direction; worker++) {
-                const auto& worker_core = all_cores[core_id++];
+                const auto& worker_core = all_cores.at(core_id++);
                 if (dir) {
                     sender_forward_core_ranges.insert(CoreRange(worker_core));
                 } else {
@@ -314,7 +314,7 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
 
             for (const auto& [start_address, num_bytes] : addresses_to_clear) {
                 std::vector<uint32_t> zero_vec((num_bytes / sizeof(uint32_t)), 0);
-                tt::tt_metal::detail::WriteToDeviceL1(sender_device, mux_logical_core, start_address, zero_vec);
+                // tt::tt_metal::detail::WriteToDeviceL1(sender_device, mux_logical_core, start_address, zero_vec);
             }
 
             CoreCoord drain_sync_core;

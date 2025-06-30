@@ -19,8 +19,11 @@ FORCE_INLINE bool got_immediate_termination_signal(volatile tt::tt_fabric::Termi
     // mailboxes defined in tt_metal/hw/inc/ethernet/tunneling.h
     uint32_t launch_msg_rd_ptr = *GET_MAILBOX_ADDRESS_DEV(launch_msg_rd_ptr);
     tt_l1_ptr launch_msg_t* const launch_msg = GET_MAILBOX_ADDRESS_DEV(launch[launch_msg_rd_ptr]);
-    return (*termination_signal_ptr == tt::tt_fabric::TerminationSignal::IMMEDIATELY_TERMINATE) ||
-           launch_msg->kernel_config.exit_erisc_kernel;
+    bool got_termination_signal =
+        (*termination_signal_ptr == tt::tt_fabric::TerminationSignal::IMMEDIATELY_TERMINATE) ||
+        launch_msg->kernel_config.exit_erisc_kernel;
+    // DPRINT << "GOT TERMINATION SIGNAL: " << (uint32_t)got_termination_signal << ENDL();
+    return got_termination_signal;
 }
 
 FORCE_INLINE bool connect_is_requested(uint32_t cached) {

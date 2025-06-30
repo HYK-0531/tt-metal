@@ -1,9 +1,10 @@
 # SPDX-FileCopyrightText: © 2023 Tenstorrent Inc.
 
 # SPDX-License-Identifier: Apache-2.0
-import torch
 
 import ttnn
+
+rs_stuff = set()
 
 
 # def tt_all_reduce(input_tensor, mesh_device, cluster_axis=0, dim=0, num_links=2, memory_config=None, sharded=False):
@@ -21,6 +22,7 @@ def tt_all_reduce(
     use_composite=False,
     multi_device_global_semaphore_handles=None,
     worker_sub_device_id=None,
+    reduce_scatter_intermediate_buffers=None,
 ):
     # N150
     if list(mesh_device.shape) == [1, 1] or (cluster_axis == 1 and 1 in list(mesh_device.shape)):
@@ -35,63 +37,43 @@ def tt_all_reduce(
 
     # N300 and T3K: reduce_scatter
     if 1 in list(mesh_device.shape):
-        if input_tensor.is_sharded() and not sharded:
-            input_tensor_sharded = input_tensor
-            input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.L1_MEMORY_CONFIG)
-            input_tensor_sharded.deallocate(True)
-
         # print("start ccl 43")
-        use_reduce_scatter_minimal_async_interleaved = not input_tensor.is_sharded()
-        if use_reduce_scatter_minimal_async_interleaved:
-            rs_input_dtype = input_tensor.dtype
-            rs_input_shape = list(input_tensor.shape)
+        input_is_sharded = input_tensor.is_sharded()
+        target_memory_config = memory_config
+        rs_memory_config = memory_config
 
-            rs_num_batches = rs_input_shape[0]
-            single_batch_input_shape = rs_input_shape[:]
-            single_batch_input_shape[2] //= rs_num_batches
-            persistent_intermediate_buffer = ttnn.from_torch(
-                torch.zeros(single_batch_input_shape),
-                device=mesh_device,
-                layout=ttnn.TILE_LAYOUT,
-                dtype=rs_input_dtype,
-                memory_config=memory_config,
-                mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
-            )
+        # TODO: (GR) Clean up this logic
+        if input_is_sharded and not sharded:
+            input_tensor_sharded = input_tensor
+            input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.DRAM_MEMORY_CONFIG)
+            input_tensor_sharded.deallocate(True)
+        elif input_is_sharded and sharded:
+            rs_memory_config = ttnn.L1_MEMORY_CONFIG
+            input_tensor = ttnn.to_memory_config(input_tensor, rs_memory_config)
 
-            rs_output_shape = rs_input_shape[:]
-            rs_output_shape[3] //= mesh_device.get_num_devices()
-            persistent_output_buffer = ttnn.from_torch(
-                torch.zeros(rs_output_shape),
-                device=mesh_device,
-                layout=ttnn.TILE_LAYOUT,
-                dtype=rs_input_dtype,
-                memory_config=memory_config,
-                mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
-            )
+        rs_input_dtype = input_tensor.dtype
+        rs_input_shape = list(input_tensor.shape)
+        rs_num_batches = rs_input_shape[0]
+        single_batch_input_shape = rs_input_shape[:]
+        single_batch_input_shape[2] //= rs_num_batches
+        persistent_intermediate_buffer = reduce_scatter_intermediate_buffers[
+            (tuple(single_batch_input_shape), rs_input_dtype)
+        ]
 
-            reduced = ttnn.experimental.reduce_scatter_minimal_async(
-                input_tensor,
-                persistent_intermediate_buffer=persistent_intermediate_buffer,
-                persistent_output_buffer=persistent_output_buffer,
-                dim=dim,
-                multi_device_global_semaphore=multi_device_global_semaphore_handles[:3],
-                num_links=num_reduce_scatter_links,
-                memory_config=memory_config,
-                topology=topology,
-                subdevice_id=worker_sub_device_id,
-            )
-        else:
-            reduced = ttnn.experimental.reduce_scatter_async(
-                input_tensor,
-                dim=dim,
-                from_remote_multi_device_global_semaphore=multi_device_global_semaphore_handles[0],
-                to_remote_multi_device_global_semaphore=multi_device_global_semaphore_handles[1],
-                math_op=ttnn.ReduceType.Sum,
-                num_links=num_reduce_scatter_links,
-                memory_config=memory_config,
-                topology=topology,
-                subdevice_id=worker_sub_device_id,
-            )
+        reduced = ttnn.experimental.reduce_scatter_minimal_async(
+            input_tensor,
+            persistent_intermediate_buffer=persistent_intermediate_buffer,
+            dim=dim,
+            multi_device_global_semaphore=multi_device_global_semaphore_handles[:3],
+            num_links=num_reduce_scatter_links,
+            memory_config=rs_memory_config,
+            topology=topology,
+            subdevice_id=worker_sub_device_id,
+        )
+
+        if input_is_sharded and sharded:
+            reduced = ttnn.to_memory_config(reduced, target_memory_config)
+
         # print("end ccl 43")
 
         input_tensor.deallocate(True)

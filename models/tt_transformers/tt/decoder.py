@@ -24,6 +24,7 @@ class TransformerBlock(LightweightModule):
         use_paged_kv_cache=False,
         multi_device_global_semaphore_handles=None,
         worker_sub_device_id=None,
+        reduce_scatter_intermediate_buffers=None,
     ):
         super().__init__()
 
@@ -55,6 +56,7 @@ class TransformerBlock(LightweightModule):
             use_paged_kv_cache=use_paged_kv_cache,
             multi_device_global_semaphore_handles=multi_device_global_semaphore_handles,
             worker_sub_device_id=worker_sub_device_id,
+            reduce_scatter_intermediate_buffers=reduce_scatter_intermediate_buffers,
         )
         self.feed_forward = MLP(
             mesh_device=mesh_device,
@@ -66,6 +68,7 @@ class TransformerBlock(LightweightModule):
             model_config=self.model_config,
             multi_device_global_semaphore_handles=multi_device_global_semaphore_handles,
             worker_sub_device_id=worker_sub_device_id,
+            reduce_scatter_intermediate_buffers=reduce_scatter_intermediate_buffers,
         )
         self.attention_norm = DistributedNorm(
             RMSNorm(
@@ -83,11 +86,13 @@ class TransformerBlock(LightweightModule):
                 ccl_topology=self.args.ccl_topology(),
                 multi_device_global_semaphore_handles=multi_device_global_semaphore_handles,
                 worker_sub_device_id=worker_sub_device_id,
+                reduce_scatter_intermediate_buffers=reduce_scatter_intermediate_buffers,
             ),
             args,
             TG=args.is_galaxy,
             multi_device_global_semaphore_handles=multi_device_global_semaphore_handles,
             worker_sub_device_id=worker_sub_device_id,
+            reduce_scatter_intermediate_buffers=reduce_scatter_intermediate_buffers,
         )
         self.ff_norm = DistributedNorm(
             RMSNorm(
@@ -105,11 +110,13 @@ class TransformerBlock(LightweightModule):
                 ccl_topology=self.args.ccl_topology(),
                 multi_device_global_semaphore_handles=multi_device_global_semaphore_handles,
                 worker_sub_device_id=worker_sub_device_id,
+                reduce_scatter_intermediate_buffers=reduce_scatter_intermediate_buffers,
             ),
             args,
             TG=args.is_galaxy,
             multi_device_global_semaphore_handles=multi_device_global_semaphore_handles,
             worker_sub_device_id=worker_sub_device_id,
+            reduce_scatter_intermediate_buffers=reduce_scatter_intermediate_buffers,
         )
 
     def forward(

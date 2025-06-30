@@ -24,6 +24,7 @@ class MLP(LightweightModule):
         state_dict_prefix=None,
         multi_device_global_semaphore_handles=None,
         worker_sub_device_id=None,
+        reduce_scatter_intermediate_buffers=None,
     ):
         super().__init__()
 
@@ -41,6 +42,7 @@ class MLP(LightweightModule):
 
         self.multi_device_global_semaphore_handles = multi_device_global_semaphore_handles
         self.worker_sub_device_id = worker_sub_device_id
+        self.reduce_scatter_intermediate_buffers = reduce_scatter_intermediate_buffers
 
         if args.dummy_weights:
             cache_name = lambda _: None
@@ -249,6 +251,7 @@ class MLP(LightweightModule):
             topology=self.args.ccl_topology(),
             multi_device_global_semaphore_handles=self.multi_device_global_semaphore_handles,
             worker_sub_device_id=self.worker_sub_device_id,
+            reduce_scatter_intermediate_buffers=self.reduce_scatter_intermediate_buffers,
         )
 
         # Ensure dim 0 and 1 are 1

@@ -61,6 +61,8 @@ class Transformer(LightweightModule):
         self.mesh_device.load_sub_device_manager(self.sub_device_manager)
         self.mesh_device.set_sub_device_stall_group(self.sub_device_stall_group)
 
+        self.reduce_scatter_intermediate_buffers = self.get_reduce_scatter_intermediate_buffers()
+
         self.persistent_output_buffer = ttnn.from_torch(
             torch.zeros([1, 1, 32, 152064]),
             device=self.mesh_device,
@@ -102,6 +104,7 @@ class Transformer(LightweightModule):
                 use_paged_kv_cache=use_paged_kv_cache,
                 multi_device_global_semaphore_handles=self.multi_device_global_semaphore_handles,
                 worker_sub_device_id=self.worker_sub_device_id,
+                reduce_scatter_intermediate_buffers=self.reduce_scatter_intermediate_buffers,
             )
             for i in tqdm(range(self.n_layers))
         ]
@@ -121,11 +124,13 @@ class Transformer(LightweightModule):
                 ccl_topology=self.args.ccl_topology(),
                 multi_device_global_semaphore_handles=self.multi_device_global_semaphore_handles,
                 worker_sub_device_id=self.worker_sub_device_id,
+                reduce_scatter_intermediate_buffers=self.reduce_scatter_intermediate_buffers,
             ),
             args,
             args.is_galaxy,
             multi_device_global_semaphore_handles=self.multi_device_global_semaphore_handles,
             worker_sub_device_id=self.worker_sub_device_id,
+            reduce_scatter_intermediate_buffers=self.reduce_scatter_intermediate_buffers,
         )
 
         self.lm_head = LMHead(
@@ -137,6 +142,66 @@ class Transformer(LightweightModule):
             weight_cache_path=weight_cache_path,
             max_columns_per_device=self.args.max_columns_per_device_lm_head,
         )
+
+    def get_reduce_scatter_intermediate_buffers(self):
+        persistent_buffers = {}
+
+        # Note: It's fine for the intermediate buffer to always be L1, only the input and output
+        # buffers have to match memory_configs
+
+        # Decode
+        tt_buffer = ttnn.from_torch(
+            torch.zeros((1, 1, 32, 5120)),
+            device=self.mesh_device,
+            layout=ttnn.TILE_LAYOUT,
+            dtype=ttnn.bfloat16,
+            memory_config=ttnn.L1_MEMORY_CONFIG,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+        )
+        persistent_buffers[((1, 1, 32, 5120), ttnn.bfloat16)] = tt_buffer
+
+        # Prefill
+        tt_buffer = ttnn.from_torch(
+            torch.zeros((1, 1, 128, 5120)),
+            device=self.mesh_device,
+            layout=ttnn.TILE_LAYOUT,
+            dtype=ttnn.bfloat8_b,
+            memory_config=ttnn.L1_MEMORY_CONFIG,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+        )
+        persistent_buffers[((1, 1, 128, 5120), ttnn.bfloat8_b)] = tt_buffer
+
+        tt_buffer = ttnn.from_torch(
+            torch.zeros((1, 1, 128, 5120)),
+            device=self.mesh_device,
+            layout=ttnn.TILE_LAYOUT,
+            dtype=ttnn.bfloat16,
+            memory_config=ttnn.L1_MEMORY_CONFIG,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+        )
+        persistent_buffers[((1, 1, 128, 5120), ttnn.bfloat16)] = tt_buffer
+
+        tt_buffer = ttnn.from_torch(
+            torch.zeros((1, 1, 256, 5120)),
+            device=self.mesh_device,
+            layout=ttnn.TILE_LAYOUT,
+            dtype=ttnn.bfloat8_b,
+            memory_config=ttnn.L1_MEMORY_CONFIG,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+        )
+        persistent_buffers[((1, 1, 256, 5120), ttnn.bfloat8_b)] = tt_buffer
+
+        tt_buffer = ttnn.from_torch(
+            torch.zeros((1, 1, 256, 5120)),
+            device=self.mesh_device,
+            layout=ttnn.TILE_LAYOUT,
+            dtype=ttnn.bfloat16,
+            memory_config=ttnn.L1_MEMORY_CONFIG,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+        )
+        persistent_buffers[((1, 1, 256, 5120), ttnn.bfloat16)] = tt_buffer
+
+        return persistent_buffers
 
     def prepare_inputs_prefill(self, tokens, start_pos=0, page_table=None, chunk_page_table=None):
         """
@@ -366,44 +431,27 @@ class Transformer(LightweightModule):
                 )
             else:
                 # print("start model 359")
-                input_mem_cfg = tt_logits.memory_config()
-                use_all_gather_async_minimal_interleaved = (
-                    not tt_logits.is_sharded() and tt_logits.layout == ttnn.TILE_LAYOUT
+                input_is_sharded = tt_logits.is_sharded()
+                target_memory_config = tt_logits.memory_config()
+                ag_memory_config = tt_logits.memory_config()
+
+                if input_is_sharded:
+                    ag_memory_config = ttnn.L1_MEMORY_CONFIG
+                    tt_logits = ttnn.to_memory_config(tt_logits, ag_memory_config)
+
+                tt_logits = ttnn.experimental.all_gather_async(
+                    tt_logits,
+                    dim=3,
+                    multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
+                    num_links=1,
+                    memory_config=ag_memory_config,
+                    topology=self.args.ccl_topology(),
+                    subdevice_id=self.worker_sub_device_id,
                 )
-                if use_all_gather_async_minimal_interleaved:
-                    ag_input_dtype = tt_logits.dtype
-                    ag_output_shape = list(tt_logits.shape)
-                    ag_output_shape[3] *= self.mesh_device.get_num_devices()
 
-                    # persistent_output_buffer = ttnn.from_torch(
-                    #     torch.zeros(ag_output_shape),
-                    #     device=self.mesh_device,
-                    #     layout=ttnn.TILE_LAYOUT,
-                    #     dtype=ag_input_dtype,
-                    #     memory_config=input_mem_cfg,
-                    #     mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
-                    # )
+                if input_is_sharded:
+                    tt_logits = ttnn.to_memory_config(tt_logits, target_memory_config)
 
-                    tt_logits = ttnn.experimental.all_gather_async(
-                        tt_logits,
-                        persistent_output_buffer=self.persistent_output_buffer,
-                        dim=3,
-                        multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
-                        num_links=1,
-                        memory_config=input_mem_cfg,
-                        topology=self.args.ccl_topology(),
-                        subdevice_id=self.worker_sub_device_id,
-                    )
-                else:
-                    tt_logits = ttnn.experimental.all_gather_async(
-                        tt_logits,
-                        dim=3,
-                        multi_device_global_semaphore=self.multi_device_global_semaphore_handles[0],
-                        num_links=1,
-                        memory_config=input_mem_cfg,
-                        topology=self.args.ccl_topology(),
-                        subdevice_id=self.worker_sub_device_id,
-                    )
                 # print("end model 359")
 
         tt_logits = ttnn.untilize(tt_logits, use_multicore=True)

@@ -27,6 +27,7 @@ class Attention(LightweightModule):
         use_paged_kv_cache=False,
         multi_device_global_semaphore_handles=None,
         worker_sub_device_id=None,
+        reduce_scatter_intermediate_buffers=None,
     ):
         super().__init__()
 
@@ -55,6 +56,7 @@ class Attention(LightweightModule):
 
         self.multi_device_global_semaphore_handles = multi_device_global_semaphore_handles
         self.worker_sub_device_id = worker_sub_device_id
+        self.reduce_scatter_intermediate_buffers = reduce_scatter_intermediate_buffers
 
         self.n_local_heads = self.n_heads // self.num_devices_per_group
         self.n_local_kv_heads = self.n_kv_heads // self.num_devices_per_group
@@ -602,6 +604,7 @@ class Attention(LightweightModule):
                 topology=self.ccl_topology,
                 multi_device_global_semaphore_handles=self.multi_device_global_semaphore_handles,
                 worker_sub_device_id=self.worker_sub_device_id,
+                reduce_scatter_intermediate_buffers=self.reduce_scatter_intermediate_buffers,
                 memory_config=(
                     (
                         self.model_config["SELF_OUT_REDUCE_SCATTER_MEMCFG"]
@@ -822,43 +825,17 @@ class Attention(LightweightModule):
         # Non fused All Gather Matmul
         if self.use_fused_all_gather_matmul:  # is true for Ring topology
             # print("start attention 824")
-            use_all_gather_async_minimal_interleaved = (
-                not attn_output_11SH.is_sharded() and attn_output_11SH.layout == ttnn.TILE_LAYOUT
+
+            attn_output_11SH = ttnn.experimental.all_gather_async(
+                attn_output_11SH,
+                dim=3,
+                multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
+                num_links=1,
+                topology=self.ccl_topology,
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                subdevice_id=self.worker_sub_device_id,
             )
-            if use_all_gather_async_minimal_interleaved:
-                ag_input_dtype = attn_output_11SH.dtype
-                ag_output_shape = list(attn_output_11SH.shape)
-                ag_output_shape[3] *= self.mesh_device.get_num_devices()
 
-                persistent_output_buffer = ttnn.from_torch(
-                    torch.zeros(ag_output_shape),
-                    device=self.mesh_device,
-                    layout=ttnn.TILE_LAYOUT,
-                    dtype=ag_input_dtype,
-                    memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                    mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
-                )
-
-                attn_output_11SH = ttnn.experimental.all_gather_async(
-                    attn_output_11SH,
-                    persistent_output_buffer=persistent_output_buffer,
-                    dim=3,
-                    multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
-                    num_links=1,
-                    topology=self.ccl_topology,
-                    memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                    subdevice_id=self.worker_sub_device_id,
-                )
-            else:
-                attn_output_11SH = ttnn.experimental.all_gather_async(
-                    attn_output_11SH,
-                    dim=3,
-                    multi_device_global_semaphore=self.multi_device_global_semaphore_handles[0],
-                    num_links=1,
-                    memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                    topology=self.ccl_topology,
-                    subdevice_id=self.worker_sub_device_id,
-                )
             # print("end attention 824")
 
         output_11SH = ttnn.linear(
@@ -888,6 +865,7 @@ class Attention(LightweightModule):
                 dtype=self.ccl_dtype,
                 multi_device_global_semaphore_handles=self.multi_device_global_semaphore_handles,
                 worker_sub_device_id=self.worker_sub_device_id,
+                reduce_scatter_intermediate_buffers=self.reduce_scatter_intermediate_buffers,
             )
 
         return output_11SH

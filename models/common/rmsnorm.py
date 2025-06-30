@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: © 2023 Tenstorrent Inc.
 
 # SPDX-License-Identifier: Apache-2.0
-import torch
 
 import ttnn
 from models.common.lightweightmodule import LightweightModule
@@ -54,6 +53,7 @@ class RMSNorm(LightweightModule):
         ccl_topology=ttnn.Topology.Ring,
         multi_device_global_semaphore_handles=None,
         worker_sub_device_id=None,
+        reduce_scatter_intermediate_buffers=None,
     ):
         super().__init__()
         self.eps = eps
@@ -62,6 +62,7 @@ class RMSNorm(LightweightModule):
 
         self.multi_device_global_semaphore_handles = multi_device_global_semaphore_handles
         self.worker_sub_device_id = worker_sub_device_id
+        self.reduce_scatter_intermediate_buffers = reduce_scatter_intermediate_buffers
 
         self.device = device
 
@@ -153,42 +154,18 @@ class RMSNorm(LightweightModule):
         tt_stats = ttnn.rms_norm_pre_all_gather(inp, compute_kernel_config=compute_kernel_config, dtype=ttnn.bfloat16)
 
         # AllGather stats
+
         # print("start rmsnorm 156")
-        use_all_gather_async_minimal_interleaved = not tt_stats.is_sharded() and tt_stats.layout == ttnn.TILE_LAYOUT
-        if use_all_gather_async_minimal_interleaved:
-            ag_input_dtype = tt_stats.dtype
-            ag_output_shape = list(tt_stats.shape)
-            ag_output_shape[3] *= self.device.get_num_devices()
+        tt_stats = ttnn.experimental.all_gather_async(
+            tt_stats,
+            dim=3,
+            multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
+            num_links=1,
+            topology=self.ccl_topology,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            subdevice_id=self.worker_sub_device_id,
+        )
 
-            persistent_output_buffer = ttnn.from_torch(
-                torch.zeros(ag_output_shape),
-                device=self.device,
-                layout=ttnn.TILE_LAYOUT,
-                dtype=ag_input_dtype,
-                memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                mesh_mapper=ttnn.ReplicateTensorToMesh(self.device),
-            )
-
-            tt_stats = ttnn.experimental.all_gather_async(
-                tt_stats,
-                persistent_output_buffer=persistent_output_buffer,
-                dim=3,
-                multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
-                num_links=1,
-                topology=self.ccl_topology,
-                memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                subdevice_id=self.worker_sub_device_id,
-            )
-        else:
-            tt_stats = ttnn.experimental.all_gather_async(
-                tt_stats,
-                dim=3,
-                multi_device_global_semaphore=self.multi_device_global_semaphore_handles[0],
-                num_links=1,
-                topology=self.ccl_topology,
-                memory_config=ttnn.DRAM_MEMORY_CONFIG,
-                subdevice_id=self.worker_sub_device_id,
-            )
         # print("end rmsnorm 156")
 
         # Run distributed rmsnorm part 2

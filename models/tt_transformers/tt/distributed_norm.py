@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: © 2023 Tenstorrent Inc.
 
 # SPDX-License-Identifier: Apache-2.0
-import torch
 
 import ttnn
 from models.common.lightweightmodule import LightweightModule
@@ -16,12 +15,14 @@ class DistributedNorm(LightweightModule):
         TG=False,
         multi_device_global_semaphore_handles=None,
         worker_sub_device_id=None,
+        reduce_scatter_intermediate_buffers=None,
     ):
         self.norm = norm
         self.args = args
 
         self.multi_device_global_semaphore_handles = multi_device_global_semaphore_handles
         self.worker_sub_device_id = worker_sub_device_id
+        self.reduce_scatter_intermediate_buffers = reduce_scatter_intermediate_buffers
 
         if TG:
             core_grid_ln = (
@@ -82,41 +83,28 @@ class DistributedNorm(LightweightModule):
         # Distributed norm already performs a gather
         if self.args.is_multichip and not self.args.is_distributed_norm(mode):
             # print("start distributed_norm 84")
-            use_all_gather_async_minimal_interleaved = not x.is_sharded() and x.layout == ttnn.TILE_LAYOUT
-            if use_all_gather_async_minimal_interleaved:
-                ag_input_dtype = x.dtype
-                ag_output_shape = list(x.shape)
-                ag_output_shape[3] *= self.args.mesh_device.get_num_devices()
 
-                persistent_output_buffer = ttnn.from_torch(
-                    torch.zeros(ag_output_shape),
-                    device=self.args.mesh_device,
-                    layout=ttnn.TILE_LAYOUT,
-                    dtype=ag_input_dtype,
-                    memory_config=input_mem_cfg,
-                    mesh_mapper=ttnn.ReplicateTensorToMesh(self.args.mesh_device),
-                )
+            input_is_sharded = x.is_sharded()
+            target_memory_config = input_mem_cfg
+            ag_memory_config = input_mem_cfg
 
-                x = ttnn.experimental.all_gather_async(
-                    x,
-                    persistent_output_buffer=persistent_output_buffer,
-                    dim=3,
-                    multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
-                    num_links=1,
-                    memory_config=input_mem_cfg,
-                    topology=self.args.ccl_topology(),
-                    subdevice_id=self.worker_sub_device_id,
-                )
-            else:
-                x = ttnn.experimental.all_gather_async(
-                    x,
-                    dim=3,
-                    multi_device_global_semaphore=self.multi_device_global_semaphore_handles[0],
-                    num_links=1,
-                    memory_config=input_mem_cfg,
-                    topology=self.args.ccl_topology(),
-                    subdevice_id=self.worker_sub_device_id,
-                )
+            if input_is_sharded:
+                ag_memory_config = ttnn.L1_MEMORY_CONFIG
+                x = ttnn.to_memory_config(x, ag_memory_config)
+
+            x = ttnn.experimental.all_gather_async(
+                x,
+                dim=3,
+                multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
+                num_links=1,
+                memory_config=ag_memory_config,
+                topology=self.args.ccl_topology(),
+                subdevice_id=self.worker_sub_device_id,
+            )
+
+            if input_is_sharded:
+                x = ttnn.to_memory_config(x, target_memory_config)
+
             # print("end distributed_norm 84")
         else:
             x = ttnn.to_memory_config(x, input_mem_cfg)
@@ -126,41 +114,17 @@ class DistributedNorm(LightweightModule):
         # Distributed norm requires a gather
         if self.args.is_distributed_norm(mode):
             # print("start distributed_norm 127")
-            use_all_gather_async_minimal_interleaved = not x.is_sharded() and x.layout == ttnn.TILE_LAYOUT
-            if use_all_gather_async_minimal_interleaved:
-                ag_input_dtype = x.dtype
-                ag_output_shape = list(x.shape)
-                ag_output_shape[3] *= self.args.mesh_device.get_num_devices()
 
-                persistent_output_buffer = ttnn.from_torch(
-                    torch.zeros(ag_output_shape),
-                    device=self.args.mesh_device,
-                    layout=ttnn.TILE_LAYOUT,
-                    dtype=ag_input_dtype,
-                    memory_config=input_mem_cfg,
-                    mesh_mapper=ttnn.ReplicateTensorToMesh(self.args.mesh_device),
-                )
+            x = ttnn.experimental.all_gather_async(
+                x,
+                dim=3,
+                multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
+                num_links=1,
+                memory_config=input_mem_cfg,
+                topology=self.args.ccl_topology(),
+                subdevice_id=self.worker_sub_device_id,
+            )
 
-                x = ttnn.experimental.all_gather_async(
-                    x,
-                    persistent_output_buffer=persistent_output_buffer,
-                    dim=3,
-                    multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
-                    num_links=1,
-                    memory_config=input_mem_cfg,
-                    topology=self.args.ccl_topology(),
-                    subdevice_id=self.worker_sub_device_id,
-                )
-            else:
-                x = ttnn.experimental.all_gather_async(
-                    x,
-                    dim=3,
-                    multi_device_global_semaphore=self.multi_device_global_semaphore_handles[0],
-                    num_links=1,
-                    memory_config=input_mem_cfg,
-                    topology=self.args.ccl_topology(),
-                    subdevice_id=self.worker_sub_device_id,
-                )
             # print("end distributed_norm 127")
 
         return x

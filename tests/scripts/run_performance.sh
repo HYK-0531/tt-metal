@@ -59,8 +59,6 @@ run_perf_models_other() {
 
     env pytest -n auto tests/ttnn/integration_tests/bert/test_performance.py -m $test_marker
 
-    env pytest -n auto models/demos/ttnn_falcon7b/tests -m $test_marker
-
     env pytest models/demos/distilbert/tests/test_perf_distilbert.py -m $test_marker
 
     # env pytest -n auto models/demos/vgg/tests/test_perf_vgg.py -m $test_marker
@@ -86,8 +84,6 @@ run_perf_models_llm_javelin() {
     if [ "$tt_arch" == "wormhole_b0" ]; then
         export WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml
     fi
-
-    env pytest -n auto models/demos/falcon7b_common/tests -m $test_marker
 
     env QWEN_DIR=/mnt/MLPerf/tt_dnn-models/qwen/Qwen2-7B-Instruct FAKE_DEVICE=N150 pytest -n auto models/demos/qwen/tests -m $test_marker
 

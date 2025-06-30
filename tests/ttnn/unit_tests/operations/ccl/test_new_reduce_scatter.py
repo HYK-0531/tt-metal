@@ -15,7 +15,7 @@ from ttnn import ShardTensorToMesh, ConcatMeshToTensor
 
 def create_global_semaphores(mesh_device, num_devices, cores, initial_value):
     # create global semaphore handles
-    ccl_semaphore_handles = [ttnn.create_global_semaphore(mesh_device, cores, initial_value) for _ in range(3)]
+    ccl_semaphore_handles = [ttnn.create_global_semaphore(mesh_device, cores, initial_value) for _ in range(4)]
     return ccl_semaphore_handles
 
 

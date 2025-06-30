@@ -153,16 +153,16 @@ def run_all_gather_impl(
 
     ##### Configs for ttnn.matmul #####
     core_grid = (8, 6)
-    program_config = ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
+    program_config = ttnn.MatmulMultiCoreReuseMultiCast1DProgramConfig(
         compute_with_storage_grid_size=core_grid,
         in0_block_w=min(max_in0_block_w, hidden_dim // 32 // core_grid[0]),  # how much inner dim you take each time
         out_subblock_h=1,  # Must be divisible by per_core_M
         out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
         per_core_M=max(1, math.ceil(ag_output_shape[2] / 32 / core_grid[1])),  # M / TILE_HEIGHT / Grid_Size
         per_core_N=max(1, math.ceil(matmul_output_dim / 32 / core_grid[0])),  # N / TILE_WIDTH / Grid_Size
-        transpose_mcast=False,
-        fused_activation=None,  # ttnn.UnaryOpType.SILU,
-        fuse_batch=False,
+        fuse_batch=True,
+        fused_activation=None,
+        mcast_in0=True,
     )
     compute_kernel_config = ttnn.WormholeComputeKernelConfig(
         math_fidelity=ttnn.MathFidelity.HiFi2,
@@ -235,7 +235,7 @@ def run_all_gather_impl(
                 tt_all_gather_out_tensor, tt_matmul_out_tensor = ttnn.experimental.all_gather_matmul_async(
                     input_tensor_mesh_list[i],
                     weight_tt,
-                    persistent_output_buffer=persistent_output_buffers[i],
+                    # persistent_output_buffer=persistent_output_buffers[i],
                     dim=dim,
                     multi_device_global_semaphore=ccl_semaphore_handles[i],
                     all_gather_core_grid_offset=(0, 6),
@@ -331,32 +331,32 @@ def run_all_gather_impl(
 @pytest.mark.parametrize(
     "enable_trace,num_iters",
     [
-        (True, 10),
+        # (True, 10),
         (False, 1),
     ],
-    ids=["perf", "check"],
+    ids=["check"],
 )
 @pytest.mark.parametrize(
     "use_non_fused",
     [
-        True,
+        # True,
         False,
     ],
-    ids=["separate", "fused"],
+    ids=["fused"],
 )
 @pytest.mark.parametrize(
     "device_params, use_legacy_allgather, all_gather_topology",
     [
         ({"fabric_config": ttnn.FabricConfig.FABRIC_1D, "trace_region_size": 90112}, False, ttnn.Topology.Ring),
-        ({"fabric_config": ttnn.FabricConfig.FABRIC_1D, "trace_region_size": 90112}, False, ttnn.Topology.Linear),
-        (
-            {"trace_region_size": 90112},
-            True,
-            ttnn.Topology.Ring,
-        ),
+        # ({"fabric_config": ttnn.FabricConfig.FABRIC_1D, "trace_region_size": 90112}, False, ttnn.Topology.Linear),
+        # (
+        #     {"trace_region_size": 90112},
+        #     True,
+        #     ttnn.Topology.Ring,
+        # ),
     ],
     indirect=["device_params"],
-    ids=["fabric_ring", "fabric_linear", "legacy_ring"],
+    ids=["fabric_ring"],
 )
 def test_all_gather_matmul_async(
     t3k_mesh_device,

@@ -542,17 +542,33 @@ class Attention(LightweightModule):
             )
 
             # TODO: (GR)
-            _, dense_out_sharded, _ = ttnn.experimental.all_gather_matmul(
+            # _, dense_out_sharded, _ = ttnn.experimental.all_gather_matmul(
+            #     attn_output_cat,
+            #     self.wo,
+            #     dim=3,
+            #     all_gather_core_grid_offset=(0, 4),
+            #     num_links=1,
+            #     program_config=self.model_config["ATTN_ALL_GATHER_MATMUL_PROGCFG"],
+            #     compute_kernel_config=self.li_o_decode_compute_kernel_cfg,
+            #     memory_config_ag=self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"],
+            #     memory_config_mm=self.model_config["DECODE_RESIDUAL_MEMCFG"],
+            # )
+            _, dense_out_sharded = ttnn.experimental.all_gather_matmul_async(
                 attn_output_cat,
                 self.wo,
+                # persistent_output_buffer=persistent_output_buffers[i],
                 dim=3,
+                multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
                 all_gather_core_grid_offset=(0, 4),
                 num_links=1,
+                memory_config_ag=self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"],
+                # topology=all_gather_topology,
+                subdevice_id=self.worker_sub_device_id,
+                memory_config_mm=self.model_config["DECODE_RESIDUAL_MEMCFG"],
                 program_config=self.model_config["ATTN_ALL_GATHER_MATMUL_PROGCFG"],
                 compute_kernel_config=self.li_o_decode_compute_kernel_cfg,
-                memory_config_ag=self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"],
-                memory_config_mm=self.model_config["DECODE_RESIDUAL_MEMCFG"],
             )
+
             ttnn.deallocate(attn_output_cat)
             dense_out_sharded = ttnn.to_memory_config(dense_out_sharded, self.model_config["DECODE_RESIDUAL_MEMCFG"])
             return dense_out_sharded

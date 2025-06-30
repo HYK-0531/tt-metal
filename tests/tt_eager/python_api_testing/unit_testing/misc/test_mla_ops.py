@@ -31,7 +31,7 @@ TP = 8
 DP = 4
 
 
-class ModelConfig:
+class DecodeModelConfig:
     def __init__(self, hf_config):
         self.args = hf_config
         self.args.qk_head_dim = self.args.qk_nope_head_dim + self.args.qk_rope_head_dim
@@ -211,9 +211,123 @@ class ModelConfig:
         # )
 
 
+class PrefillModelConfig:
+    def __init__(self, hf_config):
+        self.args = hf_config
+        self.args.qk_head_dim = self.args.qk_nope_head_dim + self.args.qk_rope_head_dim
+
+        self.grid_size = (8, 8)
+        self.configs = {}
+
+        #################
+        ### MLA Configs
+        #################
+
+        # wq_a
+        self.configs["WQA_IN0_SHAPE"] = lambda seq_len: (1, 1, seq_len, self.args.hidden_size // TP)
+        self.configs["WQA_IN1_SHAPE"] = (1, 1, self.args.hidden_size // TP, self.args.q_lora_rank)
+        self.configs["WQA_IN0_DTYPE"] = ttnn.bfloat8_b
+        self.configs["WQA_IN1_DTYPE"] = ttnn.bfloat4_b
+        self.configs["WQA_PROGRAM_CFG"] = None
+        self.configs["WQA_IN0_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WQA_IN1_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WQA_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+
+        # wq_b
+        self.configs["WQB_IN0_SHAPE"] = lambda seq_len: (1, 1, seq_len, self.args.q_lora_rank)
+        self.configs["WQB_IN1_SHAPE"] = (
+            1,
+            1,
+            self.args.q_lora_rank,
+            (self.args.num_attention_heads * self.args.qk_head_dim) // TP,
+        )
+        self.configs["WQB_IN0_DTYPE"] = ttnn.bfloat8_b
+        self.configs["WQB_IN1_DTYPE"] = ttnn.bfloat4_b
+        self.configs["WQB_PROGRAM_CFG"] = None
+        self.configs["WQB_IN0_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WQB_IN1_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WQB_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+
+        # wkv_a
+        self.configs["WKV_A_IN0_SHAPE"] = lambda seq_len: (1, 1, seq_len, self.args.hidden_size // TP)
+        self.configs["WKV_A_IN1_SHAPE"] = (
+            1,
+            1,
+            self.args.hidden_size // TP,
+            self.args.kv_lora_rank + self.args.qk_rope_head_dim,
+        )
+        self.configs["WKV_A_IN0_DTYPE"] = ttnn.bfloat8_b
+        self.configs["WKV_A_IN1_DTYPE"] = ttnn.bfloat4_b
+        self.configs["WKV_A_PROGRAM_CFG"] = None
+        self.configs["WKV_A_IN0_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WKV_A_IN1_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WKV_A_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+
+        # wkv_b1
+        self.configs["WKV_B1_IN0_SHAPE"] = lambda seq_len: (
+            1,
+            self.args.num_attention_heads // TP,
+            seq_len,
+            self.args.qk_nope_head_dim,
+        )
+        self.configs["WKV_B1_IN1_SHAPE"] = (
+            1,
+            self.args.num_attention_heads // TP,
+            self.args.qk_nope_head_dim,
+            self.args.kv_lora_rank,
+        )
+        self.configs["WKV_B1_IN0_DTYPE"] = ttnn.bfloat8_b
+        self.configs["WKV_B1_IN1_DTYPE"] = ttnn.bfloat4_b
+        self.configs["WKV_B1_PROGRAM_CFG"] = None
+        self.configs["WKV_B1_IN0_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WKV_B1_IN1_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WKV_B1_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+
+        # wkv_b2
+        self.configs["WKV_B2_IN0_SHAPE"] = lambda seq_len: (
+            1,
+            self.args.num_attention_heads // TP,
+            seq_len,
+            self.args.kv_lora_rank,
+        )
+        self.configs["WKV_B2_IN1_SHAPE"] = (
+            1,
+            self.args.num_attention_heads // TP,
+            self.args.kv_lora_rank,
+            self.args.v_head_dim,
+        )
+        self.configs["WKV_B2_IN0_DTYPE"] = ttnn.bfloat8_b
+        self.configs["WKV_B2_IN1_DTYPE"] = ttnn.bfloat4_b
+        self.configs["WKV_B2_PROGRAM_CFG"] = None
+        self.configs["WKV_B2_IN0_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WKV_B2_IN1_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WKV_B2_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+
+        # wo
+        self.configs["WO_IN0_SHAPE"] = lambda seq_len: (
+            1,
+            seq_len,
+            self.args.num_attention_heads * self.args.v_head_dim,
+        )
+        self.configs["WO_IN1_SHAPE"] = (
+            1,
+            1,
+            self.args.num_attention_heads * self.args.v_head_dim,
+            self.args.hidden_size // TP,
+        )
+        self.configs["WO_IN0_DTYPE"] = ttnn.bfloat8_b
+        self.configs["WO_IN1_DTYPE"] = ttnn.bfloat4_b
+        self.configs["WO_PROGRAM_CFG"] = None
+        self.configs["WO_IN0_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WO_IN1_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["WO_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+
+
 hugging_face_config = AutoConfig.from_pretrained("deepseek-ai/DeepSeek-R1-0528", trust_remote_code=True)
 hugging_face_config.max_seq_len = 16 * 1024  # Set max sequence length for testing
-cfg = ModelConfig(hugging_face_config)
+
+decode_cfg = DecodeModelConfig(hugging_face_config)
+prefill_cfg = PrefillModelConfig(hugging_face_config)
 
 
 #################
@@ -227,10 +341,17 @@ def run_matmul_impl(
     dtypes,
     program_config,
     memory_configs,
+    seq_len=None,
 ):
     layout = ttnn.TILE_LAYOUT
 
-    in0_shape, in1_shape = shapes
+    if seq_len is not None:  # Prefill
+        # Check that the first shapes is a function
+        assert callable(shapes[0]), "Shapes must be callable for prefill tests with variable sequence length."
+        in0_shape = shapes[0](seq_len)
+        in1_shape = shapes[1]
+    else:  # Decode
+        in0_shape, in1_shape = shapes
     in0_dtype, in1_dtype = dtypes
     in0_mem_config, in1_mem_config, out_mem_config = memory_configs
 
@@ -287,7 +408,7 @@ def run_matmul_impl(
     assert out_pass, f"Output mismatch: PCC {out_pcc} < 0.99"
 
 
-def run_rope_impl(
+def run_decode_rope_impl(
     device,
     shape,
     dtype,
@@ -305,18 +426,18 @@ def run_rope_impl(
     #################
     ### Torch
     #################
-    position_ids = torch.randint(0, cfg.args.max_seq_len, (bsz,))
+    position_ids = torch.randint(0, decode_cfg.args.max_seq_len, (bsz,))
     input_torch = torch.randn(shape).float()
 
     # Args expected by DeepSeek impl RoPE
     rope_args = SimpleNamespace(
-        qk_rope_head_dim=cfg.args.qk_rope_head_dim,
-        max_seq_len=cfg.args.max_seq_len,
-        beta_fast=cfg.args.rope_scaling["beta_fast"],
-        beta_slow=cfg.args.rope_scaling["beta_slow"],
-        rope_theta=cfg.args.rope_theta,
-        rope_factor=cfg.args.rope_scaling["factor"],
-        original_seq_len=cfg.args.rope_scaling["original_max_position_embeddings"],
+        qk_rope_head_dim=decode_cfg.args.qk_rope_head_dim,
+        max_seq_len=decode_cfg.args.max_seq_len,
+        beta_fast=decode_cfg.args.rope_scaling["beta_fast"],
+        beta_slow=decode_cfg.args.rope_scaling["beta_slow"],
+        rope_theta=decode_cfg.args.rope_theta,
+        rope_factor=decode_cfg.args.rope_scaling["factor"],
+        original_seq_len=decode_cfg.args.rope_scaling["original_max_position_embeddings"],
     )
     freqs_cis = precompute_freqs_cis(rope_args)[position_ids, :]
     out_torch = apply_rotary_emb(input_torch, freqs_cis)
@@ -327,7 +448,7 @@ def run_rope_impl(
     rope_setup = RotarySetup(
         device=device,
         batch_size=bsz,
-        hf_config=cfg.args,
+        hf_config=decode_cfg.args,
     )
 
     tt_cos, tt_sin = rope_setup.get_rot_mats(position_ids)
@@ -370,7 +491,7 @@ def run_update_cache_impl(
     cache_dtype,
 ):
     layout = ttnn.TILE_LAYOUT
-    max_seq_len = cfg.args.max_seq_len
+    max_seq_len = decode_cfg.args.max_seq_len
 
     logger.info("Running update cache with the following configurations:")
     logger.info(f"Shape: {shape}, Dtype: {dtype}, Memory Config: {mem_config}")
@@ -501,40 +622,64 @@ def run_rmsnorm_impl(
     "shapes, dtypes, program_config, memory_configs",
     [
         (  # wq_a
-            [cfg.configs["WQA_IN0_SHAPE"], cfg.configs["WQA_IN1_SHAPE"]],
-            [cfg.configs["WQA_IN0_DTYPE"], cfg.configs["WQA_IN1_DTYPE"]],
-            cfg.configs["WQA_PROGRAM_CFG"],
-            [cfg.configs["WQA_IN0_MEM_CFG"], cfg.configs["WQA_IN1_MEM_CFG"], cfg.configs["WQA_OUT_MEM_CFG"]],
+            [decode_cfg.configs["WQA_IN0_SHAPE"], decode_cfg.configs["WQA_IN1_SHAPE"]],
+            [decode_cfg.configs["WQA_IN0_DTYPE"], decode_cfg.configs["WQA_IN1_DTYPE"]],
+            decode_cfg.configs["WQA_PROGRAM_CFG"],
+            [
+                decode_cfg.configs["WQA_IN0_MEM_CFG"],
+                decode_cfg.configs["WQA_IN1_MEM_CFG"],
+                decode_cfg.configs["WQA_OUT_MEM_CFG"],
+            ],
         ),
         (  # wq_b
-            [cfg.configs["WQB_IN0_SHAPE"], cfg.configs["WQB_IN1_SHAPE"]],
-            [cfg.configs["WQB_IN0_DTYPE"], cfg.configs["WQB_IN1_DTYPE"]],
-            cfg.configs["WQB_PROGRAM_CFG"],
-            [cfg.configs["WQB_IN0_MEM_CFG"], cfg.configs["WQB_IN1_MEM_CFG"], cfg.configs["WQB_OUT_MEM_CFG"]],
+            [decode_cfg.configs["WQB_IN0_SHAPE"], decode_cfg.configs["WQB_IN1_SHAPE"]],
+            [decode_cfg.configs["WQB_IN0_DTYPE"], decode_cfg.configs["WQB_IN1_DTYPE"]],
+            decode_cfg.configs["WQB_PROGRAM_CFG"],
+            [
+                decode_cfg.configs["WQB_IN0_MEM_CFG"],
+                decode_cfg.configs["WQB_IN1_MEM_CFG"],
+                decode_cfg.configs["WQB_OUT_MEM_CFG"],
+            ],
         ),
         (  # wkv_a
-            [cfg.configs["WKV_A_IN0_SHAPE"], cfg.configs["WKV_A_IN1_SHAPE"]],
-            [cfg.configs["WKV_A_IN0_DTYPE"], cfg.configs["WKV_A_IN1_DTYPE"]],
-            cfg.configs["WKV_A_PROGRAM_CFG"],
-            [cfg.configs["WKV_A_IN0_MEM_CFG"], cfg.configs["WKV_A_IN1_MEM_CFG"], cfg.configs["WKV_A_OUT_MEM_CFG"]],
+            [decode_cfg.configs["WKV_A_IN0_SHAPE"], decode_cfg.configs["WKV_A_IN1_SHAPE"]],
+            [decode_cfg.configs["WKV_A_IN0_DTYPE"], decode_cfg.configs["WKV_A_IN1_DTYPE"]],
+            decode_cfg.configs["WKV_A_PROGRAM_CFG"],
+            [
+                decode_cfg.configs["WKV_A_IN0_MEM_CFG"],
+                decode_cfg.configs["WKV_A_IN1_MEM_CFG"],
+                decode_cfg.configs["WKV_A_OUT_MEM_CFG"],
+            ],
         ),
         (  # wkv_b1
-            [cfg.configs["WKV_B1_IN0_SHAPE"], cfg.configs["WKV_B1_IN1_SHAPE"]],
-            [cfg.configs["WKV_B1_IN0_DTYPE"], cfg.configs["WKV_B1_IN1_DTYPE"]],
-            cfg.configs["WKV_B1_PROGRAM_CFG"],
-            [cfg.configs["WKV_B1_IN0_MEM_CFG"], cfg.configs["WKV_B1_IN1_MEM_CFG"], cfg.configs["WKV_B1_OUT_MEM_CFG"]],
+            [decode_cfg.configs["WKV_B1_IN0_SHAPE"], decode_cfg.configs["WKV_B1_IN1_SHAPE"]],
+            [decode_cfg.configs["WKV_B1_IN0_DTYPE"], decode_cfg.configs["WKV_B1_IN1_DTYPE"]],
+            decode_cfg.configs["WKV_B1_PROGRAM_CFG"],
+            [
+                decode_cfg.configs["WKV_B1_IN0_MEM_CFG"],
+                decode_cfg.configs["WKV_B1_IN1_MEM_CFG"],
+                decode_cfg.configs["WKV_B1_OUT_MEM_CFG"],
+            ],
         ),
         (  # wkv_b2
-            [cfg.configs["WKV_B2_IN0_SHAPE"], cfg.configs["WKV_B2_IN1_SHAPE"]],
-            [cfg.configs["WKV_B2_IN0_DTYPE"], cfg.configs["WKV_B2_IN1_DTYPE"]],
-            cfg.configs["WKV_B2_PROGRAM_CFG"],
-            [cfg.configs["WKV_B2_IN0_MEM_CFG"], cfg.configs["WKV_B2_IN1_MEM_CFG"], cfg.configs["WKV_B2_OUT_MEM_CFG"]],
+            [decode_cfg.configs["WKV_B2_IN0_SHAPE"], decode_cfg.configs["WKV_B2_IN1_SHAPE"]],
+            [decode_cfg.configs["WKV_B2_IN0_DTYPE"], decode_cfg.configs["WKV_B2_IN1_DTYPE"]],
+            decode_cfg.configs["WKV_B2_PROGRAM_CFG"],
+            [
+                decode_cfg.configs["WKV_B2_IN0_MEM_CFG"],
+                decode_cfg.configs["WKV_B2_IN1_MEM_CFG"],
+                decode_cfg.configs["WKV_B2_OUT_MEM_CFG"],
+            ],
         ),
         (  # wo
-            [cfg.configs["WO_IN0_SHAPE"], cfg.configs["WO_IN1_SHAPE"]],
-            [cfg.configs["WO_IN0_DTYPE"], cfg.configs["WO_IN1_DTYPE"]],
-            cfg.configs["WO_PROGRAM_CFG"],
-            [cfg.configs["WO_IN0_MEM_CFG"], cfg.configs["WO_IN1_MEM_CFG"], cfg.configs["WO_OUT_MEM_CFG"]],
+            [decode_cfg.configs["WO_IN0_SHAPE"], decode_cfg.configs["WO_IN1_SHAPE"]],
+            [decode_cfg.configs["WO_IN0_DTYPE"], decode_cfg.configs["WO_IN1_DTYPE"]],
+            decode_cfg.configs["WO_PROGRAM_CFG"],
+            [
+                decode_cfg.configs["WO_IN0_MEM_CFG"],
+                decode_cfg.configs["WO_IN1_MEM_CFG"],
+                decode_cfg.configs["WO_OUT_MEM_CFG"],
+            ],
         ),
     ],
     ids=[
@@ -546,7 +691,7 @@ def run_rmsnorm_impl(
         "wo",
     ],
 )
-def test_matmuls(
+def test_decode_matmuls(
     device,
     shapes,
     dtypes,
@@ -566,17 +711,115 @@ def test_matmuls(
 
 
 @pytest.mark.parametrize(
+    "seq_len",
+    [128, 1024, 8096],
+)
+@pytest.mark.parametrize(
+    "shapes, dtypes, program_config, memory_configs",
+    [
+        (  # wq_a
+            [prefill_cfg.configs["WQA_IN0_SHAPE"], prefill_cfg.configs["WQA_IN1_SHAPE"]],
+            [prefill_cfg.configs["WQA_IN0_DTYPE"], prefill_cfg.configs["WQA_IN1_DTYPE"]],
+            prefill_cfg.configs["WQA_PROGRAM_CFG"],
+            [
+                prefill_cfg.configs["WQA_IN0_MEM_CFG"],
+                prefill_cfg.configs["WQA_IN1_MEM_CFG"],
+                prefill_cfg.configs["WQA_OUT_MEM_CFG"],
+            ],
+        ),
+        (  # wq_b
+            [prefill_cfg.configs["WQB_IN0_SHAPE"], prefill_cfg.configs["WQB_IN1_SHAPE"]],
+            [prefill_cfg.configs["WQB_IN0_DTYPE"], prefill_cfg.configs["WQB_IN1_DTYPE"]],
+            prefill_cfg.configs["WQB_PROGRAM_CFG"],
+            [
+                prefill_cfg.configs["WQB_IN0_MEM_CFG"],
+                prefill_cfg.configs["WQB_IN1_MEM_CFG"],
+                prefill_cfg.configs["WQB_OUT_MEM_CFG"],
+            ],
+        ),
+        (  # wkv_a
+            [prefill_cfg.configs["WKV_A_IN0_SHAPE"], prefill_cfg.configs["WKV_A_IN1_SHAPE"]],
+            [prefill_cfg.configs["WKV_A_IN0_DTYPE"], prefill_cfg.configs["WKV_A_IN1_DTYPE"]],
+            prefill_cfg.configs["WKV_A_PROGRAM_CFG"],
+            [
+                prefill_cfg.configs["WKV_A_IN0_MEM_CFG"],
+                prefill_cfg.configs["WKV_A_IN1_MEM_CFG"],
+                prefill_cfg.configs["WKV_A_OUT_MEM_CFG"],
+            ],
+        ),
+        (  # wkv_b1
+            [prefill_cfg.configs["WKV_B1_IN0_SHAPE"], prefill_cfg.configs["WKV_B1_IN1_SHAPE"]],
+            [prefill_cfg.configs["WKV_B1_IN0_DTYPE"], prefill_cfg.configs["WKV_B1_IN1_DTYPE"]],
+            prefill_cfg.configs["WKV_B1_PROGRAM_CFG"],
+            [
+                prefill_cfg.configs["WKV_B1_IN0_MEM_CFG"],
+                prefill_cfg.configs["WKV_B1_IN1_MEM_CFG"],
+                prefill_cfg.configs["WKV_B1_OUT_MEM_CFG"],
+            ],
+        ),
+        (  # wkv_b2
+            [prefill_cfg.configs["WKV_B2_IN0_SHAPE"], prefill_cfg.configs["WKV_B2_IN1_SHAPE"]],
+            [prefill_cfg.configs["WKV_B2_IN0_DTYPE"], prefill_cfg.configs["WKV_B2_IN1_DTYPE"]],
+            prefill_cfg.configs["WKV_B2_PROGRAM_CFG"],
+            [
+                prefill_cfg.configs["WKV_B2_IN0_MEM_CFG"],
+                prefill_cfg.configs["WKV_B2_IN1_MEM_CFG"],
+                prefill_cfg.configs["WKV_B2_OUT_MEM_CFG"],
+            ],
+        ),
+        (  # wo
+            [prefill_cfg.configs["WO_IN0_SHAPE"], prefill_cfg.configs["WO_IN1_SHAPE"]],
+            [prefill_cfg.configs["WO_IN0_DTYPE"], prefill_cfg.configs["WO_IN1_DTYPE"]],
+            prefill_cfg.configs["WO_PROGRAM_CFG"],
+            [
+                prefill_cfg.configs["WO_IN0_MEM_CFG"],
+                prefill_cfg.configs["WO_IN1_MEM_CFG"],
+                prefill_cfg.configs["WO_OUT_MEM_CFG"],
+            ],
+        ),
+    ],
+    ids=[
+        "wq_a",
+        "wq_b",
+        "wkv_a",
+        "wkv_b1",
+        "wkv_b2",
+        "wo",
+    ],
+)
+def test_prefill_matmuls(
+    device,
+    shapes,
+    dtypes,
+    program_config,
+    memory_configs,
+    seq_len,
+    use_program_cache,
+    function_level_defaults,
+    reset_seeds,
+):
+    run_matmul_impl(
+        device,
+        shapes=shapes,
+        dtypes=dtypes,
+        program_config=program_config,
+        memory_configs=memory_configs,
+        seq_len=seq_len,
+    )
+
+
+@pytest.mark.parametrize(
     "shape, dtype, mem_config",
     [
         (  # q_rope
-            cfg.configs["QROPE_SHAPE"],
-            cfg.configs["QROPE_DTYPE"],
-            cfg.configs["QROPE_MEM_CFG"],
+            decode_cfg.configs["QROPE_SHAPE"],
+            decode_cfg.configs["QROPE_DTYPE"],
+            decode_cfg.configs["QROPE_MEM_CFG"],
         ),
         (  # k_rope
-            cfg.configs["KROPE_SHAPE"],
-            cfg.configs["KROPE_DTYPE"],
-            cfg.configs["KROPE_MEM_CFG"],
+            decode_cfg.configs["KROPE_SHAPE"],
+            decode_cfg.configs["KROPE_DTYPE"],
+            decode_cfg.configs["KROPE_MEM_CFG"],
         ),
     ],
     ids=[
@@ -584,7 +827,7 @@ def test_matmuls(
         "k_rope",
     ],
 )
-def test_ropes(
+def test_decode_ropes(
     device,
     shape,
     dtype,
@@ -593,7 +836,7 @@ def test_ropes(
     function_level_defaults,
     reset_seeds,
 ):
-    run_rope_impl(
+    run_decode_rope_impl(
         device,
         shape=shape,
         dtype=dtype,
@@ -605,10 +848,10 @@ def test_ropes(
     "shape, dtype, mem_config, cache_dtype",
     [
         (
-            cfg.configs["KVPE_SHAPE"],
-            cfg.configs["KVPE_DTYPE"],
-            cfg.configs["KVPE_MEM_CFG"],
-            cfg.configs["KVPE_CACHE_DTYPE"],
+            decode_cfg.configs["KVPE_SHAPE"],
+            decode_cfg.configs["KVPE_DTYPE"],
+            decode_cfg.configs["KVPE_MEM_CFG"],
+            decode_cfg.configs["KVPE_CACHE_DTYPE"],
         ),
     ],
     ids=["kvpe"],
@@ -636,19 +879,19 @@ def test_update_caches(
     "shape, dtype, mem_config",
     [
         (
-            cfg.configs["QNORM_SHAPE"],
-            cfg.configs["QNORM_DTYPE"],
-            cfg.configs["QNORM_MEM_CFG"],
+            decode_cfg.configs["QNORM_SHAPE"],
+            decode_cfg.configs["QNORM_DTYPE"],
+            decode_cfg.configs["QNORM_MEM_CFG"],
         ),
         (
-            cfg.configs["KNORM_SHAPE"],
-            cfg.configs["KNORM_DTYPE"],
-            cfg.configs["KNORM_MEM_CFG"],
+            decode_cfg.configs["KNORM_SHAPE"],
+            decode_cfg.configs["KNORM_DTYPE"],
+            decode_cfg.configs["KNORM_MEM_CFG"],
         ),
     ],
     ids=["q_norm", "k_norm"],
 )
-def test_rmsnorms(
+def test_decode_rmsnorms(
     device,
     shape,
     dtype,

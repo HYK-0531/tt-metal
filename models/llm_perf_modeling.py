@@ -135,9 +135,15 @@ class TransformerModel:
         ############################
         # prefill_compute(GFLOPS) #
         ############################
+
+        print(f"prefill_dram_loading_mm_compute: {self.dram_loading_mm_compute(self.input_sequence_length)}")
+        print(f"prefill_attention_mm_compute: {self.attention_mm_compute(self.input_sequence_length, self.input_sequence_length)}")
         estimates_per_user["prefill_compute(GFLOPS)"] = self.dram_loading_mm_compute(
             self.input_sequence_length
         ) + self.attention_mm_compute(self.input_sequence_length, self.input_sequence_length)
+
+        print(f"prefill_compute(GFLOPS): {estimates_per_user['prefill_compute(GFLOPS)']}")
+        print(f"system.effective_gflops: {system.effective_gflops}")
 
         ############################
         # prefill_compute_latency(ms) #

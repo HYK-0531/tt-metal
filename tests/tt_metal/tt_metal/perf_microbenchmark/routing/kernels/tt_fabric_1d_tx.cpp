@@ -106,6 +106,15 @@ inline void setup_header_noc_unicast_write(
         NocUnicastCommandHeader{get_noc_addr(noc_x_start, noc_y_start, dest_addr)}, packet_payload_size_bytes);
 }
 
+inline void setup_header_noc_unicast_write_dram(
+    volatile tt_l1_ptr PACKET_HEADER_TYPE* packet_header,
+    uint32_t packet_payload_size_bytes,
+    uint32_t dest_addr,
+    uint32_t dest_bank_id) {
+    packet_header->to_noc_unicast_write(
+        NocUnicastCommandHeader{get_noc_addr_from_bank_id(dest_bank_id, dest_addr)}, packet_payload_size_bytes);
+}
+
 inline void send_packet(
     volatile tt_l1_ptr PACKET_HEADER_TYPE* packet_header,
     uint32_t source_l1_buffer_address,
@@ -154,6 +163,12 @@ void kernel_main() {
     uint32_t fwd_range = get_arg_val<uint32_t>(rt_args_idx++);  // for multicast only
     uint32_t fwd_dev_id = get_arg_val<uint32_t>(rt_args_idx++);   // for 2d unicast only
     uint32_t fwd_mesh_id = get_arg_val<uint32_t>(rt_args_idx++);  // for 2d unicast only
+    
+    // DRAM destination args
+    uint32_t use_dram_dst = get_arg_val<uint32_t>(rt_args_idx++);
+    uint32_t dest_bank_id = get_arg_val<uint32_t>(rt_args_idx++);
+    uint32_t dest_dram_addr = get_arg_val<uint32_t>(rt_args_idx++);
+    
     uint32_t bwd_start_distance;
     uint32_t bwd_range;
     uint32_t bwd_dev_id;
@@ -229,14 +244,24 @@ void kernel_main() {
     // loop over for num packets
     for (uint32_t i = 0; i < num_packets; i++) {
 #ifndef BENCHMARK_MODE
-        time_seed = prng_next(time_seed);
+        time_seed = use_dram_dst ? time_seed : prng_next(time_seed);
 
-        setup_header_noc_unicast_write(
-            fwd_packet_header, packet_payload_size_bytes, target_address, noc_x_start, noc_y_start);
+        if (use_dram_dst) {
+            setup_header_noc_unicast_write_dram(
+                fwd_packet_header, packet_payload_size_bytes, dest_dram_addr + target_address, dest_bank_id);
 
-        if constexpr (additional_dir) {
+            if constexpr (additional_dir) {
+                setup_header_noc_unicast_write_dram(
+                    bwd_packet_header, packet_payload_size_bytes, dest_dram_addr + target_address, dest_bank_id);
+            }
+        } else {
             setup_header_noc_unicast_write(
-                bwd_packet_header, packet_payload_size_bytes, target_address, noc_x_start, noc_y_start);
+                fwd_packet_header, packet_payload_size_bytes, target_address, noc_x_start, noc_y_start);
+
+            if constexpr (additional_dir) {
+                setup_header_noc_unicast_write(
+                    bwd_packet_header, packet_payload_size_bytes, target_address, noc_x_start, noc_y_start);
+            }
         }
 #endif
 

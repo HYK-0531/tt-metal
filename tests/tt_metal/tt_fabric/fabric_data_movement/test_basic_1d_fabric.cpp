@@ -527,7 +527,7 @@ void RunTestUnicastRaw(
 }
 
 void run_unicast_test_bw_chips(
-    BaseFabricFixture* fixture, chip_id_t src_physical_device_id, chip_id_t dst_physical_device_id, uint32_t num_hops) {
+    BaseFabricFixture* fixture, chip_id_t src_physical_device_id, chip_id_t dst_physical_device_id, uint32_t num_hops, bool use_dram_dst) {
     CoreCoord sender_logical_core = {0, 0};
     CoreCoord receiver_logical_core = {1, 0};
 
@@ -538,7 +538,10 @@ void run_unicast_test_bw_chips(
     auto* sender_device = DevicePool::instance().get_active_device(src_physical_device_id);
     auto* receiver_device = DevicePool::instance().get_active_device(dst_physical_device_id);
     CoreCoord sender_virtual_core = sender_device->worker_core_from_logical_core(sender_logical_core);
-    CoreCoord receiver_virtual_core = receiver_device->worker_core_from_logical_core(receiver_logical_core);
+    CoreCoord receiver_virtual_core;
+    if (!use_dram_dst) {
+        receiver_virtual_core = receiver_device->worker_core_from_logical_core(receiver_logical_core);
+    }
 
     const auto fabric_config = tt::tt_metal::MetalContext::instance().get_fabric_config();
     const auto topology = control_plane.get_fabric_context().get_fabric_topology();
@@ -547,7 +550,7 @@ void run_unicast_test_bw_chips(
     // test parameters
     auto worker_mem_map = generate_worker_mem_map(sender_device, topology);
     uint32_t num_packets = 10;
-    uint32_t time_seed = std::chrono::system_clock::now().time_since_epoch().count();
+    uint32_t time_seed = use_dram_dst ? 0 : std::chrono::system_clock::now().time_since_epoch().count(); // TODO Change this later
 
     // common compile time args for sender and receiver
     std::vector<uint32_t> compile_time_args = {
@@ -581,20 +584,36 @@ void run_unicast_test_bw_chips(
     log_info(tt::LogTest, "mesh dimension 0 {:x}", mesh_shape[0]);
     log_info(tt::LogTest, "mesh dimension 1 {:x}", mesh_shape[1]);
 
+    // Set up destination address/coordinates
+    uint32_t dest_x = 0, dest_y = 0;
+    uint32_t dest_bank_id = 0;
+    uint32_t dest_dram_addr = 0;
+    
+    if (use_dram_dst) {
+        dest_bank_id = 0; // Use bank 0
+        dest_dram_addr = receiver_device->allocator()->get_base_allocator_addr(tt_metal::HalMemType::DRAM);
+    } else {
+        dest_x = receiver_virtual_core.x;
+        dest_y = receiver_virtual_core.y;
+    }
+
     std::vector<uint32_t> sender_runtime_args = {
         worker_mem_map.packet_header_address,
         worker_mem_map.source_l1_buffer_address,
         worker_mem_map.packet_payload_size_bytes,
         num_packets,
         time_seed,
-        receiver_virtual_core.x,
-        receiver_virtual_core.y,
+        dest_x,
+        dest_y,
         mesh_shape[1],
         src_fabric_node_id.chip_id,
         num_hops,
         1 /* fwd_range */,
         dst_fabric_node_id.chip_id,
-        *dst_fabric_node_id.mesh_id};
+        *dst_fabric_node_id.mesh_id,
+        use_dram_dst ? 1 : 0, /* use_dram_dst */
+        dest_bank_id,         /* bank_id */
+        dest_dram_addr        /* dram_base_addr */};
 
     // append the EDM connection rt args
     const auto& available_links = get_forwarding_link_indices(src_fabric_node_id, dst_fabric_node_id);
@@ -606,26 +625,33 @@ void run_unicast_test_bw_chips(
 
     tt_metal::SetRuntimeArgs(sender_program, sender_kernel, sender_logical_core, sender_runtime_args);
 
-    std::vector<uint32_t> receiver_runtime_args = {worker_mem_map.packet_payload_size_bytes, num_packets, time_seed};
+    // Create and run receiver program only if not using DRAM destination
+    if (!use_dram_dst) {
+        std::vector<uint32_t> receiver_runtime_args = {worker_mem_map.packet_payload_size_bytes, num_packets, time_seed};
 
-    // Create the receiver program for validation
-    auto receiver_program = tt_metal::CreateProgram();
-    auto receiver_kernel = tt_metal::CreateKernel(
-        receiver_program,
-        "tests/tt_metal/tt_metal/perf_microbenchmark/routing/kernels/tt_fabric_1d_rx.cpp",
-        {receiver_logical_core},
-        tt_metal::DataMovementConfig{
-            .processor = tt_metal::DataMovementProcessor::RISCV_0,
-            .noc = tt_metal::NOC::RISCV_0_default,
-            .compile_args = compile_time_args});
+        // Create the receiver program for validation
+        auto receiver_program = tt_metal::CreateProgram();
+        auto receiver_kernel = tt_metal::CreateKernel(
+            receiver_program,
+            "tests/tt_metal/tt_metal/perf_microbenchmark/routing/kernels/tt_fabric_1d_rx.cpp",
+            {receiver_logical_core},
+            tt_metal::DataMovementConfig{
+                .processor = tt_metal::DataMovementProcessor::RISCV_0,
+                .noc = tt_metal::NOC::RISCV_0_default,
+                .compile_args = compile_time_args});
 
-    tt_metal::SetRuntimeArgs(receiver_program, receiver_kernel, receiver_logical_core, receiver_runtime_args);
+        tt_metal::SetRuntimeArgs(receiver_program, receiver_kernel, receiver_logical_core, receiver_runtime_args);
 
-    // Launch sender and receiver programs and wait for them to finish
-    fixture->RunProgramNonblocking(receiver_device, receiver_program);
-    fixture->RunProgramNonblocking(sender_device, sender_program);
-    fixture->WaitForSingleProgramDone(sender_device, sender_program);
-    fixture->WaitForSingleProgramDone(receiver_device, receiver_program);
+        // Launch sender and receiver programs and wait for them to finish
+        fixture->RunProgramNonblocking(receiver_device, receiver_program);
+        fixture->RunProgramNonblocking(sender_device, sender_program);
+        fixture->WaitForSingleProgramDone(sender_device, sender_program);
+        fixture->WaitForSingleProgramDone(receiver_device, receiver_program);
+    } else {
+        // Launch only sender program
+        fixture->RunProgramNonblocking(sender_device, sender_program);
+        fixture->WaitForSingleProgramDone(sender_device, sender_program);
+    }
 
     // Validate the status and packets processed by sender and receiver
     std::vector<uint32_t> sender_status;
@@ -639,25 +665,82 @@ void run_unicast_test_bw_chips(
         sender_status,
         CoreType::WORKER);
 
-    tt_metal::detail::ReadFromDeviceL1(
-        receiver_device,
-        receiver_logical_core,
-        worker_mem_map.test_results_address,
-        worker_mem_map.test_results_size_bytes,
-        receiver_status,
-        CoreType::WORKER);
-
     EXPECT_EQ(sender_status[TT_FABRIC_STATUS_INDEX], TT_FABRIC_STATUS_PASS);
-    EXPECT_EQ(receiver_status[TT_FABRIC_STATUS_INDEX], TT_FABRIC_STATUS_PASS);
 
     uint64_t sender_bytes =
         ((uint64_t)sender_status[TT_FABRIC_WORD_CNT_INDEX + 1] << 32) | sender_status[TT_FABRIC_WORD_CNT_INDEX];
-    uint64_t receiver_bytes =
-        ((uint64_t)receiver_status[TT_FABRIC_WORD_CNT_INDEX + 1] << 32) | receiver_status[TT_FABRIC_WORD_CNT_INDEX];
-    EXPECT_EQ(sender_bytes, receiver_bytes);
+
+    if (!use_dram_dst) {
+        // Validate receiver status when using worker core destination
+        std::vector<uint32_t> receiver_status;
+        tt_metal::detail::ReadFromDeviceL1(
+            receiver_device,
+            receiver_logical_core,
+            worker_mem_map.test_results_address,
+            worker_mem_map.test_results_size_bytes,
+            receiver_status,
+            CoreType::WORKER);
+
+        EXPECT_EQ(receiver_status[TT_FABRIC_STATUS_INDEX], TT_FABRIC_STATUS_PASS);
+
+        uint64_t receiver_bytes =
+            ((uint64_t)receiver_status[TT_FABRIC_WORD_CNT_INDEX + 1] << 32) | receiver_status[TT_FABRIC_WORD_CNT_INDEX];
+        EXPECT_EQ(sender_bytes, receiver_bytes);
+    } else {
+        // Probe DRAM directly to verify data was written
+        uint32_t total_data_size_bytes = num_packets * worker_mem_map.packet_payload_size_bytes;
+        std::vector<uint32_t> dram_data;
+        
+        // Read data from DRAM
+        bool read_success = tt_metal::detail::ReadFromDeviceDRAMChannel(
+            receiver_device, 
+            dest_bank_id, 
+            dest_dram_addr + worker_mem_map.target_address, 
+            total_data_size_bytes, 
+            dram_data);
+        
+        EXPECT_TRUE(read_success);
+        log_info(tt::LogTest, "Read {} bytes from DRAM bank {} at address 0x{:x}", 
+                 total_data_size_bytes, dest_bank_id, dest_dram_addr + worker_mem_map.target_address);
+        
+        // Verify data pattern - each packet should have deterministic data based on seed=0
+        // The fill_packet_data function writes every 16 bytes (PACKET_WORD_SIZE_BYTES)
+        // at offset 12 bytes from the start of each 16-byte block
+        bool data_valid = true;
+        constexpr uint32_t PACKET_WORD_SIZE_BYTES = 16;
+        uint32_t time_seed = 0; // DRAM tests use seed=0 and don't increment it
+        
+        for (uint32_t packet_idx = 0; packet_idx < num_packets; packet_idx++) {
+            uint32_t packet_start_word = (packet_idx * worker_mem_map.packet_payload_size_bytes) / sizeof(uint32_t);
+            uint32_t num_data_words = worker_mem_map.packet_payload_size_bytes / PACKET_WORD_SIZE_BYTES;
+            
+            // Check data pattern within this packet
+            for (uint32_t word_idx = 0; word_idx < num_data_words; word_idx++) {
+                // Data is written at offset 3 words (12 bytes) within each 16-byte block
+                uint32_t data_word_offset = packet_start_word + (word_idx * (PACKET_WORD_SIZE_BYTES / sizeof(uint32_t))) + 3;
+                uint32_t expected_value = time_seed + word_idx;
+                
+                if (data_word_offset < dram_data.size()) {
+                    if (dram_data[data_word_offset] != expected_value) {
+                        log_error(tt::LogTest, "Data mismatch in packet {} word {}: expected 0x{:x}, got 0x{:x}", 
+                                 packet_idx, word_idx, expected_value, dram_data[data_word_offset]);
+                        data_valid = false;
+                        break;
+                    }
+                }
+            }
+            if (!data_valid) break;
+        }
+        
+        EXPECT_TRUE(data_valid);
+        if (data_valid) {
+            log_info(tt::LogTest, "DRAM data verification passed - {} packets with {} bytes each verified", 
+                     num_packets, worker_mem_map.packet_payload_size_bytes);
+        }
+    }
 }
 
-void RunTestUnicastConnAPI(BaseFabricFixture* fixture, uint32_t num_hops, RoutingDirection direction) {
+void RunTestUnicastConnAPI(BaseFabricFixture* fixture, uint32_t num_hops, RoutingDirection direction, bool use_dram_dst) {
     const auto& control_plane= tt::tt_metal::MetalContext::instance().get_control_plane();
 
     FabricNodeId src_fabric_node_id(MeshId{0}, 0);
@@ -678,7 +761,7 @@ void RunTestUnicastConnAPI(BaseFabricFixture* fixture, uint32_t num_hops, Routin
     chip_id_t src_physical_device_id = control_plane.get_physical_chip_id_from_fabric_node_id(src_fabric_node_id);
     chip_id_t dst_physical_device_id = control_plane.get_physical_chip_id_from_fabric_node_id(dst_fabric_node_id);
 
-    run_unicast_test_bw_chips(fixture, src_physical_device_id, dst_physical_device_id, num_hops);
+    run_unicast_test_bw_chips(fixture, src_physical_device_id, dst_physical_device_id, num_hops, use_dram_dst);
 }
 
 void RunTestUnicastConnAPIRandom(BaseFabricFixture* fixture) {
@@ -1239,6 +1322,7 @@ void RunTestChipMCast1D(
 
 TEST_F(Fabric1DFixture, TestUnicastRaw) { RunTestUnicastRaw(this, 1, RoutingDirection::E, false); }
 TEST_F(Fabric1DFixture, TestUnicastConnAPI) { RunTestUnicastConnAPI(this, 1); }
+TEST_F(Fabric1DFixture, TestUnicastConnAPIDRAM) { RunTestUnicastConnAPI(this, 1, RoutingDirection::E, true); }
 TEST_F(Fabric1DFixture, TestUnicastTGGateways) { RunTestUnicastTGGateways(this); }
 TEST_F(Fabric1DFixture, TestMCastConnAPI) { RunTestMCastConnAPI(this); }
 

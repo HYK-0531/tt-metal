@@ -244,15 +244,18 @@ void kernel_main() {
     // loop over for num packets
     for (uint32_t i = 0; i < num_packets; i++) {
 #ifndef BENCHMARK_MODE
-        time_seed = use_dram_dst ? time_seed : prng_next(time_seed);
+        time_seed = prng_next(time_seed);
 
         if (use_dram_dst) {
+            // Calculate current DRAM destination address for this packet
+            uint32_t current_dram_addr = dest_dram_addr + (i * packet_payload_size_bytes);
+
             setup_header_noc_unicast_write_dram(
-                fwd_packet_header, packet_payload_size_bytes, dest_dram_addr + target_address, dest_bank_id);
+                fwd_packet_header, packet_payload_size_bytes, current_dram_addr, dest_bank_id);
 
             if constexpr (additional_dir) {
                 setup_header_noc_unicast_write_dram(
-                    bwd_packet_header, packet_payload_size_bytes, dest_dram_addr + target_address, dest_bank_id);
+                    bwd_packet_header, packet_payload_size_bytes, current_dram_addr, dest_bank_id);
             }
         } else {
             setup_header_noc_unicast_write(
@@ -279,7 +282,9 @@ void kernel_main() {
                 bwd_fabric_connection);
         }
 #ifndef BENCHMARK_MODE
-        target_address += packet_payload_size_bytes;
+        if (!use_dram_dst) {
+            target_address += packet_payload_size_bytes;
+        }
 #endif
     }
 

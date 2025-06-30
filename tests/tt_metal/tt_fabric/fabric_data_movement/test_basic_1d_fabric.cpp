@@ -554,7 +554,7 @@ void run_unicast_test_bw_chips(
     // test parameters
     auto worker_mem_map = generate_worker_mem_map(sender_device, topology);
     uint32_t num_packets = 10;
-    uint32_t time_seed = std::chrono::system_clock::now().time_since_epoch().count();  // TODO Change this later
+    uint32_t time_seed = std::chrono::system_clock::now().time_since_epoch().count();
 
     // common compile time args for sender and receiver
     std::vector<uint32_t> compile_time_args = {
@@ -564,7 +564,8 @@ void run_unicast_test_bw_chips(
         topology == Topology::Mesh,
         fabric_config == tt_metal::FabricConfig::FABRIC_2D_DYNAMIC,
         0 /* is_chip_multicast */,
-        0 /* additional_dir */};
+        0 /* additional_dir */,
+        time_seed /* notify_value for dram*/};
 
     std::map<string, string> defines = {};
     if (is_2d_fabric) {
@@ -594,7 +595,6 @@ void run_unicast_test_bw_chips(
     uint32_t dest_dram_addr = 0;
 
     if (use_dram_dst) {
-        dest_bank_id = 0; // Use bank 0
         dest_dram_addr = receiver_device->allocator()->get_base_allocator_addr(tt_metal::HalMemType::DRAM);
     } else {
         dest_x = receiver_virtual_core.x;
@@ -615,9 +615,9 @@ void run_unicast_test_bw_chips(
         1 /* fwd_range */,
         dst_fabric_node_id.chip_id,
         *dst_fabric_node_id.mesh_id,
-        use_dram_dst ? 1 : 0, /* use_dram_dst */
-        dest_bank_id,         /* bank_id */
-        dest_dram_addr        /* dram_base_addr */};
+        use_dram_dst, /* use_dram_dst */
+        dest_bank_id, /* bank_id */
+        dest_dram_addr /* dram_base_addr */};
 
     // append the EDM connection rt args
     const auto& available_links = get_forwarding_link_indices(src_fabric_node_id, dst_fabric_node_id);
@@ -696,20 +696,15 @@ void run_unicast_test_bw_chips(
         std::vector<uint32_t> dram_data;
 
         // Read data from DRAM
-        bool read_success = tt_metal::detail::ReadFromDeviceDRAMChannel(
-            receiver_device,
-            dest_bank_id,
-            dest_dram_addr + worker_mem_map.target_address,
-            total_data_size_bytes,
-            dram_data);
+        tt_metal::detail::ReadFromDeviceDRAMChannel(
+            receiver_device, dest_bank_id, dest_dram_addr, total_data_size_bytes, dram_data);
 
-        EXPECT_TRUE(read_success);
         log_info(
             tt::LogTest,
             "Read {} bytes from DRAM bank {} at address 0x{:x}",
             total_data_size_bytes,
             dest_bank_id,
-            dest_dram_addr + worker_mem_map.target_address);
+            dest_dram_addr);
 
         // Verify data pattern - each packet should have deterministic data based on seed=0
         // The fill_packet_data function writes every 16 bytes (PACKET_WORD_SIZE_BYTES)
@@ -718,6 +713,12 @@ void run_unicast_test_bw_chips(
         constexpr uint32_t PACKET_WORD_SIZE_BYTES = 16;
 
         for (uint32_t packet_idx = 0; packet_idx < num_packets; packet_idx++) {
+            uint32_t x = time_seed;
+            // prng_next;
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            time_seed = x;
             uint32_t packet_start_word = (packet_idx * worker_mem_map.packet_payload_size_bytes) / sizeof(uint32_t);
             uint32_t num_data_words = worker_mem_map.packet_payload_size_bytes / PACKET_WORD_SIZE_BYTES;
 

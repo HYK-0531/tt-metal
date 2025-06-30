@@ -24,11 +24,15 @@ void kernel_main() {
     uint32_t num_packets = get_arg_val<uint32_t>(increment_arg_idx(rt_args_idx));
     uint32_t time_seed = get_arg_val<uint32_t>(increment_arg_idx(rt_args_idx));
 
+    uint32_t use_dram_dst = get_arg_val<uint32_t>(increment_arg_idx(rt_args_idx++));
+    uint32_t dest_bank_id = get_arg_val<uint32_t>(increment_arg_idx(rt_args_idx++));
+    uint32_t dest_dram_addr = get_arg_val<uint32_t>(increment_arg_idx(rt_args_idx++));
+
     tt_l1_ptr uint32_t* start_addr = reinterpret_cast<tt_l1_ptr uint32_t*>(target_address);
     volatile tt_l1_ptr uint32_t* poll_addr =
         reinterpret_cast<tt_l1_ptr uint32_t*>(target_address + packet_payload_size_bytes - 4);
     uint32_t mismatch_addr, mismatch_val, expected_val;
-    bool match;
+    bool match = true;
     uint64_t bytes_received = 0;
 
     zero_l1_buf(test_results, test_results_size_bytes);

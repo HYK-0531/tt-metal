@@ -46,6 +46,9 @@ def get_cos_sin_matrix(hf_config):
     sin = sin[:, : sin.shape[1] // 2]
     sin = torch.stack((sin, sin), dim=-1).flatten(-2)
 
+    cos = cos.unsqueeze(0).unsqueeze(0)  # [1, 1, max_seq_len, dim]
+    sin = sin.unsqueeze(0).unsqueeze(0)  # [1, 1, max_seq_len, dim]
+
     return cos, sin
 
 
@@ -61,11 +64,11 @@ class RotarySetup(LightweightModule):
         device,
         batch_size: int,
         hf_config,
-        datatype=ttnn.bfloat16,
     ):
         super().__init__()
 
         self.batch_size = batch_size
+        self.hf_config = hf_config
         self.dim = hf_config.qk_rope_head_dim
         self.device = device
         self.num_devices = device.get_num_devices()
@@ -78,22 +81,7 @@ class RotarySetup(LightweightModule):
         self.core_grid = device.compute_with_storage_grid_size()
 
         # Generate the cos/sin matrices needed for ttnn.embedding op
-        cos_matrix, sin_matrix = get_cos_sin_matrix(hf_config)
-
-        self.cos_matrix = ttnn.from_torch(
-            cos_matrix,
-            device=device,
-            layout=ttnn.TILE_LAYOUT,
-            dtype=datatype,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(device),
-        )
-        self.sin_matrix = ttnn.from_torch(
-            sin_matrix,
-            device=device,
-            layout=ttnn.TILE_LAYOUT,
-            dtype=datatype,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(device),
-        )
+        self.cos_matrix, self.sin_matrix = self.get_rot_mats_table()
 
         self.batch_grid = (
             ttnn.CoreGrid(y=4, x=8)
@@ -119,7 +107,7 @@ class RotarySetup(LightweightModule):
             trans_mat,
             device=device,
             layout=ttnn.TILE_LAYOUT,
-            dtype=datatype,
+            dtype=ttnn.bfloat16,
             memory_config=trans_mat_mem_config,
             mesh_mapper=ttnn.ReplicateTensorToMesh(device),
         )
@@ -129,7 +117,7 @@ class RotarySetup(LightweightModule):
             prefill_trans_mat_torch,
             device=device,
             layout=ttnn.TILE_LAYOUT,
-            dtype=datatype,
+            dtype=ttnn.bfloat16,
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
             mesh_mapper=ttnn.ReplicateTensorToMesh(device),
         )
@@ -162,6 +150,36 @@ class RotarySetup(LightweightModule):
         )
 
         return rot_idxs
+
+    def get_rot_mats_table(self, seq_len=None):
+        """
+        Get the cos and sin matrices for all positions in the sequence length.
+        If seq_len is None, it will use the max position embeddings from the HF config.
+        """
+
+        cos_matrix_torch, sin_matrix_torch = get_cos_sin_matrix(self.hf_config)
+
+        if seq_len is not None:
+            assert seq_len <= self.hf_config.max_seq_len, "seq_len must be less than or equal to max_seq_len"
+            cos_matrix_torch = cos_matrix_torch[..., :seq_len, :]
+            sin_matrix_torch = sin_matrix_torch[..., :seq_len, :]
+
+        cos_matrix = ttnn.from_torch(
+            cos_matrix_torch,
+            device=self.device,
+            layout=ttnn.TILE_LAYOUT,
+            dtype=ttnn.bfloat16,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(self.device),
+        )
+        sin_matrix = ttnn.from_torch(
+            sin_matrix_torch,
+            device=self.device,
+            layout=ttnn.TILE_LAYOUT,
+            dtype=ttnn.bfloat16,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(self.device),
+        )
+
+        return cos_matrix, sin_matrix
 
     def get_rot_mats(self, position_idxs, return_rot_idxs=False):
         device = self.device

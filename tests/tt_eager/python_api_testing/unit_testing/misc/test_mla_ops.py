@@ -322,6 +322,21 @@ class PrefillModelConfig:
         self.configs["WO_IN1_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
         self.configs["WO_OUT_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
 
+        # q_rope
+        self.configs["QROPE_SHAPE"] = lambda seq_len: (
+            1,
+            self.args.num_attention_heads // TP,
+            seq_len,
+            self.args.qk_rope_head_dim,
+        )
+        self.configs["QROPE_DTYPE"] = ttnn.bfloat16
+        self.configs["QROPE_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+
+        # k_rope
+        self.configs["KROPE_SHAPE"] = lambda seq_len: (1, 1, seq_len, self.args.qk_rope_head_dim)
+        self.configs["KROPE_DTYPE"] = ttnn.bfloat16
+        self.configs["KROPE_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+
 
 hugging_face_config = AutoConfig.from_pretrained("deepseek-ai/DeepSeek-R1-0528", trust_remote_code=True)
 hugging_face_config.max_seq_len = 16 * 1024  # Set max sequence length for testing
@@ -408,26 +423,41 @@ def run_matmul_impl(
     assert out_pass, f"Output mismatch: PCC {out_pcc} < 0.99"
 
 
-def run_decode_rope_impl(
+def run_rope_impl(
     device,
     shape,
     dtype,
     mem_config,
+    seq_len=None,
 ):
-    # TODO: Only testing without scaling for now!
-
     layout = ttnn.TILE_LAYOUT
 
-    _, bsz, nh, head_dim = shape
+    if seq_len is not None:  # Prefill
+        # Check that the shape is a function
+        assert callable(shape), "Shape must be callable for prefill tests with variable sequence length."
+
+        # TT Shape: [bsz, nheads, seq_len, head_dim]
+        input_shape = shape(seq_len)
+        bsz = input_shape[0]
+        mode = "prefill"
+    else:  # Decode
+        # TT Shape: [seq_len, bsz, nheads, head_dim]
+        input_shape = shape
+        bsz = input_shape[1]
+        mode = "decode"
 
     logger.info("Running rope with the following configurations:")
-    logger.info(f"Shape: {shape}, Dtype: {dtype}, Memory Config: {mem_config}")
+    logger.info(f"Shape: {input_shape}, Dtype: {dtype}, Memory Config: {mem_config}")
+
+    assert (
+        input_shape[-1] == decode_cfg.args.qk_rope_head_dim
+    ), "Input shape's last dimension must match qk_rope_head_dim."
 
     #################
     ### Torch
     #################
     position_ids = torch.randint(0, decode_cfg.args.max_seq_len, (bsz,))
-    input_torch = torch.randn(shape).float()
+    input_torch = torch.randn(input_shape).float()
 
     # Args expected by DeepSeek impl RoPE
     rope_args = SimpleNamespace(
@@ -439,8 +469,22 @@ def run_decode_rope_impl(
         rope_factor=decode_cfg.args.rope_scaling["factor"],
         original_seq_len=decode_cfg.args.rope_scaling["original_max_position_embeddings"],
     )
-    freqs_cis = precompute_freqs_cis(rope_args)[position_ids, :]
-    out_torch = apply_rotary_emb(input_torch, freqs_cis)
+    freqs_cis = precompute_freqs_cis(rope_args)
+
+    if mode == "prefill":
+        # For prefill, we use the first seq_len positions
+        freqs_cis = freqs_cis[:seq_len, :]
+    else:
+        # For decode, we use the position_ids to index into freqs_cis
+        freqs_cis = freqs_cis[position_ids, :]
+
+    out_torch = apply_rotary_emb(
+        input_torch if mode == "decode" else input_torch.transpose(1, 2), freqs_cis  # Heads is flipped for prefill
+    )
+
+    if mode == "prefill":
+        # For prefill, we need to transpose the output to match TT-NN's expected shape
+        out_torch = out_torch.transpose(1, 2)
 
     #################
     ### TT-NN
@@ -451,8 +495,11 @@ def run_decode_rope_impl(
         hf_config=decode_cfg.args,
     )
 
-    tt_cos, tt_sin = rope_setup.get_rot_mats(position_ids)
-    tt_trans_mat = rope_setup.get_both_trans_mats()["decode"]
+    if mode == "prefill":
+        tt_cos, tt_sin = rope_setup.get_rot_mats_table(seq_len)
+    else:
+        tt_cos, tt_sin = rope_setup.get_rot_mats(position_ids)
+    tt_trans_mat = rope_setup.get_both_trans_mats()[mode]
 
     tt_input = ttnn.from_torch(
         input_torch,
@@ -467,7 +514,7 @@ def run_decode_rope_impl(
         tt_cos,
         tt_sin,
         tt_trans_mat,
-        is_decode_mode=True,
+        is_decode_mode=(mode == "decode"),
     )
 
     tt_out_torch = ttnn.to_torch(tt_out)
@@ -836,11 +883,53 @@ def test_decode_ropes(
     function_level_defaults,
     reset_seeds,
 ):
-    run_decode_rope_impl(
+    run_rope_impl(
         device,
         shape=shape,
         dtype=dtype,
         mem_config=mem_config,
+    )
+
+
+@pytest.mark.parametrize(
+    "seq_len",
+    [128, 1024, 8096],
+)
+@pytest.mark.parametrize(
+    "shape, dtype, mem_config",
+    [
+        (  # q_rope
+            prefill_cfg.configs["QROPE_SHAPE"],
+            prefill_cfg.configs["QROPE_DTYPE"],
+            prefill_cfg.configs["QROPE_MEM_CFG"],
+        ),
+        (  # k_rope
+            prefill_cfg.configs["KROPE_SHAPE"],
+            prefill_cfg.configs["KROPE_DTYPE"],
+            prefill_cfg.configs["KROPE_MEM_CFG"],
+        ),
+    ],
+    ids=[
+        "q_rope",
+        "k_rope",
+    ],
+)
+def test_prefill_ropes(
+    device,
+    shape,
+    dtype,
+    mem_config,
+    seq_len,
+    use_program_cache,
+    function_level_defaults,
+    reset_seeds,
+):
+    run_rope_impl(
+        device,
+        shape=shape,
+        dtype=dtype,
+        mem_config=mem_config,
+        seq_len=seq_len,
     )
 
 

@@ -112,7 +112,7 @@ inline void setup_header_noc_unicast_write_dram(
     uint32_t dest_addr,
     uint32_t dest_bank_id) {
     packet_header->to_noc_unicast_write(
-        NocUnicastCommandHeader{get_noc_addr_from_bank_id(dest_bank_id, dest_addr)}, packet_payload_size_bytes);
+        NocUnicastCommandHeader{get_noc_addr_from_bank_id<true>(dest_bank_id, dest_addr)}, packet_payload_size_bytes);
 }
 
 inline void send_packet(
@@ -163,12 +163,12 @@ void kernel_main() {
     uint32_t fwd_range = get_arg_val<uint32_t>(rt_args_idx++);  // for multicast only
     uint32_t fwd_dev_id = get_arg_val<uint32_t>(rt_args_idx++);   // for 2d unicast only
     uint32_t fwd_mesh_id = get_arg_val<uint32_t>(rt_args_idx++);  // for 2d unicast only
-    
+
     // DRAM destination args
     uint32_t use_dram_dst = get_arg_val<uint32_t>(rt_args_idx++);
     uint32_t dest_bank_id = get_arg_val<uint32_t>(rt_args_idx++);
     uint32_t dest_dram_addr = get_arg_val<uint32_t>(rt_args_idx++);
-    
+
     uint32_t bwd_start_distance;
     uint32_t bwd_range;
     uint32_t bwd_dev_id;

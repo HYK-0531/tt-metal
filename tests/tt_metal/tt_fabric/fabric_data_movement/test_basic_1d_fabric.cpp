@@ -527,7 +527,11 @@ void RunTestUnicastRaw(
 }
 
 void run_unicast_test_bw_chips(
-    BaseFabricFixture* fixture, chip_id_t src_physical_device_id, chip_id_t dst_physical_device_id, uint32_t num_hops, bool use_dram_dst) {
+    BaseFabricFixture* fixture,
+    chip_id_t src_physical_device_id,
+    chip_id_t dst_physical_device_id,
+    uint32_t num_hops,
+    bool use_dram_dst = false) {
     CoreCoord sender_logical_core = {0, 0};
     CoreCoord receiver_logical_core = {1, 0};
 
@@ -550,7 +554,7 @@ void run_unicast_test_bw_chips(
     // test parameters
     auto worker_mem_map = generate_worker_mem_map(sender_device, topology);
     uint32_t num_packets = 10;
-    uint32_t time_seed = use_dram_dst ? 0 : std::chrono::system_clock::now().time_since_epoch().count(); // TODO Change this later
+    uint32_t time_seed = std::chrono::system_clock::now().time_since_epoch().count();  // TODO Change this later
 
     // common compile time args for sender and receiver
     std::vector<uint32_t> compile_time_args = {
@@ -588,7 +592,7 @@ void run_unicast_test_bw_chips(
     uint32_t dest_x = 0, dest_y = 0;
     uint32_t dest_bank_id = 0;
     uint32_t dest_dram_addr = 0;
-    
+
     if (use_dram_dst) {
         dest_bank_id = 0; // Use bank 0
         dest_dram_addr = receiver_device->allocator()->get_base_allocator_addr(tt_metal::HalMemType::DRAM);
@@ -690,40 +694,48 @@ void run_unicast_test_bw_chips(
         // Probe DRAM directly to verify data was written
         uint32_t total_data_size_bytes = num_packets * worker_mem_map.packet_payload_size_bytes;
         std::vector<uint32_t> dram_data;
-        
+
         // Read data from DRAM
         bool read_success = tt_metal::detail::ReadFromDeviceDRAMChannel(
-            receiver_device, 
-            dest_bank_id, 
-            dest_dram_addr + worker_mem_map.target_address, 
-            total_data_size_bytes, 
+            receiver_device,
+            dest_bank_id,
+            dest_dram_addr + worker_mem_map.target_address,
+            total_data_size_bytes,
             dram_data);
-        
+
         EXPECT_TRUE(read_success);
-        log_info(tt::LogTest, "Read {} bytes from DRAM bank {} at address 0x{:x}", 
-                 total_data_size_bytes, dest_bank_id, dest_dram_addr + worker_mem_map.target_address);
-        
+        log_info(
+            tt::LogTest,
+            "Read {} bytes from DRAM bank {} at address 0x{:x}",
+            total_data_size_bytes,
+            dest_bank_id,
+            dest_dram_addr + worker_mem_map.target_address);
+
         // Verify data pattern - each packet should have deterministic data based on seed=0
         // The fill_packet_data function writes every 16 bytes (PACKET_WORD_SIZE_BYTES)
         // at offset 12 bytes from the start of each 16-byte block
         bool data_valid = true;
         constexpr uint32_t PACKET_WORD_SIZE_BYTES = 16;
-        uint32_t time_seed = 0; // DRAM tests use seed=0 and don't increment it
-        
+
         for (uint32_t packet_idx = 0; packet_idx < num_packets; packet_idx++) {
             uint32_t packet_start_word = (packet_idx * worker_mem_map.packet_payload_size_bytes) / sizeof(uint32_t);
             uint32_t num_data_words = worker_mem_map.packet_payload_size_bytes / PACKET_WORD_SIZE_BYTES;
-            
+
             // Check data pattern within this packet
             for (uint32_t word_idx = 0; word_idx < num_data_words; word_idx++) {
                 // Data is written at offset 3 words (12 bytes) within each 16-byte block
                 uint32_t data_word_offset = packet_start_word + (word_idx * (PACKET_WORD_SIZE_BYTES / sizeof(uint32_t))) + 3;
                 uint32_t expected_value = time_seed + word_idx;
-                
+
                 if (data_word_offset < dram_data.size()) {
                     if (dram_data[data_word_offset] != expected_value) {
-                        log_error(tt::LogTest, "Data mismatch in packet {} word {}: expected 0x{:x}, got 0x{:x}", 
-                                 packet_idx, word_idx, expected_value, dram_data[data_word_offset]);
+                        log_error(
+                            tt::LogTest,
+                            "Data mismatch in packet {} word {}: expected 0x{:x}, got 0x{:x}",
+                            packet_idx,
+                            word_idx,
+                            expected_value,
+                            dram_data[data_word_offset]);
                         data_valid = false;
                         break;
                     }
@@ -731,11 +743,14 @@ void run_unicast_test_bw_chips(
             }
             if (!data_valid) break;
         }
-        
+
         EXPECT_TRUE(data_valid);
         if (data_valid) {
-            log_info(tt::LogTest, "DRAM data verification passed - {} packets with {} bytes each verified", 
-                     num_packets, worker_mem_map.packet_payload_size_bytes);
+            log_info(
+                tt::LogTest,
+                "DRAM data verification passed - {} packets with {} bytes each verified",
+                num_packets,
+                worker_mem_map.packet_payload_size_bytes);
         }
     }
 }

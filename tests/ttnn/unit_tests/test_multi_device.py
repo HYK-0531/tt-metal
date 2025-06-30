@@ -757,3 +757,62 @@ def test_heterogenous_operation_dispatch():
 def test_fabric_with_submeshes(t3k_mesh_device):
     logger.info("Spawning 2 1x4 submeshes on a 2x4 mesh device with fabric enabled")
     submeshes = t3k_mesh_device.create_submeshes(ttnn.MeshShape(1, 4))
+
+
+@pytest.mark.parametrize("device_params", [{"fabric_config": ttnn.FabricConfig.FABRIC_1D}], indirect=True)
+@pytest.mark.parametrize("mesh_device", [(2, 4), (8, 4)], ids=["t3k", "tg"], indirect=True)
+def test_submesh_submesh_communication(mesh_device):
+    submesh_shape = list(mesh_device.shape)
+    submesh_shape[0] //= 2  # Split in half on cluster axis 0
+    submeshes = mesh_device.create_submeshes(ttnn.MeshShape(*submesh_shape))
+    print(f'created submesh with shapes {", ".join(str(tuple(s.shape)) for s in submeshes)}')
+
+    logical_shape = (1, 1, 4096, 2560)
+    in0 = torch.randn(logical_shape)
+    in1 = torch.randn(logical_shape)
+    sm0_in0 = ttnn.from_torch(
+        in0,
+        device=submeshes[0],
+        mesh_mapper=ttnn.ShardTensor2dMesh(submeshes[0], dims=(2, 3), mesh_shape=submesh_shape),
+    )
+    sm1_in1 = ttnn.from_torch(
+        in1,
+        device=submeshes[1],
+        mesh_mapper=ttnn.ShardTensor2dMesh(submeshes[1], dims=(2, 3), mesh_shape=submesh_shape),
+    )
+    print(f"input of shape {in0.shape} created on each submesh")
+
+    def mesh_to_mesh_communication(sm0_in0, sm1_in1):
+        host_sm0_in0 = sm0_in0.cpu()
+        host_sm1_in1 = sm1_in1.cpu()
+        sm1_in0 = host_sm0_in0.to(submeshes[1])
+        sm0_in1 = host_sm1_in1.to(submeshes[0])
+        return sm0_in1, sm1_in0
+
+    n_warmup = 2
+    n_iters = 100
+    from time import perf_counter
+
+    for i in range(n_warmup + n_iters):
+        if i == n_warmup:
+            start = perf_counter()
+        sm0_in1, sm1_in0 = mesh_to_mesh_communication(sm0_in0, sm1_in1)
+    end = perf_counter()
+    latency = (end - start) / n_iters
+    print(f"{latency*1000:.3f} ms per iteration")
+
+    bytes_per_input = 2 * 4096 * 2560
+    bytes_both_inputs = 2 * bytes_per_input
+    bytes_moved_read_write = 2 * bytes_both_inputs
+    bw = bytes_moved_read_write / latency / 1e9
+    print(f"{bw:.3f} GB/s")
+
+    host_sm0_in1 = ttnn.to_torch(
+        sm0_in1, mesh_composer=ttnn.ConcatMesh2dToTensor(submeshes[0], dims=(2, 3), mesh_shape=submesh_shape)
+    )
+    host_sm1_in0 = ttnn.to_torch(
+        sm1_in0, mesh_composer=ttnn.ConcatMesh2dToTensor(submeshes[1], dims=(2, 3), mesh_shape=submesh_shape)
+    )
+
+    assert torch.allclose(host_sm0_in1, in1)
+    assert torch.allclose(host_sm1_in0, in0)

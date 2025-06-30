@@ -13,6 +13,7 @@
 #include <tt-metalium/mesh_coord.hpp>
 #include <tt-metalium/fabric_types.hpp>
 #include <tt-metalium/multi_mesh_types.hpp>
+#include <tt-metalium/ethernet_context.hpp>
 
 #include <map>
 #include <unordered_map>

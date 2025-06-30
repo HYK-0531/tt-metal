@@ -12,7 +12,6 @@ namespace ttnn::operations::experimental::ccl {
 
 ttnn::Tensor ExecuteReduceScatterMinimalAsync::invoke(
     const ttnn::Tensor& input_tensor,
-    ttnn::Tensor& persistent_intermediate_buffer,
     const int32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
     const uint32_t num_links,
@@ -22,7 +21,6 @@ ttnn::Tensor ExecuteReduceScatterMinimalAsync::invoke(
     std::optional<uint32_t> cluster_axis) {
     return ttnn::operations::experimental::ccl::reduce_scatter_minimal_async(
         input_tensor,
-        persistent_intermediate_buffer,
         dim,
         multi_device_global_semaphore,
         num_links,

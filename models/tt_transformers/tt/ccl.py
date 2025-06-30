@@ -51,18 +51,18 @@ def tt_all_reduce(
             rs_memory_config = ttnn.L1_MEMORY_CONFIG
             input_tensor = ttnn.to_memory_config(input_tensor, rs_memory_config)
 
-        rs_input_dtype = input_tensor.dtype
-        rs_input_shape = list(input_tensor.shape)
-        rs_num_batches = rs_input_shape[0]
-        single_batch_input_shape = rs_input_shape[:]
-        single_batch_input_shape[2] //= rs_num_batches
-        persistent_intermediate_buffer = reduce_scatter_intermediate_buffers[
-            (tuple(single_batch_input_shape), rs_input_dtype)
-        ]
+        # rs_input_dtype = input_tensor.dtype
+        # rs_input_shape = list(input_tensor.shape)
+        # rs_num_batches = rs_input_shape[0]
+        # single_batch_input_shape = rs_input_shape[:]
+        # single_batch_input_shape[2] //= rs_num_batches
+        # persistent_intermediate_buffer = reduce_scatter_intermediate_buffers[
+        #     (tuple(single_batch_input_shape), rs_input_dtype)
+        # ]
 
         reduced = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
-            persistent_intermediate_buffer=persistent_intermediate_buffer,
+            # persistent_intermediate_buffer=persistent_intermediate_buffer,
             dim=dim,
             multi_device_global_semaphore=multi_device_global_semaphore_handles[:3],
             num_links=num_reduce_scatter_links,

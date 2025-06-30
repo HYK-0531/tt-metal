@@ -73,10 +73,10 @@ void kernel_main() {
     int32_t start_tiles_read = get_arg_val<int32_t>(arg_idx++);
     uint32_t start_tiles_to_read = get_arg_val<uint32_t>(arg_idx++);
 
-    uint32_t local_fabric_mux_status_address = get_arg_val<uint32_t>(arg_idx++);
-    uint32_t local_flow_control_address = get_arg_val<uint32_t>(arg_idx++);
-    uint32_t local_teardown_address = get_arg_val<uint32_t>(arg_idx++);
-    uint32_t local_buffer_index_address = get_arg_val<uint32_t>(arg_idx++);
+    uint32_t local_fabric_mux_status_address = get_semaphore(get_arg_val<uint32_t>(arg_idx++));
+    uint32_t local_flow_control_address = get_semaphore(get_arg_val<uint32_t>(arg_idx++));
+    uint32_t local_teardown_address = get_semaphore(get_arg_val<uint32_t>(arg_idx++));
+    uint32_t local_buffer_index_address = get_semaphore(get_arg_val<uint32_t>(arg_idx++));
 
     auto mux_connection_handle = tt::tt_fabric::build_connection_to_fabric_endpoint<fabric_mux_num_buffers_per_channel>(
         fabric_mux_x,
@@ -290,7 +290,6 @@ void kernel_main() {
     }
 
     tt::tt_fabric::fabric_client_disconnect(mux_connection_handle);
-
     if (fabric_mux_worker_master) {
         uint64_t dest_addr = get_noc_addr(fabric_mux_x, fabric_mux_y, fabric_mux_termination_address);
         noc_inline_dw_write(dest_addr, tt::tt_fabric::TerminationSignal::IMMEDIATELY_TERMINATE);

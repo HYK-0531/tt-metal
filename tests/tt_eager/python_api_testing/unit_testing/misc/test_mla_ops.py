@@ -217,6 +217,7 @@ class PrefillModelConfig:
         self.args.qk_head_dim = self.args.qk_nope_head_dim + self.args.qk_rope_head_dim
 
         self.grid_size = (8, 8)
+        self.max_batch_size_per_device = 4
         self.configs = {}
 
         #################
@@ -336,6 +337,17 @@ class PrefillModelConfig:
         self.configs["KROPE_SHAPE"] = lambda seq_len: (1, 1, seq_len, self.args.qk_rope_head_dim)
         self.configs["KROPE_DTYPE"] = ttnn.bfloat16
         self.configs["KROPE_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+
+        # KVPE Cache
+        self.configs["KVPE_SHAPE"] = lambda seq_len: (
+            1,
+            1,
+            seq_len,
+            self.args.kv_lora_rank + self.args.qk_rope_head_dim,
+        )
+        self.configs["KVPE_DTYPE"] = ttnn.bfloat8_b
+        self.configs["KVPE_MEM_CFG"] = ttnn.DRAM_MEMORY_CONFIG
+        self.configs["KVPE_CACHE_DTYPE"] = ttnn.bfloat8_b
 
 
 hugging_face_config = AutoConfig.from_pretrained("deepseek-ai/DeepSeek-R1-0528", trust_remote_code=True)
@@ -596,6 +608,74 @@ def run_update_cache_impl(
 
         cache_torch[b, :, pos : pos + 1, :] = inp
 
+    pcc_threshold = 0.9999
+    if cache_dtype == ttnn.bfloat4_b:
+        pcc_threshold = 0.99
+
+    out_pass, out_pcc = comp_pcc(tt_cache_torch, cache_torch, pcc_threshold)
+    logger.info(f"Output PCC: {out_pcc}")
+
+    assert out_pass, f"Output mismatch: PCC {out_pcc} < 0.99"
+
+
+def run_fill_cache_impl(
+    device,
+    shape,
+    dtype,
+    mem_config,
+    cache_dtype,
+    seq_len,
+):
+    layout = ttnn.TILE_LAYOUT
+    max_seq_len = prefill_cfg.args.max_seq_len
+
+    assert callable(shape), "Shape must be callable for prefill tests with variable sequence length."
+    input_shape = shape(seq_len)
+    _, nkv, seq_len, head_dim = input_shape
+
+    logger.info("Running update cache with the following configurations:")
+    logger.info(f"Shape: {input_shape}, Dtype: {dtype}, Memory Config: {mem_config}")
+    logger.info(f"Max Seq Len: {max_seq_len}")
+
+    #################
+    ### Torch
+    #################
+    cache_torch = torch.randn((prefill_cfg.max_batch_size_per_device, nkv, max_seq_len, head_dim)).float()
+    input_torch = torch.randn(input_shape).float()
+    batch_idx = torch.randint(0, prefill_cfg.max_batch_size_per_device, (1,)).item()  # Randomly select a batch index
+    logger.info(f"Selected batch index: {batch_idx}")
+
+    cache_torch[batch_idx, :, :seq_len, :] = input_torch
+
+    #################
+    ### TT-NN
+    #################
+    tt_cache = ttnn.from_torch(
+        cache_torch,
+        device=device,
+        dtype=cache_dtype,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+        layout=layout,
+    )
+
+    tt_input = ttnn.from_torch(
+        input_torch,
+        device=device,
+        dtype=dtype,
+        memory_config=mem_config,
+        layout=layout,
+    )
+
+    ttnn.fill_cache(
+        tt_cache,
+        tt_input,
+        batch_idx=batch_idx,
+    )
+    tt_cache_torch = ttnn.to_torch(tt_cache)
+
+    #################
+    ### Validation
+    #################
     pcc_threshold = 0.9999
     if cache_dtype == ttnn.bfloat4_b:
         pcc_threshold = 0.99
@@ -961,6 +1041,43 @@ def test_update_caches(
         dtype=dtype,
         mem_config=mem_config,
         cache_dtype=cache_dtype,
+    )
+
+
+@pytest.mark.parametrize(
+    "seq_len",
+    [128, 1024, 8096],
+)
+@pytest.mark.parametrize(
+    "shape, dtype, mem_config, cache_dtype",
+    [
+        (
+            prefill_cfg.configs["KVPE_SHAPE"],
+            prefill_cfg.configs["KVPE_DTYPE"],
+            prefill_cfg.configs["KVPE_MEM_CFG"],
+            prefill_cfg.configs["KVPE_CACHE_DTYPE"],
+        ),
+    ],
+    ids=["kvpe"],
+)
+def test_fill_caches(
+    device,
+    shape,
+    dtype,
+    mem_config,
+    cache_dtype,
+    seq_len,
+    use_program_cache,
+    function_level_defaults,
+    reset_seeds,
+):
+    run_fill_cache_impl(
+        device,
+        shape=shape,
+        dtype=dtype,
+        mem_config=mem_config,
+        cache_dtype=cache_dtype,
+        seq_len=seq_len,
     )
 
 

@@ -1207,6 +1207,35 @@ std::vector<std::pair<FabricNodeId, chan_id_t>> ControlPlane::get_fabric_route(
     std::vector<std::pair<FabricNodeId, chan_id_t>> route;
     int i = 0;
     // Find any eth chan on the plane id
+    if (src_fabric_node_id.mesh_id != dst_fabric_node_id.mesh_id) {
+        while (not this->has_intermesh_links(this->get_physical_chip_id_from_fabric_node_id(src_fabric_node_id))) {
+            i++;
+            auto src_mesh_id = src_fabric_node_id.mesh_id;
+            auto src_chip_id = src_fabric_node_id.chip_id;
+            auto dst_mesh_id = dst_fabric_node_id.mesh_id;
+            auto dst_chip_id = dst_fabric_node_id.chip_id;
+            if (i >= tt::tt_fabric::MAX_MESH_SIZE * tt::tt_fabric::MAX_NUM_MESHES) {
+                return {};
+            }
+            chan_id_t next_chan_id = 0;
+            next_chan_id = this->inter_mesh_routing_tables_.at(src_fabric_node_id)[src_chan_id][*dst_mesh_id];
+            
+            if (next_chan_id == eth_chan_magic_values::INVALID_DIRECTION) {
+                // The complete route b/w src and dst not found, probably some eth cores are reserved along the path
+                return {};
+            }
+            if (src_chan_id != next_chan_id) {
+                // Chan to chan within chip
+                route.push_back({src_fabric_node_id, next_chan_id});
+            }
+            std::tie(src_fabric_node_id, src_chan_id) =
+                this->get_connected_mesh_chip_chan_ids(src_fabric_node_id, next_chan_id);
+            route.push_back({src_fabric_node_id, src_chan_id});
+        }
+
+        return route;
+    }
+
     while (src_fabric_node_id != dst_fabric_node_id) {
         i++;
         auto src_mesh_id = src_fabric_node_id.mesh_id;

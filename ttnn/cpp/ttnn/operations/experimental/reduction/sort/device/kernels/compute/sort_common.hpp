@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "debug/dprint.h"
 #include "debug/pause.h"
+
 namespace NAMESPACE {
 
 void sort_Wt_tiles_row_to_bitonic_sequence(
@@ -16,7 +17,7 @@ void sort_Wt_tiles_row_to_bitonic_sequence(
     const int end_phase) {
     cb_reserve_back(input_transposed_cb_index, Wt);
     cb_reserve_back(index_transposed_cb_index, Wt);
-
+    DPRINT << "COMPUTE: Wt:" << Wt << ENDL();  // TODO: Remove
     bool ascending_local = ascending;
     for (uint32_t wt = 0; wt < Wt; wt += 2) {
         tile_regs_acquire();
@@ -34,7 +35,7 @@ void sort_Wt_tiles_row_to_bitonic_sequence(
         transpose_wh_init_short(index_cb_index);
         transpose_wh_tile(index_cb_index, 0, 2);
         transpose_wh_tile(index_cb_index, 1, 3);
-
+        // DPRINT << "COMPUTE: Processing: " << wt << ENDL();  // TODO: Remove
         // llk_topk_sort -> inplace
         ckernel::topk_local_sort(0, (int)ascending_local, end_phase);
 

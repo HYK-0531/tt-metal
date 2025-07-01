@@ -33,6 +33,8 @@ void MAIN {
     constexpr uint32_t index_tensor_transposed_cb_index = get_compile_time_arg_val(10);
     constexpr uint32_t value_tensor_cb_index = get_compile_time_arg_val(11);
     constexpr uint32_t index_tensor_output_cb_index = get_compile_time_arg_val(12);
+    constexpr uint32_t exchange_buffer_cb_index = get_compile_time_arg_val(13);
+    constexpr uint32_t exchange_buffer_receive_cb_index = get_compile_time_arg_val(14);
 
     // Constants
     constexpr uint32_t one_tile = 1;
@@ -51,7 +53,7 @@ void MAIN {
 
     ckernel::topk_tile_init();
     transpose_wh_init(input_tensor_cb_index, input_tensor_transposed_cb_index);
-
+    DPRINT << "COMPUTE: Start" << ENDL();  // TODO: Remove
     for (uint32_t h = 0; h < Ht; h++) {
         // PAUSE();  // TODO: Remove
         // Create input sequence
@@ -64,11 +66,12 @@ void MAIN {
             /*switch_dir=*/true,
             ascending,
             /*end_phase(log2(K))=*/5);
-
+        DPRINT << "COMPUTE: S1" << ENDL();  // TODO: Remove
         // Wait for bitonic sequence of Wt tiles
-        cb_wait_front(input_tensor_transposed_cb_index, number_of_tiles_per_core);
         cb_wait_front(index_tensor_transposed_cb_index, number_of_tiles_per_core);
-
+        DPRINT << "COMPUTE: S2" << ENDL();  // TODO: Remove
+        cb_wait_front(input_tensor_transposed_cb_index, number_of_tiles_per_core);
+        DPRINT << "COMPUTE: Starting logic" << ENDL();  // TODO: Remove
         // Sort and merge step of bitonic merge sort
         uint32_t stages = 0;
         for (uint32_t i = Wt; i > 1; i >>= 1) {
@@ -81,54 +84,100 @@ void MAIN {
                 for (uint32_t i = 0; i < Wt; i++) {
                     uint32_t j = i ^ sub_dist;
                     if (j > i) {
-                        if (pair_id >= processing_pair_start && pair_id < processing_pair_end) {
-                            if (i >= global_tile_start && i < global_tile_end && j >= global_tile_start &&
-                                j < global_tile_end) {
-                                // Local sorting
+                        if (i >= global_tile_start && i < global_tile_end && j >= global_tile_start &&
+                            j < global_tile_end) {
+                            // Local sorting
+                            // UNPACK(DPRINT << "COMPUTE: Sorting local" << ENDL());  // TODO: Remove
+                            // Determine direction for this comparison block
+                            const bool ascending_block = ((i >> stage) & 1) == 0;
+                            const bool dir = ascending_block == ascending;
 
-                                // Determine direction for this comparison block
-                                const bool ascending_block = ((i >> stage) & 1) == 0;
-                                const bool dir = ascending_block == ascending;
+                            // Get indexes of tiles to compare
+                            const uint32_t left_tile_id = i - global_tile_start;
+                            const uint32_t right_tile_id = j - global_tile_start;
+                            // PAUSE();  // TODO: Remove
+                            tile_regs_acquire();
 
-                                // Get indexes of tiles to compare
-                                const uint32_t left_tile_id = i - global_tile_start;
-                                const uint32_t right_tile_id = j - global_tile_start;
-                                // PAUSE();  // TODO: Remove
-                                tile_regs_acquire();
+                            copy_tile_to_dst_init_short_with_dt(
+                                input_tensor_transposed_cb_index, index_tensor_transposed_cb_index);
+                            copy_tile(index_tensor_transposed_cb_index, left_tile_id, index_dest_start);
+                            copy_tile(index_tensor_transposed_cb_index, right_tile_id, index_dest_end);
 
-                                copy_tile_to_dst_init_short_with_dt(
-                                    input_tensor_transposed_cb_index, index_tensor_transposed_cb_index);
-                                copy_tile(index_tensor_transposed_cb_index, left_tile_id, index_dest_start);
-                                copy_tile(index_tensor_transposed_cb_index, right_tile_id, index_dest_end);
+                            copy_tile_to_dst_init_short_with_dt(
+                                index_tensor_transposed_cb_index, input_tensor_transposed_cb_index);
+                            copy_tile(input_tensor_transposed_cb_index, left_tile_id, input_dest_start);
+                            copy_tile(input_tensor_transposed_cb_index, right_tile_id, input_dest_end);
 
-                                copy_tile_to_dst_init_short_with_dt(
-                                    index_tensor_transposed_cb_index, input_tensor_transposed_cb_index);
-                                copy_tile(input_tensor_transposed_cb_index, left_tile_id, input_dest_start);
-                                copy_tile(input_tensor_transposed_cb_index, right_tile_id, input_dest_end);
+                            ckernel::topk_local_sort(0, (int)dir, 5);
 
-                                ckernel::topk_local_sort(0, (int)dir, 5);
+                            tile_regs_commit();
+                            tile_regs_wait();
 
-                                tile_regs_commit();
-                                tile_regs_wait();
+                            pack_reconfig_data_format(input_tensor_transposed_cb_index);
+                            pack_tile<true>(input_dest_start, input_tensor_transposed_cb_index, left_tile_id);
+                            pack_tile<true>(input_dest_end, input_tensor_transposed_cb_index, right_tile_id);
 
-                                pack_reconfig_data_format(input_tensor_transposed_cb_index);
-                                pack_tile<true>(input_dest_start, input_tensor_transposed_cb_index, left_tile_id);
-                                pack_tile<true>(input_dest_end, input_tensor_transposed_cb_index, right_tile_id);
+                            pack_reconfig_data_format(index_tensor_transposed_cb_index);
+                            pack_tile<true>(index_dest_start, index_tensor_transposed_cb_index, left_tile_id);
+                            pack_tile<true>(index_dest_end, index_tensor_transposed_cb_index, right_tile_id);
 
-                                pack_reconfig_data_format(index_tensor_transposed_cb_index);
-                                pack_tile<true>(index_dest_start, index_tensor_transposed_cb_index, left_tile_id);
-                                pack_tile<true>(index_dest_end, index_tensor_transposed_cb_index, right_tile_id);
+                            tile_regs_release();
+                        } else if (i >= global_tile_start && i < global_tile_end) {
+                            DPRINT << "COMPUTE: 1" << ENDL();
+                            // J is on a remote core
+                            // TODO: Swapping tiles
+                            cb_reserve_back(exchange_buffer_cb_index, one_tile);
+                            UNPACK(
+                                DPRINT << "COMPUTE: J is on a remote core, sending I: " << i
+                                       << ENDL());  // TODO: Remove
+                            // TODO: Send tile I to reader kernel
+                            tile_regs_acquire();
+                            copy_tile_to_dst_init_short_with_dt(
+                                index_tensor_transposed_cb_index, input_tensor_transposed_cb_index);
+                            copy_tile(input_tensor_transposed_cb_index, i, 0);
+                            pack_reconfig_data_format(exchange_buffer_cb_index);
+                            pack_tile(0, exchange_buffer_cb_index, 0);
+                            tile_regs_release();
 
-                                tile_regs_release();
-                            } else {
-                                // TODO: Swapping tiles
-                            }
+                            cb_push_back(exchange_buffer_cb_index, one_tile);  // Sending tile I to reader kernel
+                            cb_wait_front(
+                                exchange_buffer_receive_cb_index, one_tile);       // Receiving tile to be processed
+                            UNPACK(DPRINT << "COMPUTE: Received tile" << ENDL());  // TODO: Remove
+                            // TODO: Process tiles
+
+                            cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
+                            cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
+                        } else if (j >= global_tile_start && j < global_tile_end) {
+                            DPRINT << "COMPUTE: 2" << ENDL();
+                            // I is on a remote core
+                            // TODO: Swapping tiles
+                            cb_reserve_back(exchange_buffer_cb_index, one_tile);
+                            cb_reserve_back(exchange_buffer_cb_index, one_tile);
+                            UNPACK(
+                                DPRINT << "COMPUTE: I is on a remote core, sending J: " << j
+                                       << ENDL());  // TODO: Remove
+                            // TODO: Send tile J to reader kernel
+                            tile_regs_acquire();
+                            copy_tile_to_dst_init_short_with_dt(
+                                index_tensor_transposed_cb_index, input_tensor_transposed_cb_index);
+                            copy_tile(input_tensor_transposed_cb_index, j, 0);
+                            pack_reconfig_data_format(exchange_buffer_cb_index);
+                            pack_tile(0, exchange_buffer_cb_index, 0);
+                            tile_regs_release();
+
+                            cb_push_back(exchange_buffer_cb_index, one_tile);  // Sending tile J to reader kernel
+                            cb_wait_front(
+                                exchange_buffer_receive_cb_index, one_tile);       // Receiving tile to be processed
+                            UNPACK(DPRINT << "COMPUTE: Received tile" << ENDL());  // TODO: Remove
+                            // TODO: Process tiles
+
+                            cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
+                            cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
                         }
-                        pair_id++;
-                    }
-                }
-            }
-        }
+                    }  // if j > i
+                }  // i loop
+            }  // sub loop
+        }  // stage loop
 
         cb_reserve_back(input_tensor_transposed_cb_index, number_of_tiles_per_core);
         cb_reserve_back(index_tensor_transposed_cb_index, number_of_tiles_per_core);

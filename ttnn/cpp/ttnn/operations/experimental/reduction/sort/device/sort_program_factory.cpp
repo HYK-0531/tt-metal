@@ -466,8 +466,23 @@ SortProgramFactoryHybrid::cached_program_t SortProgramFactoryHybrid::create(
     const auto cb_physical_core_lookup_table =
         tt::tt_metal::CreateCircularBuffer(program, core_range, physical_core_lookup_table_cb_config);
 
+    constexpr uint32_t exchange_buffer_cb_index = tt::CBIndex::c_7;
+    const tt::tt_metal::CircularBufferConfig exchange_buffer_cb_config =
+        tt::tt_metal::CircularBufferConfig(
+            input_tensor_tile_size, {{exchange_buffer_cb_index, input_tensor_cb_data_format}})
+            .set_page_size(exchange_buffer_cb_index, input_tensor_tile_size);
+    const auto cb_exchange_buffer = tt::tt_metal::CreateCircularBuffer(program, core_range, exchange_buffer_cb_config);
+
+    constexpr uint32_t exchange_buffer_receive_cb_index = tt::CBIndex::c_8;
+    const tt::tt_metal::CircularBufferConfig exchange_buffer_receive_cb_config =
+        tt::tt_metal::CircularBufferConfig(
+            input_tensor_tile_size, {{exchange_buffer_receive_cb_index, input_tensor_cb_data_format}})
+            .set_page_size(exchange_buffer_receive_cb_index, input_tensor_tile_size);
+    const auto cb_exchange_buffer_receive =
+        tt::tt_metal::CreateCircularBuffer(program, core_range, exchange_buffer_receive_cb_config);
+
     // Semaphores
-    const uint32_t semaphore = CreateSemaphore(program, core_range, 0);  // TODO: change name as needed
+    const uint32_t synchronization_semaphore = CreateSemaphore(program, core_range, 0);
 
     // Kernels
     const std::vector<uint32_t> reader_compile_time_args = {
@@ -484,6 +499,9 @@ SortProgramFactoryHybrid::cached_program_t SortProgramFactoryHybrid::create(
         number_of_tiles_per_core,
         all_core_utilization_count,
         !attributes.descending,
+        synchronization_semaphore,
+        exchange_buffer_cb_index,
+        exchange_buffer_receive_cb_index,
     };
     const std::string reader_kernel_path =
         "ttnn/cpp/ttnn/operations/experimental/reduction/sort/device/kernels/dataflow/"
@@ -527,7 +545,10 @@ SortProgramFactoryHybrid::cached_program_t SortProgramFactoryHybrid::create(
         input_tensor_transposed_cb_index,
         index_tensor_transposed_cb_index,
         value_tensor_cb_index,
-        index_tensor_output_cb_index};
+        index_tensor_output_cb_index,
+        exchange_buffer_cb_index,
+        exchange_buffer_receive_cb_index,
+    };
     const std::string compute_kernel_path =
         "ttnn/cpp/ttnn/operations/experimental/reduction/sort/device/kernels/compute/sort_hybrid.cpp";
     tt::tt_metal::KernelHandle compute_kernel_id = tt::tt_metal::CreateKernel(
@@ -541,7 +562,12 @@ SortProgramFactoryHybrid::cached_program_t SortProgramFactoryHybrid::create(
     //     core_range,
     //     {});
 
-    return {std::move(program), {reader_kernel_id, compute_kernel_id, writer_kernel_id, core_range}};
+    return {
+        std::move(program),
+        {.reader_kernel_id = reader_kernel_id,
+         .compute_kernel_id = compute_kernel_id,
+         .writer_kernel_id = writer_kernel_id,
+         .core_range_set = core_range}};
 }
 
 void SortProgramFactoryHybrid::override_runtime_arguments(

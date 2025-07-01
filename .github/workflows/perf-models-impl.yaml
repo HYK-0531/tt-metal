@@ -69,8 +69,7 @@ jobs:
             -e GITHUB_ACTIONS=true
           install_wheel: true
           run_args: |
-            source ${{ github.workspace }}/tests/scripts/single_card/run_single_card_demo_tests.sh ${{ matrix.test-info.arch }} ${{ matrix.model-type }}
-            ${{ matrix.test-info.cmd }}
+            env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/demos/sentence_bert/tests -m llm_javelin
       # ./tests/scripts/run_tests.sh --tt-arch ${{ matrix.test-info.arch }} --pipeline-type ${{ matrix.model-type }}_models_performance_bare_metal
       # TODO: Fix the pipeline before enabling notifications.
       #- uses: tenstorrent/tt-metal/.github/actions/slack-report@main

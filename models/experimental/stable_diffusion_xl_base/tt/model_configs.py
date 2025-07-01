@@ -286,7 +286,7 @@ class ModelOptimisations:
 
         # DRAM CONF
         self.conv_configs["ABH_64_NO_ADB_DRAM"] = ttnn.Conv2dConfig(
-            weights_dtype=conv_w_dtype,
+            weights_dtype=self.conv_ws_dtype,
             shard_layout=None,
             deallocate_activation=False,
             enable_act_double_buffer=False,
@@ -298,7 +298,7 @@ class ModelOptimisations:
             output_layout=ttnn.TILE_LAYOUT,
         )
         self.conv_configs["ABH_128_NO_ADB_DRAM"] = ttnn.Conv2dConfig(
-            weights_dtype=conv_w_dtype,
+            weights_dtype=self.conv_ws_dtype,
             shard_layout=None,
             deallocate_activation=False,
             enable_act_double_buffer=False,
@@ -310,7 +310,7 @@ class ModelOptimisations:
             output_layout=ttnn.TILE_LAYOUT,
         )
         self.conv_configs["ABH_512_NO_ADB_DRAM"] = ttnn.Conv2dConfig(
-            weights_dtype=conv_w_dtype,
+            weights_dtype=self.conv_ws_dtype,
             shard_layout=None,
             deallocate_activation=False,
             enable_act_double_buffer=False,
@@ -322,7 +322,7 @@ class ModelOptimisations:
             output_layout=ttnn.TILE_LAYOUT,
         )
         self.conv_configs["DEFAULT_DRAM"] = ttnn.Conv2dConfig(
-            weights_dtype=conv_w_dtype,
+            weights_dtype=self.conv_ws_dtype,
             shard_layout=None,
             deallocate_activation=False,
             enable_act_double_buffer=False,

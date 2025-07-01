@@ -24,7 +24,7 @@ jobs:
           {name: "sentence_bert", arch: wormhole_b0, cmd: run_sentencebert},
         ]
         model-type: [llm_javelin]
-    name: "${{ matrix.test-info.name }}"
+    name: "${{ matrix.model-type }}"
     defaults:
       run:
         shell: bash
@@ -52,7 +52,7 @@ jobs:
           name: ${{ inputs.wheel-artifact-name }}
       - name: Enable Performance mode
         run: sudo cpupower frequency-set -g performance
-      - name: Run performance regressions
+      - name: Container Setup
         timeout-minutes: 70
         uses: ./.github/actions/docker-run
         env:
@@ -68,8 +68,14 @@ jobs:
             -e GTEST_OUTPUT=xml:generated/test_reports/
             -e GITHUB_ACTIONS=true
           install_wheel: true
-          run_args: |
-            env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/demos/sentence_bert/tests -m models_performance_bare_metal
+      - name: Run sentence_bert tests
+        run: |
+          env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/demos/sentence_bert/tests -m models_performance_bare_metal
+      - name: Run bert_tiny tests
+        run: |
+          env WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest models/demos/wormhole/bert_tiny/tests/test_performance.py -m models_performance_bare_metal
+      - name: Merge perf results
+        run: |
             env python3 models/perf/merge_perf_results.py
       # ./tests/scripts/run_tests.sh --tt-arch ${{ matrix.test-info.arch }} --pipeline-type ${{ matrix.model-type }}_models_performance_bare_metal
       # TODO: Fix the pipeline before enabling notifications.

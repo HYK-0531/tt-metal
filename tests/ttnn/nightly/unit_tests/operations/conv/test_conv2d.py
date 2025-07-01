@@ -101,7 +101,7 @@ def run_conv(
     output_mesh_composer=None,
     enable_split_reader=False,
     activation="",
-    preprocess_weights_on_device=True,
+    preprocess_weights_on_device=False,
     in_place=False,
     run_twice=False,
     fast_compare=False,

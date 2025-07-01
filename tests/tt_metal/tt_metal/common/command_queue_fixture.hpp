@@ -104,6 +104,7 @@ protected:
     }
 
     void create_devices(std::size_t trace_region_size = DEFAULT_TRACE_REGION_SIZE) {
+        std::cout << "Creating devices for UnitMeshCommandQueueFixture" << std::endl;
         const auto& dispatch_core_config =
             tt::tt_metal::MetalContext::instance().rtoptions().get_dispatch_core_config();
         const chip_id_t mmio_device_id = *tt::tt_metal::MetalContext::instance().get_cluster().mmio_chip_ids().begin();
@@ -120,6 +121,7 @@ protected:
         auto reserved_devices = distributed::MeshDevice::create_unit_meshes(
             chip_ids, DEFAULT_L1_SMALL_SIZE, trace_region_size, 1, dispatch_core_config);
         for (const auto& [id, device] : reserved_devices) {
+            std::cout << "Adding device with ID: " << id << std::endl;
             this->devices_.push_back(device);
         }
     }
@@ -219,6 +221,7 @@ protected:
 
         std::vector<chip_id_t> chip_ids;
         for (chip_id_t id : tt::tt_metal::MetalContext::instance().get_cluster().all_chip_ids()) {
+            std::cout << "Adding chip ID: " << id << std::endl;
             chip_ids.push_back(id);
         }
 

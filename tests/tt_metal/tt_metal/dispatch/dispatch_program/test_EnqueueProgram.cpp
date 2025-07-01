@@ -1049,10 +1049,13 @@ void test_basic_dispatch_functions(std::shared_ptr<distributed::MeshDevice> mesh
         log_info(tt::LogTest, " Iteration {}", i);
         EXPECT_TRUE(local_test_functions::test_dummy_EnqueueProgram_with_runtime_args(
             mesh_device, cq, dummy_program_config, 24, 12, 15, k_LoopPerDev));
+        std::cout << "EnqueueWriteMeshBuffer iteration: " << i << std::endl;
         distributed::EnqueueWriteMeshBuffer(cq, buffer, src_data, false);
-
+        std::cout << "EnqueueWriteMeshBuffer finished" << std::endl;
         std::vector<uint32_t> dst_data;
+        std::cout << "ReadShard iteration: " << i << std::endl;
         distributed::ReadShard(cq, dst_data, buffer, distributed::MeshCoordinate{0, 0}, true);
+        std::cout << "ReadShard finished" << std::endl;
         EXPECT_EQ(src_data, dst_data);
     }
 

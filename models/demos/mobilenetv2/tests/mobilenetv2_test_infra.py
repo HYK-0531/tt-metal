@@ -47,6 +47,9 @@ class MobileNetv2TestInfra:
         device,
         batch_size,
         model_location_generator=None,
+        inputs_mesh_mapper=None,
+        weights_mesh_mapper=None,
+        output_mesh_composer=None,
     ):
         super().__init__()
         torch.manual_seed(0)
@@ -55,6 +58,7 @@ class MobileNetv2TestInfra:
         self.device = device
         self.batch_size = batch_size
         self.model_location_generator = model_location_generator
+        self.num_devices = device.get_num_devices()
         torch_model = load_torch_model()
         self.ttnn_mobilenetv2_model = load_ttnn_model(
             device=self.device, torch_model=torch_model, batch_size=self.batch_size
@@ -64,6 +68,25 @@ class MobileNetv2TestInfra:
         self.input_tensor = ttnn.from_torch(torch_input_tensor, ttnn.bfloat16)
         self.torch_input_tensor = torch_input_tensor.permute(0, 3, 1, 2)
         self.torch_output_tensor = torch_model(self.torch_input_tensor)
+
+        # Set up mesh mappers if not provided
+        if inputs_mesh_mapper is None and weights_mesh_mapper is None and output_mesh_composer is None:
+            self.inputs_mesh_mapper, self.weights_mesh_mapper, self.output_mesh_composer = self.get_mesh_mappers(device)
+        else:
+            self.inputs_mesh_mapper = inputs_mesh_mapper
+            self.weights_mesh_mapper = weights_mesh_mapper
+            self.output_mesh_composer = output_mesh_composer
+
+    def get_mesh_mappers(self, device):
+        if device.get_num_devices() != 1:
+            inputs_mesh_mapper = ttnn.ShardTensorToMesh(device, dim=0)
+            weights_mesh_mapper = None  # ttnn.ReplicateTensorToMesh(device) causes unnecessary replication/takes more time on the first pass
+            output_mesh_composer = ttnn.ConcatMeshToTensor(device, dim=0)
+        else:
+            inputs_mesh_mapper = None
+            weights_mesh_mapper = None
+            output_mesh_composer = None
+        return inputs_mesh_mapper, weights_mesh_mapper, output_mesh_composer
 
     def run(self):
         self.output_tensor = self.ttnn_mobilenetv2_model(self.input_tensor)
@@ -77,6 +100,7 @@ class MobileNetv2TestInfra:
         torch_input_tensor = self.torch_input_tensor if torch_input_tensor is None else torch_input_tensor
 
         n, c, h, w = torch_input_tensor.shape
+        # n = n // self.num_devices
         # sharded mem config for fold input
         num_cores = core_grid.x * core_grid.y
         shard_h = (n * w * h + num_cores - 1) // num_cores
@@ -89,7 +113,10 @@ class MobileNetv2TestInfra:
         )
         torch_input_tensor = torch_input_tensor.permute(0, 2, 3, 1)
         torch_input_tensor = torch_input_tensor.reshape(1, 1, h * w * n, c)
-        tt_inputs_host = ttnn.from_torch(torch_input_tensor, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT)
+        # tt_inputs_host = ttnn.from_torch(torch_input_tensor, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT)
+        tt_inputs_host = ttnn.from_torch(
+            torch_input_tensor, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT, mesh_mapper=self.inputs_mesh_mapper
+        )
         tt_inputs_host = ttnn.pad(tt_inputs_host, [1, 1, n * h * w, 16], [0, 0, 0, 0], 0)
 
         return tt_inputs_host, input_mem_config

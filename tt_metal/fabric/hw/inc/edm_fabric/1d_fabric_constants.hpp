@@ -309,6 +309,7 @@ constexpr size_t DEFAULT_HANDSHAKE_CONTEXT_SWITCH_TIMEOUT = get_compile_time_arg
 constexpr size_t MY_ERISC_ID = get_compile_time_arg_val(MAIN_CT_ARGS_IDX_5 + 13);
 constexpr size_t NUM_ACTIVE_ERISCS = get_compile_time_arg_val(MAIN_CT_ARGS_IDX_5 + 14);
 static_assert(MY_ERISC_ID < NUM_ACTIVE_ERISCS, "MY_ERISC_ID must be less than NUM_ACTIVE_ERISCS");
+static_assert(NUM_ACTIVE_ERISCS == 1 || receiver_txq_id != sender_txq_id, "Misconfigured eth txq configuration");
 
 constexpr size_t SPECIAL_MARKER_0_IDX = MAIN_CT_ARGS_IDX_5 + 15;
 constexpr size_t SPECIAL_MARKER_0 = 0x00c0ffee;

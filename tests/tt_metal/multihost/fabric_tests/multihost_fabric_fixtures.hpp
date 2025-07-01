@@ -10,6 +10,7 @@
 
 #include "impl/context/metal_context.hpp"
 #include "tests/tt_metal/tt_fabric/common/fabric_fixture.hpp"
+#include "tests/tt_metal/tt_metal/common/multi_device_fixture.hpp"
 #include "intermesh_routing_test_utils.hpp"
 
 namespace tt::tt_fabric {
@@ -75,7 +76,49 @@ public:
     }
 };
 
-class InterMeshDual2x4Fabric2DFixture : public InterMeshRoutingFabric2DFixture {
+class InterMeshDeviceRoutingFabric2DFixture : public tt::tt_metal::T3000MeshDevice2DFabricFixture {
+public:
+    void SetUp() override {
+        if (not system_supported()) {
+            GTEST_SKIP() << "Skipping since this is not a supported system.";
+        }
+        local_binding_manager_.validate_local_mesh_id_and_host_rank();
+        local_binding_manager_.set_bindings();
+
+        auto chip_to_eth_coord_mapping = multihost_utils::get_physical_chip_mapping_from_eth_coords_mapping(
+            get_eth_coord_mapping(), local_binding_manager_.get_local_mesh_id());
+
+        tt::tt_metal::MetalContext::instance().set_custom_control_plane_mesh_graph(
+            get_path_to_mesh_graph_desc(), chip_to_eth_coord_mapping);
+        TT_FATAL(
+            tt::tt_metal::MetalContext::instance().get_control_plane().system_has_intermesh_links(),
+            "Multi-Host Routing tests require ethernet links to a remote host.");
+        TT_FATAL(
+            *(tt::tt_metal::MetalContext::instance().get_distributed_context().size()) > 1,
+            "Multi-Host Routing tests require multiple hosts in the system");
+        tt::tt_metal::T3000MeshDevice2DFabricFixture::SetUp();
+    }
+
+    void TearDown() override {
+        if (system_supported()) {
+            tt::tt_metal::T3000MeshDevice2DFabricFixture::TearDown();
+            // Clear any mesh binding related env-vars and set the default control plane config
+            // This allows the next test to start with a clean slate
+            local_binding_manager_.clear_bindings();
+            tt::tt_metal::MetalContext::instance().set_default_control_plane_mesh_graph();
+        }
+    }
+
+    // Derived Classes (Fixtures specialized for topology/system) must define this
+    virtual std::string get_path_to_mesh_graph_desc() = 0;
+    virtual std::vector<std::vector<eth_coord_t>> get_eth_coord_mapping() = 0;
+    virtual bool system_supported() = 0;
+
+private:
+    multihost_utils::LocalBindingManager local_binding_manager_;
+};
+
+class InterMeshDual2x4Fabric2DFixture : public InterMeshDeviceRoutingFabric2DFixture {
     std::string get_path_to_mesh_graph_desc() override {
         return "tests/tt_metal/tt_fabric/custom_mesh_descriptors/dual_t3k_mesh_graph_descriptor.yaml";
     }

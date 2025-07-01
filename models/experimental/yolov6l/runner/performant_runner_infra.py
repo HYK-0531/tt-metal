@@ -6,17 +6,21 @@
 import torch
 import torch.nn.functional as F
 from loguru import logger
-from ttnn.model_preprocessing import preprocess_model_parameters
+import os
+import sys
 
 import ttnn
-from models.demos.yolov8s_world.demo.demo_utils import load_torch_model
-from models.demos.yolov8s_world.tt.ttnn_yolov8s_world import TtYOLOWorld
-from models.demos.yolov8s_world.tt.ttnn_yolov8s_world_utils import create_custom_preprocessor, move_to_device
 from models.utility_functions import divup, is_wormhole_b0
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
+from models.experimental.yolov6l.reference.yolov6l_utils import fuse_model
+from models.experimental.yolov6l.tt.model_preprocessing import create_yolov6l_model_parameters
+from models.experimental.yolov6l.tt.ttnn_yolov6l import TtYolov6l
 
-class YOLOv8sWorldPerformanceRunnerInfra:
+sys.path.append("models/experimental/yolov6l/reference/")
+
+
+class YOLOv6lPerformanceRunnerInfra:
     def __init__(
         self,
         device,
@@ -24,7 +28,7 @@ class YOLOv8sWorldPerformanceRunnerInfra:
         act_dtype,
         weight_dtype,
         model_location_generator=None,
-        resolution=(640, 640),
+        resolution=(640, 480),
         torch_input_tensor=None,
     ):
         torch.manual_seed(0)
@@ -38,35 +42,26 @@ class YOLOv8sWorldPerformanceRunnerInfra:
         self.model_location_generator = model_location_generator
         self.torch_input_tensor = torch_input_tensor
 
-        self.torch_model = load_torch_model()
+        weights = "tests/ttnn/integration_tests/yolov6l/yolov6l.pt"
+        if not os.path.exists(weights):
+            os.system("bash models/experimental/yolov6l/weights_download.sh")
+
+        ckpt = torch.load(weights, map_location=torch.device("cpu"), weights_only=False)
+        model = ckpt["ema" if ckpt.get("ema") else "model"].float()
+        model = fuse_model(model).eval()
+
+        self.torch_model = model
         self.torch_input_tensor = (
-            torch.randn((1, 3, 640, 640), dtype=torch.float32)
+            torch.randn((1, 3, 640, 480), dtype=torch.float32)
             if self.torch_input_tensor is None
             else self.torch_input_tensor
         )
 
-        parameters = preprocess_model_parameters(
-            initialize_model=lambda: self.torch_model, custom_preprocessor=create_custom_preprocessor(device)
-        )
-
-        for i in [12, 15, 19, 22]:
-            parameters["model"][i]["attn"]["gl"]["weight"] = ttnn.to_device(
-                parameters["model"][i]["attn"]["gl"]["weight"], device=device
-            )
-            parameters["model"][i]["attn"]["gl"]["bias"] = ttnn.to_device(
-                parameters["model"][i]["attn"]["gl"]["bias"], device=device
-            )
-            parameters["model"][i]["attn"]["bias"] = ttnn.to_device(
-                parameters["model"][i]["attn"]["bias"], device=device
-            )
-
-            parameters["model"][16] = move_to_device(parameters["model"][16], device)
-
-            parameters["model"][23]["cv4"] = move_to_device(parameters["model"][23]["cv4"], device)
+        parameters = create_yolov6l_model_parameters(model, self.torch_input_tensor, device)
 
         self.parameters = parameters
 
-        self.ttnn_yolov8s_world_model = TtYOLOWorld(self.device, self.parameters)
+        self.ttnn_yolov6l_model = TtYolov6l(device, parameters, parameters.model_args)
 
         self.torch_output_tensor = self.torch_model(self.torch_input_tensor)
 
@@ -84,7 +79,7 @@ class YOLOv8sWorldPerformanceRunnerInfra:
         torch_input_tensor = torch_input_tensor.permute(0, 2, 3, 1)
         torch_input_tensor = F.pad(torch_input_tensor, (0, 29))
         input_mem_config = ttnn.create_sharded_memory_config(
-            [4800, 32],
+            [6400, 32],
             core_grid=device.core_grid,
             strategy=ttnn.ShardStrategy.HEIGHT,
             orientation=ttnn.ShardOrientation.ROW_MAJOR,
@@ -114,24 +109,18 @@ class YOLOv8sWorldPerformanceRunnerInfra:
         return tt_inputs_host, sharded_mem_config_DRAM, input_mem_config
 
     def run(self):
-        self.output_tensor = self.ttnn_yolov8s_world_model(self.input_tensor)
+        self.output_tensor = self.ttnn_yolov6l_model(self.input_tensor)
 
     def validate(self, output_tensor=None, torch_output_tensor=None):
         ttnn_output_tensor = self.output_tensor if output_tensor is None else output_tensor
         torch_output_tensor = self.torch_output_tensor if torch_output_tensor is None else torch_output_tensor
-        output_tensor = ttnn.to_torch(ttnn_output_tensor[0])
+        output_tensor = ttnn.to_torch(ttnn_output_tensor)
 
         self.pcc_passed, self.pcc_message = assert_with_pcc(self.torch_output_tensor[0], output_tensor, pcc=0.99)
 
         logger.info(
-            f"yolov8s_world - batch_size={self.batch_size}, act_dtype={self.act_dtype}, weight_dtype={self.weight_dtype}, PCC={self.pcc_message}"
+            f"yolov6l - batch_size={self.batch_size}, act_dtype={self.act_dtype}, weight_dtype={self.weight_dtype}, PCC={self.pcc_message}"
         )
 
     def dealloc_output(self):
-        ttnn.deallocate(self.output_tensor[0])
-        for t in self.output_tensor[1]:
-            if isinstance(t, list):
-                for sub_t in t:
-                    ttnn.deallocate(sub_t)
-            else:
-                ttnn.deallocate(t)
+        ttnn.deallocate(self.output_tensor)

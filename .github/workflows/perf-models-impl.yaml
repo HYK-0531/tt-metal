@@ -29,7 +29,7 @@ jobs:
       run:
         shell: bash
     runs-on:
-      - in-service
+      - perf-no-reset-grayskull
       - N300
       - pipeline-perf
       - bare-metal

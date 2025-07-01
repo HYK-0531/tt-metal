@@ -153,16 +153,16 @@ def run_all_gather_impl(
 
     ##### Configs for ttnn.matmul #####
     core_grid = (8, 6)
-    program_config = ttnn.MatmulMultiCoreReuseMultiCast1DProgramConfig(
+    program_config = ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
         compute_with_storage_grid_size=core_grid,
         in0_block_w=min(max_in0_block_w, hidden_dim // 32 // core_grid[0]),  # how much inner dim you take each time
         out_subblock_h=1,  # Must be divisible by per_core_M
         out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
         per_core_M=max(1, math.ceil(ag_output_shape[2] / 32 / core_grid[1])),  # M / TILE_HEIGHT / Grid_Size
         per_core_N=max(1, math.ceil(matmul_output_dim / 32 / core_grid[0])),  # N / TILE_WIDTH / Grid_Size
-        fuse_batch=True,
-        fused_activation=None,
-        mcast_in0=True,
+        transpose_mcast=False,
+        fused_activation=None,  # ttnn.UnaryOpType.SILU,
+        fuse_batch=False,
     )
     compute_kernel_config = ttnn.WormholeComputeKernelConfig(
         math_fidelity=ttnn.MathFidelity.HiFi2,
@@ -198,7 +198,7 @@ def run_all_gather_impl(
             else:
                 tt_all_gather_out_tensor = ttnn.experimental.all_gather_async(
                     input_tensor_mesh_list[i],
-                    persistent_output_buffer=persistent_output_buffers[i],
+                    # persistent_output_buffer=persistent_output_buffers[i],
                     dim=dim,
                     multi_device_global_semaphore=ccl_semaphore_handles[i],
                     num_links=num_links,
@@ -339,8 +339,8 @@ def run_all_gather_impl(
 @pytest.mark.parametrize(
     "use_non_fused",
     [
-        # True,
-        False,
+        True,
+        # False,
     ],
     ids=["fused"],
 )

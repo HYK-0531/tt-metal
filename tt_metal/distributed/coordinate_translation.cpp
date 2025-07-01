@@ -23,14 +23,16 @@ const MeshContainer<PhysicalMeshCoordinate>& get_system_mesh_coordinate_translat
     static tt::stl::Indestructible<MeshContainer<PhysicalMeshCoordinate>> kTranslationMap([]() {
         const auto& control_plane = tt::tt_metal::MetalContext::instance().get_control_plane();
 
-        const auto mesh_ids = control_plane.get_user_physical_mesh_ids();
-        TT_FATAL(!mesh_ids.empty(), "There are no user physical meshes in the system found by control plane.");
+        // const auto mesh_ids = control_plane.get_user_physical_mesh_ids();
+        // TT_FATAL(!mesh_ids.empty(), "There are no user physical meshes in the system found by control plane.");
 
-        if (mesh_ids.size() > 1) {
-            log_warning(LogMetal, "Only one user physical mesh is supported, using the first one");
-        }
+        // if (mesh_ids.size() > 1) {
+        //     log_warning(LogMetal, "Only one user physical mesh is supported, using the first one");
+        // }
 
-        const auto mesh_id = mesh_ids.front();
+        // const auto mesh_id = mesh_ids.front();
+        auto mesh_id = control_plane.get_local_mesh_id_binding().value();
+        std::cout << "Using Local Mesh ID: " << *(mesh_id) << std::endl;
         const auto mesh_shape = control_plane.get_physical_mesh_shape(mesh_id);
 
         // Validate that the physical chip ids are unique.

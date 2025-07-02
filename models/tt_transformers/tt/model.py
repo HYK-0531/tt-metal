@@ -61,16 +61,7 @@ class Transformer(LightweightModule):
         self.mesh_device.load_sub_device_manager(self.sub_device_manager)
         self.mesh_device.set_sub_device_stall_group(self.sub_device_stall_group)
 
-        self.reduce_scatter_intermediate_buffers = self.get_reduce_scatter_intermediate_buffers()
-
-        self.persistent_output_buffer = ttnn.from_torch(
-            torch.zeros([1, 1, 32, 152064]),
-            device=self.mesh_device,
-            layout=ttnn.TILE_LAYOUT,
-            dtype=ttnn.bfloat8_b,
-            memory_config=ttnn.MemoryConfig(ttnn.TensorMemoryLayout.INTERLEAVED, ttnn.BufferType.L1),
-            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
-        )
+        self.reduce_scatter_intermediate_buffers = {}  # self.get_reduce_scatter_intermediate_buffers()
 
         self.embd = Embedding(
             mesh_device=mesh_device,
@@ -143,65 +134,65 @@ class Transformer(LightweightModule):
             max_columns_per_device=self.args.max_columns_per_device_lm_head,
         )
 
-    def get_reduce_scatter_intermediate_buffers(self):
-        persistent_buffers = {}
+    # def get_reduce_scatter_intermediate_buffers(self):
+    #     persistent_buffers = {}
 
-        # Note: It's fine for the intermediate buffer to always be L1, only the input and output
-        # buffers have to match memory_configs
+    #     # Note: It's fine for the intermediate buffer to always be L1, only the input and output
+    #     # buffers have to match memory_configs
 
-        # Decode
-        tt_buffer = ttnn.from_torch(
-            torch.zeros((1, 1, 32, 5120)),
-            device=self.mesh_device,
-            layout=ttnn.TILE_LAYOUT,
-            dtype=ttnn.bfloat16,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
-        )
-        persistent_buffers[((1, 1, 32, 5120), ttnn.bfloat16)] = tt_buffer
+    #     # Decode
+    #     tt_buffer = ttnn.from_torch(
+    #         torch.zeros((1, 1, 32, 5120)),
+    #         device=self.mesh_device,
+    #         layout=ttnn.TILE_LAYOUT,
+    #         dtype=ttnn.bfloat16,
+    #         memory_config=ttnn.L1_MEMORY_CONFIG,
+    #         mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+    #     )
+    #     persistent_buffers[((1, 1, 32, 5120), ttnn.bfloat16)] = tt_buffer
 
-        # Prefill
-        tt_buffer = ttnn.from_torch(
-            torch.zeros((1, 1, 128, 5120)),
-            device=self.mesh_device,
-            layout=ttnn.TILE_LAYOUT,
-            dtype=ttnn.bfloat8_b,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
-        )
-        persistent_buffers[((1, 1, 128, 5120), ttnn.bfloat8_b)] = tt_buffer
+    #     # Prefill
+    #     tt_buffer = ttnn.from_torch(
+    #         torch.zeros((1, 1, 128, 5120)),
+    #         device=self.mesh_device,
+    #         layout=ttnn.TILE_LAYOUT,
+    #         dtype=ttnn.bfloat8_b,
+    #         memory_config=ttnn.L1_MEMORY_CONFIG,
+    #         mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+    #     )
+    #     persistent_buffers[((1, 1, 128, 5120), ttnn.bfloat8_b)] = tt_buffer
 
-        tt_buffer = ttnn.from_torch(
-            torch.zeros((1, 1, 128, 5120)),
-            device=self.mesh_device,
-            layout=ttnn.TILE_LAYOUT,
-            dtype=ttnn.bfloat16,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
-        )
-        persistent_buffers[((1, 1, 128, 5120), ttnn.bfloat16)] = tt_buffer
+    #     tt_buffer = ttnn.from_torch(
+    #         torch.zeros((1, 1, 128, 5120)),
+    #         device=self.mesh_device,
+    #         layout=ttnn.TILE_LAYOUT,
+    #         dtype=ttnn.bfloat16,
+    #         memory_config=ttnn.L1_MEMORY_CONFIG,
+    #         mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+    #     )
+    #     persistent_buffers[((1, 1, 128, 5120), ttnn.bfloat16)] = tt_buffer
 
-        tt_buffer = ttnn.from_torch(
-            torch.zeros((1, 1, 256, 5120)),
-            device=self.mesh_device,
-            layout=ttnn.TILE_LAYOUT,
-            dtype=ttnn.bfloat8_b,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
-        )
-        persistent_buffers[((1, 1, 256, 5120), ttnn.bfloat8_b)] = tt_buffer
+    #     tt_buffer = ttnn.from_torch(
+    #         torch.zeros((1, 1, 256, 5120)),
+    #         device=self.mesh_device,
+    #         layout=ttnn.TILE_LAYOUT,
+    #         dtype=ttnn.bfloat8_b,
+    #         memory_config=ttnn.L1_MEMORY_CONFIG,
+    #         mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+    #     )
+    #     persistent_buffers[((1, 1, 256, 5120), ttnn.bfloat8_b)] = tt_buffer
 
-        tt_buffer = ttnn.from_torch(
-            torch.zeros((1, 1, 256, 5120)),
-            device=self.mesh_device,
-            layout=ttnn.TILE_LAYOUT,
-            dtype=ttnn.bfloat16,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
-        )
-        persistent_buffers[((1, 1, 256, 5120), ttnn.bfloat16)] = tt_buffer
+    #     tt_buffer = ttnn.from_torch(
+    #         torch.zeros((1, 1, 256, 5120)),
+    #         device=self.mesh_device,
+    #         layout=ttnn.TILE_LAYOUT,
+    #         dtype=ttnn.bfloat16,
+    #         memory_config=ttnn.L1_MEMORY_CONFIG,
+    #         mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+    #     )
+    #     persistent_buffers[((1, 1, 256, 5120), ttnn.bfloat16)] = tt_buffer
 
-        return persistent_buffers
+    #     return persistent_buffers
 
     def prepare_inputs_prefill(self, tokens, start_pos=0, page_table=None, chunk_page_table=None):
         """

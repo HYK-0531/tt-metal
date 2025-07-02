@@ -81,7 +81,7 @@ class TtSegformerEfficientSelfAttention:
                 strategy=mm_a_x_strategy,
                 orientation=ttnn.ShardOrientation.ROW_MAJOR,
             ),
-            dtype=ttnn.bfloat16,
+            # dtype=ttnn.bfloat16, dtype cannot be specified when converting sharded tensor to sharded tensor
         )
         query = ttnn.linear(
             hidden_states,

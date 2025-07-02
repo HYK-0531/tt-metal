@@ -50,6 +50,7 @@ class TtSegformerSelfOutput:
             dtype=ttnn.bfloat8_b,
         )
 
+        # this needs to be a reshard into BLOCK_SHARDED on core grid (y=8, x=1)
         hidden_states = ttnn.to_memory_config(hidden_states, ttnn.L1_MEMORY_CONFIG, dtype=ttnn.bfloat8_b)
 
         return hidden_states

@@ -28,7 +28,7 @@ class TtSegformerLayer:
                 hidden_states,
                 weight=parameters.layer_norm_1.weight,
                 bias=parameters.layer_norm_1.bias,
-                memory_config=ttnn.L1_MEMORY_CONFIG,
+                memory_config=hidden_states.memory_config(),
                 compute_kernel_config=ttnn.WormholeComputeKernelConfig(
                     math_fidelity=ttnn.MathFidelity.LoFi,
                 ),

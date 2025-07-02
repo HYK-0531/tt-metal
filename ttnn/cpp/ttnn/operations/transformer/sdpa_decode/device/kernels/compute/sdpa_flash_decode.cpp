@@ -411,6 +411,7 @@ void MAIN {
             /* cb_out_accumulate_im *= cb_prev_sum */
             reconfig_data_format(cb_out_accumulate_im, cb_prev_sum);  // DEBUG
             pack_reconfig_data_format(cb_out_final);
+
             mul_block_bcast_cols(cb_out_accumulate_im, cb_prev_sum, cb_out_final, Sq_chunk_t, DHt);
 
             // free up cb_prev_max after K chunks

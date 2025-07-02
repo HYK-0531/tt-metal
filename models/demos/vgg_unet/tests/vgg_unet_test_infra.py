@@ -14,14 +14,32 @@ from tests.ttnn.utils_for_testing import assert_with_pcc
 
 
 class VGG_UnetTestInfra:
-    def __init__(self, device, model_location_generator=None, use_pretrained_weight=False):
+    def __init__(
+        self,
+        device,
+        model_location_generator=None,
+        use_pretrained_weight=False,
+        inputs_mesh_mapper=None,
+        weights_mesh_mapper=None,
+        output_mesh_composer=None,
+    ):
         super().__init__()
         torch.manual_seed(0)
         self.pcc_passed = False
         self.pcc_message = "Did you forget to call validate()?"
         self.device = device
         self.model_location_generator = model_location_generator
-        self.torch_input = torch.randn((1, 3, 256, 256), dtype=torch.bfloat16)
+
+        # Set up mesh mappers if not provided
+        if inputs_mesh_mapper is None and weights_mesh_mapper is None and output_mesh_composer is None:
+            self.inputs_mesh_mapper, self.weights_mesh_mapper, self.output_mesh_composer = self.get_mesh_mappers(device)
+        else:
+            self.inputs_mesh_mapper = inputs_mesh_mapper
+            self.weights_mesh_mapper = weights_mesh_mapper
+            self.output_mesh_composer = output_mesh_composer
+
+        batch_size = 1
+        self.torch_input = torch.randn((batch_size * device.get_num_devices(), 3, 256, 256), dtype=torch.bfloat16)
         self.torch_input = self.torch_input.float()
         torch_input_permuted = self.torch_input.permute(0, 2, 3, 1)
         self.ttnn_input = ttnn.from_torch(torch_input_permuted, dtype=ttnn.bfloat16)
@@ -32,6 +50,17 @@ class VGG_UnetTestInfra:
         parameters = create_vgg_unet_model_parameters(torch_model, self.torch_input, device=device)
         self.torch_output = torch_model(self.torch_input)
         self.ttnn_vgg_unet_model = Tt_vgg_unet(device, parameters, parameters.conv_args)
+
+    def get_mesh_mappers(self, device):
+        if device.get_num_devices() != 1:
+            inputs_mesh_mapper = ttnn.ShardTensorToMesh(device, dim=0)
+            weights_mesh_mapper = None  # ttnn.ReplicateTensorToMesh(device) causes unnecessary replication/takes more time on the first pass
+            output_mesh_composer = ttnn.ConcatMeshToTensor(device, dim=0)
+        else:
+            inputs_mesh_mapper = None
+            weights_mesh_mapper = None
+            output_mesh_composer = None
+        return inputs_mesh_mapper, weights_mesh_mapper, output_mesh_composer
 
     def run(self):
         self.output_tensor = self.ttnn_vgg_unet_model(self.input_tensor)
@@ -46,6 +75,7 @@ class VGG_UnetTestInfra:
         torch_input_tensor = self.torch_input if self.torch_input is None else self.torch_input
 
         n, c, h, w = torch_input_tensor.shape
+        # n = n // device.get_num_devices()
         # sharded mem config for fold input
         num_cores = core_grid.x * core_grid.y
         shard_h = (n * w * h + num_cores - 1) // num_cores
@@ -57,9 +87,11 @@ class VGG_UnetTestInfra:
             ttnn.types.TensorMemoryLayout.HEIGHT_SHARDED, ttnn.types.BufferType.L1, shard_spec
         )
         torch_input_tensor = torch_input_tensor.permute(0, 2, 3, 1)
-        torch_input_tensor = torch_input_tensor.reshape(1, 1, h * w * n, c)
-        tt_inputs_host = ttnn.from_torch(torch_input_tensor, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT)
-        tt_inputs_host = ttnn.pad(tt_inputs_host, [1, 1, n * h * w, 16], [0, 0, 0, 0], 0)
+        torch_input_tensor = torch_input_tensor.reshape(n, 1, h * w, c)
+        tt_inputs_host = ttnn.from_torch(
+            torch_input_tensor, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT, mesh_mapper=self.inputs_mesh_mapper
+        )
+        tt_inputs_host = ttnn.pad(tt_inputs_host, [1, 1, h * w, 16], [0, 0, 0, 0], 0)
         return tt_inputs_host, input_mem_config
 
     def setup_dram_sharded_input(self, device, torch_input_tensor=None, mesh_mapper=None, mesh_composer=None):

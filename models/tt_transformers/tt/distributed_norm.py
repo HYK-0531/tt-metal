@@ -84,26 +84,15 @@ class DistributedNorm(LightweightModule):
         if self.args.is_multichip and not self.args.is_distributed_norm(mode):
             # print("start distributed_norm 84")
 
-            input_is_sharded = x.is_sharded()
-            target_memory_config = input_mem_cfg
-            ag_memory_config = input_mem_cfg
-
-            if input_is_sharded:
-                ag_memory_config = ttnn.L1_MEMORY_CONFIG
-                x = ttnn.to_memory_config(x, ag_memory_config)
-
             x = ttnn.experimental.all_gather_async(
                 x,
                 dim=3,
                 multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
                 num_links=1,
-                memory_config=ag_memory_config,
+                memory_config=input_mem_cfg,
                 topology=self.args.ccl_topology(),
                 subdevice_id=self.worker_sub_device_id,
             )
-
-            if input_is_sharded:
-                x = ttnn.to_memory_config(x, target_memory_config)
 
             # print("end distributed_norm 84")
         else:

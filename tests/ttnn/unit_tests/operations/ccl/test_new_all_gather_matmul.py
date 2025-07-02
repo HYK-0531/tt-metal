@@ -331,10 +331,10 @@ def run_all_gather_impl(
 @pytest.mark.parametrize(
     "enable_trace,num_iters",
     [
-        # (True, 10),
+        (True, 10),
         (False, 1),
     ],
-    ids=["check"],
+    ids=["perf", "check"],
 )
 @pytest.mark.parametrize(
     "use_non_fused",

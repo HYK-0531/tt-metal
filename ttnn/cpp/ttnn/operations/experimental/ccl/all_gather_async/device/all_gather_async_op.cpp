@@ -139,8 +139,7 @@ AllGatherAsyncVersion AllGatherAsync::select_version(const Tensor& input_tensor)
     log_trace(tt::LogOp, "[select_version] output_shard_num_cores: {}", output_shard_num_cores);
 
     // Check for minimal interleaved case
-    if (input_tensor_buffer_layout == tt::tt_metal::TensorMemoryLayout::INTERLEAVED &&
-        input_tensor_page_layout == tt::tt_metal::Layout::TILE && semaphore.size() == 2) {
+    if (input_tensor_page_layout == tt::tt_metal::Layout::TILE && semaphore.size() == 2) {
         return AllGatherAsyncVersion::MINIMAL_INTERLEAVED;
     }
 

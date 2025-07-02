@@ -6,6 +6,7 @@
 #include <tt-metalium/buffer_types.hpp>
 #include "ttnn/operations/ccl/kernel_common/worker_sync_utils.hpp"
 #include "ttnn/operations/ccl/ccl_host_types.hpp"
+#include "ttnn/operations/ccl/kernel_common/sharding_addrgen.hpp"
 #include <cstdint>
 #include <utility>
 
@@ -50,18 +51,58 @@ void kernel_main() {
     uint32_t start_pages_read_in_row = get_arg_val<uint32_t>(arg_idx++);
     uint32_t start_row_offset = get_arg_val<uint32_t>(arg_idx++);
 
+#ifdef SHARDED
+    using input_tensor_shard_info = ShardedInfo<
+        get_compile_time_arg_val(11),   // Memory layout
+        get_compile_time_arg_val(12),   // The number of sharding cores
+        get_compile_time_arg_val(13),   // The page size we offset each write to
+        get_compile_time_arg_val(14),   // The number of pages in each sharding row not including padding pages
+        get_compile_time_arg_val(15),   // This defines times when contiguous pages can't be calculated
+        get_compile_time_arg_val(16),   // pages_per_shard_x
+        get_compile_time_arg_val(17)>;  // pages_per_shard_y
+
+    const auto [input_mapping_table, input_rt_increment] =
+        experimental::shard_addr_gen_utils::get_shard_map<input_tensor_shard_info>(get_arg_addr(arg_idx));
+    experimental::ShardedAddrGen<input_tensor_shard_info> input_tensor_addrgen = {
+        .bank_base_address = input_tensor_address, .shard_array = input_mapping_table};
+
+    arg_idx += input_rt_increment;
+
+    using output_tensor_shard_info = ShardedInfo<
+        get_compile_time_arg_val(18),   // Memory layout
+        get_compile_time_arg_val(19),   // The number of sharding cores
+        get_compile_time_arg_val(20),   // The page size we offset each write to
+        get_compile_time_arg_val(21),   // The number of pages in each sharding row not including padding pages
+        get_compile_time_arg_val(22),   // This defines times when contiguous pages can't be calculated
+        get_compile_time_arg_val(23),   // pages_per_shard_x
+        get_compile_time_arg_val(24)>;  // pages_per_shard_y
+
+    const auto [output_mapping_table, output_rt_increment] =
+        experimental::shard_addr_gen_utils::get_shard_map<output_tensor_shard_info>(get_arg_addr(arg_idx));
+    experimental::ShardedAddrGen<output_tensor_shard_info> output_tensor_addrgen = {
+        .bank_base_address = output_tensor_address, .shard_array = output_mapping_table};
+
+    arg_idx += output_rt_increment;
+#else
+    constexpr bool input_tensor_is_dram = input_buffer_type == tt::tt_metal::BufferType::DRAM;
+    const InterleavedAddrGenFast<input_tensor_is_dram> input_tensor_addrgen = {
+        .bank_base_address = input_tensor_address,
+        .page_size = input_tensor_page_size,
+        .data_format = get_dataformat(cb_output_id)};
+
+    constexpr bool output_tensor_is_dram = output_buffer_type == tt::tt_metal::BufferType::DRAM;
+    const InterleavedAddrGenFast<output_tensor_is_dram> output_tensor_addrgen = {
+        .bank_base_address = output_tensor_address,
+        .page_size = input_tensor_page_size,
+        .data_format = get_dataformat(cb_output_id)};
+#endif
+
     OpSignaler op_signaler;
     if constexpr (fuse_op) {
         op_signaler = OpSignaler(arg_idx);
     }
 
     // Push out our local slice
-    constexpr bool input_tensor_is_dram = input_buffer_type == tt::tt_metal::BufferType::DRAM;
-    auto input_tensor_addrgen = InterleavedAddrGenFast<input_tensor_is_dram>{
-        .bank_base_address = input_tensor_address,
-        .page_size = input_tensor_page_size,
-        .data_format = get_dataformat(cb_output_id)};
-
     uint32_t tiles_read = input_tile_id_start;
     uint32_t tiles_to_read = input_tile_id_end;
     uint32_t output_tile_id_start = 0;
@@ -74,7 +115,8 @@ void kernel_main() {
             size_t l1_write_addr = get_write_ptr(cb_output_id);
             for (uint32_t j = 0; j < num_tiles_to_read; ++j) {
                 uint32_t tile_id = output_tile_id_start + tiles_read;
-                noc_async_read_tile(tile_id, input_tensor_addrgen, l1_write_addr);
+                uint64_t noc_read_addr = get_noc_addr(tile_id, input_tensor_addrgen);
+                noc_async_read(noc_read_addr, l1_write_addr, input_tensor_page_size);
 
                 l1_write_addr += input_tensor_page_size;
                 tiles_read++;
@@ -87,11 +129,7 @@ void kernel_main() {
         tiles_to_read = input_tile_id_end;
         output_tile_id_start += input_tensor_Wt * input_tensor_Ht;
     }
-    constexpr bool output_tensor_is_dram = output_buffer_type == tt::tt_metal::BufferType::DRAM;
-    auto output_tensor_addrgen = InterleavedAddrGenFast<output_tensor_is_dram>{
-        .bank_base_address = output_tensor_address,
-        .page_size = input_tensor_page_size,
-        .data_format = get_dataformat(cb_output_id)};
+
     uint32_t slices_received = 0;
     uint32_t slices_expected = 0;
     uint32_t writes_expected = 0;
@@ -171,7 +209,8 @@ void kernel_main() {
                     size_t l1_write_addr = get_write_ptr(cb_output_id);
                     for (uint32_t j = 0; j < num_tiles_to_read; ++j) {
                         uint32_t tile_id = output_tile_id_start + row_offset + pages_read_in_row;
-                        noc_async_read_tile(tile_id, output_tensor_addrgen, l1_write_addr);
+                        uint64_t noc_read_addr = get_noc_addr(tile_id, output_tensor_addrgen);
+                        noc_async_read(noc_read_addr, l1_write_addr, input_tensor_page_size);
 
                         l1_write_addr += input_tensor_page_size;
                         tiles_read++;

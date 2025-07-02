@@ -26,7 +26,7 @@ static inline bool verify_multi_core_cost(
     uint32_t index_tile_size = tile_size(index_cb_data_format);
 
     const auto core_range = core_range_set.ranges().at(0);
-    const auto max_cores = core_range.end_coord.y - core_range.start_coord.y - 1;
+    const auto max_cores = (core_range.end_coord.y - core_range.start_coord.y) * (core_range.end_coord.x - core_range.start_coord.x) - 1;
     uint32_t start_split_size = width / largest_power_of_two(max_cores);
     for (uint32_t split_size = start_split_size; split_size <= max_dim; split_size *= 2) {
         uint32_t rem = width % split_size;

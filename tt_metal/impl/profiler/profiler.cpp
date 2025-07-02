@@ -46,6 +46,8 @@ namespace tt {
 
 namespace tt_metal {
 
+FabricRoutingLookup DeviceProfiler::routing_lookup;
+
 static kernel_profiler::PacketTypes get_packet_type(uint32_t timer_id) {
     return static_cast<kernel_profiler::PacketTypes>((timer_id >> 16) & 0x7);
 }
@@ -796,10 +798,7 @@ void DeviceProfiler::emitCSVHeader(
 }
 
 void DeviceProfiler::serializeJsonNocTraces(
-    const nlohmann::ordered_json& noc_trace_json_log,
-    const std::filesystem::path& output_dir,
-    chip_id_t device_id,
-    const FabricRoutingLookup& routing_lookup) {
+    const nlohmann::ordered_json& noc_trace_json_log, const std::filesystem::path& output_dir, chip_id_t device_id) {
     // create output directory if it does not exist
     std::filesystem::create_directories(output_dir);
     if (!std::filesystem::is_directory(output_dir)) {
@@ -1135,11 +1134,6 @@ void DeviceProfiler::dumpResults(
 
     generateZoneSourceLocationsHashes();
 
-    FabricRoutingLookup routing_lookup;
-    if (state == ProfilerDumpState::NORMAL && rtoptions.get_profiler_noc_events_enabled()) {
-        routing_lookup = FabricRoutingLookup(device);
-    }
-
     if (data_source == ProfilerDataBufferSource::DRAM) {
         for (const auto& worker_core : worker_cores) {
             readControlBuffers(device, worker_core, state);
@@ -1232,8 +1226,9 @@ void DeviceProfiler::dumpResults(
 
         // serialize noc traces only in normal state, to avoid overwriting individual trace files
         if (state == ProfilerDumpState::NORMAL && rtoptions.get_profiler_noc_events_enabled()) {
-            serializeJsonNocTraces(noc_trace_json_log, rpt_path, device_id, routing_lookup);
+            serializeJsonNocTraces(noc_trace_json_log, rpt_path, device_id);
             dumpClusterCoordinatesAsJson(std::filesystem::path(rpt_path) / "cluster_coordinates.json");
+            dumpRoutingInfo(std::filesystem::path(rpt_path) / "topology.json", routing_lookup);
         }
 
         log_file_ofs.close();
@@ -1521,6 +1516,11 @@ void DeviceProfiler::updateTracyContext(std::pair<uint32_t, CoreCoord> device_co
         }
     }
 #endif
+}
+
+void DeviceProfiler::RecordForwardingChannelPair(
+    const tt_fabric::FabricNodeId& fabric_node_id, CoreCoord eth_core1, CoreCoord eth_core2) {
+    routing_lookup.RecordForwardingChannelPair(fabric_node_id, eth_core1, eth_core2);
 }
 
 bool getDeviceProfilerState() { return tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_enabled(); }

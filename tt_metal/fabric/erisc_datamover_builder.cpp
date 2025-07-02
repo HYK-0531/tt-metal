@@ -29,6 +29,7 @@
 #include "fabric_edm_types.hpp"
 #include <tt-logger/tt-logger.hpp>
 #include <umd/device/tt_core_coordinates.h>
+#include <profiler.hpp>
 
 namespace tt {
 namespace tt_metal {
@@ -1213,6 +1214,11 @@ void FabricEriscDatamoverBuilder::connect_to_downstream_edm(FabricEriscDatamover
         ds_noc_y,
         0,
         ds_dir);
+
+    if (tt_metal::MetalContext::instance().rtoptions().get_profiler_noc_events_enabled()) {
+        tt_metal::DeviceProfiler::RecordForwardingChannelPair(
+            local_fabric_node_id, my_eth_core_logical, downstream_edm.my_eth_core_logical);
+    }
 
     // VC 0
     // For non-mesh, downstream channel is always 1 because channel 0 is always reserved for worker connections

@@ -110,6 +110,8 @@ private:
     // Per-core sync info used to make tracy context
     std::map<CoreCoord, std::tuple<double, double, double>> core_sync_info;
 
+    static FabricRoutingLookup routing_lookup;
+
     // 32bit FNV-1a hashing
     uint32_t hash32CT(const char* str, size_t n, uint32_t basis = UINT32_C(2166136261));
 
@@ -121,10 +123,7 @@ private:
 
     // serialize all noc trace data into per-op json trace files
     void serializeJsonNocTraces(
-        const nlohmann::ordered_json& noc_trace_json_log,
-        const std::filesystem::path& output_dir,
-        chip_id_t device_id,
-        const FabricRoutingLookup& routing_lookup);
+        const nlohmann::ordered_json& noc_trace_json_log, const std::filesystem::path& output_dir, chip_id_t device_id);
 
     void emitCSVHeader(
         std::ofstream& log_file_ofs, const tt::ARCH& device_architecture, int device_core_frequency) const;
@@ -275,6 +274,9 @@ public:
 
     // Read data from L1 data buffer using slow dispatch
     std::vector<uint32_t> issueSlowDispatchReadFromL1DataBuffer(IDevice* device, const CoreCoord& worker_core);
+
+    static void RecordForwardingChannelPair(
+        const tt_fabric::FabricNodeId& fabric_node_id, CoreCoord eth_core1, CoreCoord eth_core2);
 };
 
 void write_control_buffer_to_core(

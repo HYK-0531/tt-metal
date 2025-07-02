@@ -262,52 +262,48 @@ void ControlPlane::initialize_dynamic_routing_plane_counts(
     }
 }
 
-std::optional<LocalMeshBinding> ControlPlane::initialize_local_mesh_binding() {
+LocalMeshBinding ControlPlane::initialize_local_mesh_binding() {
     const char* mesh_id_str = std::getenv("TT_MESH_ID");
     const char* host_rank_str = std::getenv("TT_HOST_RANK");
     if (mesh_id_str == nullptr ^ host_rank_str == nullptr) {
         TT_THROW("Both TT_MESH_ID and TT_HOST_RANK environment variables must be set together or both unset");
     }
 
-    // If both TT_MESH_ID and TT_HOST_RANK are unset, we'll use the values from the mesh graph descriptor.
+    // If both TT_MESH_ID and TT_HOST_RANK are unset, we don't initialzie the local mesh binding.
+    // A nullopt here indicates that the host this ControlPlane is runnning on owns all Meshes in
+    // the MeshGraphDescriptor. Single Host Multi-Mesh is only used for testing purposes.
     if (mesh_id_str == nullptr && host_rank_str == nullptr) {
         auto& ctx = tt::tt_metal::MetalContext::instance().get_distributed_context();
-        std::optional<HostRankId> first_rank = std::nullopt;
+        auto mpi_rank = *ctx.rank();
+        std::vector<MeshId> local_mesh_ids;
         for (const auto& mesh_id : this->routing_table_generator_->mesh_graph->get_mesh_ids()) {
             const auto& host_ranks = this->routing_table_generator_->mesh_graph->get_host_ranks(mesh_id);
             for (const auto& [coord, rank] : host_ranks) {
-                if (not first_rank.has_value()) {
-                    first_rank = rank;
-                } else {
-                    TT_FATAL(
-                        rank == first_rank.value(),
-                        "ControlPlane expected to see a single host rank in the Mesh Graph Descriptor when TT_MESH_ID "
-                        "and TT_HOST_RANK are not specified.",
-                        mesh_id,
-                        first_rank.value(),
-                        rank);
+                if (mpi_rank == *rank) {
+                    local_mesh_ids.push_back(mesh_id);
                 }
             }
         }
-        return std::nullopt;
+        return LocalMeshBinding{
+            .mesh_ids = std::move(local_mesh_ids),
+            .host_rank = HostRankId{mpi_rank}};
     }
 
     // If both TT_MESH_ID and TT_HOST_RANK are set, we'll use the values from the environment variables.
     auto local_mesh_binding = LocalMeshBinding{
-        .mesh_id = MeshId{std::stoi(mesh_id_str)},
+        .mesh_ids = {MeshId{std::stoi(mesh_id_str)}},
         .host_rank = HostRankId{std::stoi(host_rank_str)}};
 
     log_debug(tt::LogDistributed, "Local mesh binding: mesh_id: {}, host_rank: {}", local_mesh_binding.mesh_id, local_mesh_binding.host_rank);
 
     // Validate the local mesh binding exists in the mesh graph descriptor
     auto mesh_ids = this->routing_table_generator_->mesh_graph->get_mesh_ids();
-    if (std::find(mesh_ids.begin(), mesh_ids.end(), local_mesh_binding.mesh_id) == mesh_ids.end()) {
-        TT_THROW("Invalid TT_MESH_ID: Local mesh binding mesh_id {} not found in mesh graph descriptor", local_mesh_binding.mesh_id);
+    if (std::find(mesh_ids.begin(), mesh_ids.end(), local_mesh_binding.mesh_ids[0]) == mesh_ids.end()) {
+        TT_THROW("Invalid TT_MESH_ID: Local mesh binding mesh_id {} not found in mesh graph descriptor", local_mesh_binding.mesh_ids[0]);
     }
 
     // Validate host rank (only if mesh_id is valid)
-
-    const auto& host_ranks = this->routing_table_generator_->mesh_graph->get_host_ranks(local_mesh_binding.mesh_id);
+    const auto& host_ranks = this->routing_table_generator_->mesh_graph->get_host_ranks(local_mesh_binding.mesh_ids[0]);
     bool is_valid_host_rank = std::find_if(host_ranks.begin(), host_ranks.end(), [&](const auto& coord_rank_pair) {
         return coord_rank_pair.value() == local_mesh_binding.host_rank;
     }) != host_ranks.end();
@@ -332,6 +328,7 @@ ControlPlane::ControlPlane(const std::string& mesh_graph_desc_file) {
     // Query and generate intermesh ethernet links per physical chip
     this->initialize_intermesh_eth_links();
     this->generate_local_intermesh_link_table();
+    this->exchange_intermesh_link_tables();
 }
 
 ControlPlane::ControlPlane(
@@ -349,6 +346,7 @@ ControlPlane::ControlPlane(
     // Query and generate intermesh ethernet links per physical chip
     this->initialize_intermesh_eth_links();
     this->generate_local_intermesh_link_table();
+    this->exchange_intermesh_link_tables();
 }
 
 void ControlPlane::load_physical_chip_mapping(
@@ -933,7 +931,6 @@ void ControlPlane::configure_routing_tables_for_fabric_ethernet_channels(
     this->intra_mesh_routing_tables_.clear();
     this->inter_mesh_routing_tables_.clear();
     this->router_port_directions_to_physical_eth_chan_map_.clear();
-    this->exchange_intermesh_link_tables();
     const auto& intra_mesh_connectivity = this->routing_table_generator_->mesh_graph->get_intra_mesh_connectivity();
     const auto& inter_mesh_connectivity = this->routing_table_generator_->mesh_graph->get_inter_mesh_connectivity();
     // Initialize the bookkeeping for mapping from mesh/chip/direction to physical ethernet channels
@@ -1236,6 +1233,7 @@ std::vector<std::pair<FabricNodeId, chan_id_t>> ControlPlane::get_fabric_route(
             route.push_back({src_fabric_node_id, src_chan_id});
         }
 
+        route.push_back({src_fabric_node_id, 0});
         return route;
     }
 
@@ -1549,7 +1547,7 @@ std::vector<MeshId> ControlPlane::get_user_physical_mesh_ids() const {
 
 MeshShape ControlPlane::get_physical_mesh_shape(MeshId mesh_id, MeshScope scope) const {
     std::optional<HostRankId> local_host_rank_id =
-        MeshScope::LOCAL == scope ? this->get_local_host_rank_id_binding() : std::nullopt;
+        MeshScope::LOCAL == scope ? std::make_optional(this->get_local_host_rank_id_binding()) : std::nullopt;
     return this->routing_table_generator_->mesh_graph->get_mesh_shape(mesh_id, local_host_rank_id);
 }
 
@@ -1831,8 +1829,7 @@ void ControlPlane::generate_local_intermesh_link_table() {
     // This cannot be done by UMD, since it has no knowledge of links marked
     // for intermesh routing (these links are hidden from UMD).
     const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
-    intermesh_link_table_.local_mesh_id =
-        (local_mesh_binding_ != std::nullopt) ? (local_mesh_binding_->mesh_id) : MeshId{0};
+    intermesh_link_table_.local_mesh_id = local_mesh_binding_->mesh_ids[0];
     const uint32_t remote_config_base_addr = tt_metal::MetalContext::instance().hal().get_dev_addr(
         tt_metal::HalProgrammableCoreType::ACTIVE_ETH, tt_metal::HalL1MemAddrType::ETH_LINK_REMOTE_INFO);
     for (const auto& chip_id : cluster.user_exposed_chip_ids()) {
@@ -1956,7 +1953,12 @@ void ControlPlane::assign_direction_to_fabric_eth_core(
     if (fabric_router_channels_on_chip.contains(chan_id)) {
         this->router_port_directions_to_physical_eth_chan_map_.at(fabric_node_id)[direction].push_back(chan_id);
     } else {
-        log_debug(tt::LogFabric, "Control Plane: Disabling router on M{}D{} eth channel {}", mesh_id, chip_id, chan_id);
+        log_debug(
+            tt::LogFabric,
+            "Control Plane: Disabling router on M{}D{} eth channel {}",
+            fabric_node_id.mesh_id,
+            fabric_node_id.chip_id,
+            chan_id);
     }
 }
 
@@ -2034,27 +2036,22 @@ uint64_t ControlPlane::get_asic_id(chip_id_t chip_id) const {
     return chip_id_to_asic_id_.at(chip_id);
 }
 
-std::optional<MeshId> ControlPlane::get_local_mesh_id_binding() const {
-    return this->local_mesh_binding_.has_value() ? std::make_optional(this->local_mesh_binding_->mesh_id)
-                                                 : std::nullopt;
+std::vector<MeshId> ControlPlane::get_local_mesh_id_bindings() const {
+    return this->local_mesh_binding_->mesh_ids;
 }
 
-std::optional<HostRankId> ControlPlane::get_local_host_rank_id_binding() const {
-    return this->local_mesh_binding_.has_value() ? std::make_optional(this->local_mesh_binding_->host_rank)
-                                                 : std::nullopt;
+HostRankId ControlPlane::get_local_host_rank_id_binding() const {
+    return this->local_mesh_binding_->host_rank;
 }
 
 MeshCoordinateRange ControlPlane::get_coord_range(MeshId mesh_id, MeshScope scope) const {
-    std::optional<HostRankId> local_host_rank_id =
-        MeshScope::LOCAL == scope ? this->get_local_host_rank_id_binding() : std::nullopt;
+    std::optional<HostRankId> local_host_rank_id = MeshScope::LOCAL == scope ? std::make_optional(this->get_local_host_rank_id_binding()) : std::nullopt;
     return this->routing_table_generator_->mesh_graph->get_coord_range(mesh_id, local_host_rank_id);
 }
 
 bool ControlPlane::is_local_mesh(MeshId mesh_id) const {
-    if (local_mesh_binding_.has_value()) {
-        return local_mesh_binding_->mesh_id == mesh_id;
-    }
-    return true;
+    const auto& local_mesh_ids = local_mesh_binding_->mesh_ids;
+    return std::find(local_mesh_ids.begin(), local_mesh_ids.end(), mesh_id) != local_mesh_ids.end();
 }
 
 ControlPlane::~ControlPlane() = default;

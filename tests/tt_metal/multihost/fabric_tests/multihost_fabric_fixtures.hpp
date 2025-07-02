@@ -22,11 +22,18 @@ public:
         if (not system_supported()) {
             GTEST_SKIP() << "Skipping since this is not a supported system.";
         }
-        local_binding_manager_.validate_local_mesh_id_and_host_rank();
-        local_binding_manager_.set_bindings();
+
+        const char* mesh_id_str = std::getenv("TT_MESH_ID");
+        const char* host_rank_str = std::getenv("TT_HOST_RANK");
+        auto local_mesh_id = std::string(mesh_id_str);
+        auto local_host_rank = std::string(host_rank_str);
+
+        TT_FATAL(
+            local_mesh_id.size() and local_host_rank.size(),
+            "TT_MESH_ID and TT_HOST_RANK environment variables must be set for Multi-Host Fabric Tests.");
 
         auto chip_to_eth_coord_mapping = multihost_utils::get_physical_chip_mapping_from_eth_coords_mapping(
-            get_eth_coord_mapping(), local_binding_manager_.get_local_mesh_id());
+            get_eth_coord_mapping(), std::stoi(local_mesh_id));
 
         tt::tt_metal::MetalContext::instance().set_custom_control_plane_mesh_graph(
             get_path_to_mesh_graph_desc(), chip_to_eth_coord_mapping);
@@ -42,10 +49,6 @@ public:
     void TearDown() override {
         if (system_supported()) {
             BaseFabricFixture::TearDown();
-            // Clear any mesh binding related env-vars and set the default control plane config
-            // This allows the next test to start with a clean slate
-            local_binding_manager_.clear_bindings();
-            tt::tt_metal::MetalContext::instance().set_default_control_plane_mesh_graph();
         }
     }
 
@@ -53,9 +56,6 @@ public:
     virtual std::string get_path_to_mesh_graph_desc() = 0;
     virtual std::vector<std::vector<eth_coord_t>> get_eth_coord_mapping() = 0;
     virtual bool system_supported() = 0;
-
-private:
-    multihost_utils::LocalBindingManager local_binding_manager_;
 };
 
 class InterMesh2x4Fabric2DFixture : public InterMeshRoutingFabric2DFixture {
@@ -82,11 +82,18 @@ public:
         if (not system_supported()) {
             GTEST_SKIP() << "Skipping since this is not a supported system.";
         }
-        local_binding_manager_.validate_local_mesh_id_and_host_rank();
-        local_binding_manager_.set_bindings();
+        
+        const char* mesh_id_str = std::getenv("TT_MESH_ID");
+        const char* host_rank_str = std::getenv("TT_HOST_RANK");
+        auto local_mesh_id = std::string(mesh_id_str);
+        auto local_host_rank = std::string(host_rank_str);
+
+        TT_FATAL(
+            local_mesh_id.size() and local_host_rank.size(),
+            "TT_MESH_ID and TT_HOST_RANK environment variables must be set for Multi-Host Fabric Tests.");
 
         auto chip_to_eth_coord_mapping = multihost_utils::get_physical_chip_mapping_from_eth_coords_mapping(
-            get_eth_coord_mapping(), local_binding_manager_.get_local_mesh_id());
+            get_eth_coord_mapping(), std::stoi(local_mesh_id));
 
         tt::tt_metal::MetalContext::instance().set_custom_control_plane_mesh_graph(
             get_path_to_mesh_graph_desc(), chip_to_eth_coord_mapping);
@@ -102,10 +109,6 @@ public:
     void TearDown() override {
         if (system_supported()) {
             tt::tt_metal::T3000MeshDevice2DFabricFixture::TearDown();
-            // Clear any mesh binding related env-vars and set the default control plane config
-            // This allows the next test to start with a clean slate
-            local_binding_manager_.clear_bindings();
-            tt::tt_metal::MetalContext::instance().set_default_control_plane_mesh_graph();
         }
     }
 
@@ -113,9 +116,6 @@ public:
     virtual std::string get_path_to_mesh_graph_desc() = 0;
     virtual std::vector<std::vector<eth_coord_t>> get_eth_coord_mapping() = 0;
     virtual bool system_supported() = 0;
-
-private:
-    multihost_utils::LocalBindingManager local_binding_manager_;
 };
 
 class InterMeshDual2x4Fabric2DFixture : public InterMeshDeviceRoutingFabric2DFixture {

@@ -255,38 +255,39 @@ def test_unet_trace_2cq_multi_device(
     dram_output_tensor = ttnn.reshard(output_tensor, output_dram_memory_config, dram_output_tensor)
     ttnn.synchronize_device(mesh_device)
 
-    outputs = []
-    start = time.time()
-    ttnn.wait_for_event(1, op_event)
-    ttnn.copy_host_to_device_tensor(ttnn_input, input_tensor, cq_id=1)
-    write_event = ttnn.record_event(mesh_device, 1)
-    for _ in range(iterations - 1):
+    for _ in range(30):
+        outputs = []
+        start = time.time()
+        ttnn.wait_for_event(1, op_event)
+        ttnn.copy_host_to_device_tensor(ttnn_input, input_tensor, cq_id=1)
+        write_event = ttnn.record_event(mesh_device, 1)
+        for _ in range(iterations - 1):
+            ttnn.wait_for_event(0, write_event)
+            op_event = ttnn.record_event(mesh_device, 0)
+            ttnn.execute_trace(mesh_device, tid, cq_id=0, blocking=False)
+            ttnn.wait_for_event(0, read_event)
+            dram_output_tensor = ttnn.reshard(output_tensor, output_dram_memory_config, dram_output_tensor)
+            model_event = ttnn.record_event(mesh_device, 0)
+            ttnn.wait_for_event(1, op_event)
+            ttnn.copy_host_to_device_tensor(ttnn_input, input_tensor, cq_id=1)
+            write_event = ttnn.record_event(mesh_device, 1)
+            ttnn.wait_for_event(1, model_event)
+            outputs.append(dram_output_tensor.cpu(blocking=False, cq_id=1))
+            read_event = ttnn.record_event(mesh_device, 1)
         ttnn.wait_for_event(0, write_event)
         op_event = ttnn.record_event(mesh_device, 0)
         ttnn.execute_trace(mesh_device, tid, cq_id=0, blocking=False)
         ttnn.wait_for_event(0, read_event)
         dram_output_tensor = ttnn.reshard(output_tensor, output_dram_memory_config, dram_output_tensor)
         model_event = ttnn.record_event(mesh_device, 0)
-        ttnn.wait_for_event(1, op_event)
-        ttnn.copy_host_to_device_tensor(ttnn_input, input_tensor, cq_id=1)
-        write_event = ttnn.record_event(mesh_device, 1)
         ttnn.wait_for_event(1, model_event)
         outputs.append(dram_output_tensor.cpu(blocking=False, cq_id=1))
-        read_event = ttnn.record_event(mesh_device, 1)
-    ttnn.wait_for_event(0, write_event)
-    op_event = ttnn.record_event(mesh_device, 0)
-    ttnn.execute_trace(mesh_device, tid, cq_id=0, blocking=False)
-    ttnn.wait_for_event(0, read_event)
-    dram_output_tensor = ttnn.reshard(output_tensor, output_dram_memory_config, dram_output_tensor)
-    model_event = ttnn.record_event(mesh_device, 0)
-    ttnn.wait_for_event(1, model_event)
-    outputs.append(dram_output_tensor.cpu(blocking=False, cq_id=1))
-    ttnn.synchronize_device(mesh_device)
-    end = time.time()
+        ttnn.synchronize_device(mesh_device)
+        end = time.time()
 
-    inference_time = (end - start) / iterations
-    logger.info(f"Average model time={1000.0 * inference_time : .2f} ms")
-    logger.info(f"Average model performance={iterations * groups * total_batch / (end-start) : .2f} fps")
+        inference_time = (end - start) / iterations
+        logger.info(f"Average model time={1000.0 * inference_time : .2f} ms")
+        logger.info(f"Average model performance={iterations * groups * total_batch / (end-start) : .2f} fps")
 
     logger.info(f"Running sanity check against reference model output")
     B, C, H, W = torch_output_tensor.shape

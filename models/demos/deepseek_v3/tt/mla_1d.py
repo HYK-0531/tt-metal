@@ -277,6 +277,39 @@ class MLA_1D(AbstractModule):
             program_config=None,
         )
 
+        # FlashMLA
+        q_chunk_size = 128  # TODO: Make dynamic?
+        k_chunk_size = 128  # TODO: Make dynamic?
+
+        sdpa_program_config = ttnn.SDPAProgramConfig(
+            compute_with_storage_grid_size=grid_size,
+            q_chunk_size=q_chunk_size,
+            k_chunk_size=k_chunk_size,
+            exp_approx_mode=False,
+        )
+
+        flash_mla_compute_kernel_config = ttnn.WormholeComputeKernelConfig(
+            math_fidelity=ttnn.MathFidelity.HiFi4,
+            math_approx_mode=False,
+            fp32_dest_acc_en=False,
+            packer_l1_acc=False,
+        )
+
+        scale = qk_head_dim**-0.5
+        # If max_seq_len > original max_seq_len (4k)
+        mscale = 0.1 * mscale * math.log(rope_factor) + 1.0
+        scale = scale * mscale * mscale
+
+        config["flash_mla"] = {
+            "head_dim_v": kv_lora_rank,
+            "scale": scale,
+            "program_config": sdpa_program_config,
+            "compute_kernel_config": flash_mla_compute_kernel_config,
+            "memory_config": ttnn.DRAM_MEMORY_CONFIG,
+            "attn_mask": None,
+            "is_causal": True,
+        }
+
         return config
 
     @staticmethod
@@ -702,4 +735,20 @@ class MLA_1D(AbstractModule):
             batch_idx=user_id,
         )
 
-        return tt_q
+        # FlashMLA
+        attn_out = ttnn.transformer.flash_mla_prefill(
+            tt_q,
+            tt_kvpe,
+            **cfg["flash_mla"],
+        )  # [1, self.num_heads, seq_len, self.kv_lora_rank]
+        ttnn.deallocate(tt_q)
+
+        # wkv_b2
+        v_out = ttnn.linear(attn_out, **cfg["wkv_b2"])  # [1, num_heads, seq_len, v_head_dim]
+        v_out = ttnn.permute(v_out, (0, 2, 1, 3))  # [1, seq_len, num_heads, v_head_dim]
+
+        # wo
+        v_out = ttnn.reshape(v_out, (1, 1, seq_len, self.num_heads * self.v_head_dim))
+        out = ttnn.linear(v_out, **cfg["wo"])  # [1, 1, seq_len, dim]
+
+        return out

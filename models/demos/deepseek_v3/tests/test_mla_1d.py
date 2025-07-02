@@ -189,6 +189,12 @@ def test_forward_pass(
     torch_input = torch.randn(batch_size, seq_len, hf_config.hidden_size)
     torch_input = torch_input.to(dtype=torch.bfloat16)
 
+    # Generate the mask
+    mask = None
+    if mode == "prefill":
+        # For prefill, we need to create a causal mask
+        mask = torch.triu(torch.full((seq_len, seq_len), float("-inf")), diagonal=1)
+
     ############################
     ### Torch reference
     ############################
@@ -196,7 +202,7 @@ def test_forward_pass(
         torch_input,
         start_pos=start_pos,
         freqs_cis=freqs_cis,
-        mask=None,
+        mask=mask,
     )
 
     ############################

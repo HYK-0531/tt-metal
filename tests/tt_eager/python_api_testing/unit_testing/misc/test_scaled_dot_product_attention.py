@@ -33,6 +33,48 @@ def fa_rand(*shape):
     return normal_1 + normal_2 * bernoulli
 
 
+def gemma3_sdpa(
+    query,
+    key,
+    value,
+    attn_mask=None,
+    dropout_p=0.0,
+    is_causal=False,
+    scale=None,
+    enable_gqa=False,
+    attn_logit_softcapping=None,
+):
+    L, S = query.size(-2), key.size(-2)
+    scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
+    attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
+    if is_causal:
+        assert attn_mask is None
+        temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
+        attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
+        attn_bias.to(query.dtype)
+
+    if attn_mask is not None:
+        if attn_mask.dtype == torch.bool:
+            attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
+        else:
+            attn_bias = attn_mask + attn_bias
+
+    if enable_gqa:
+        key = key.repeat_interleave(query.size(-3) // key.size(-3), -3)
+        value = value.repeat_interleave(query.size(-3) // value.size(-3), -3)
+
+    attn_weight = query @ key.transpose(-2, -1) * scale_factor
+    attn_weight = (
+        attn_logit_softcapping * (torch.tanh(attn_weight / attn_logit_softcapping))
+        if attn_logit_softcapping
+        else attn_weight
+    )
+    attn_weight += attn_bias
+    attn_weight = torch.softmax(attn_weight, dim=-1)
+    attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
+    return attn_weight @ value
+
+
 def run_test_sdpa_tt(
     device, b, nh, nkv, s, d, q_chunk_size, k_chunk_size, dtype, use_high_precision_compute=False, rmse_threshold=None
 ):
@@ -63,12 +105,19 @@ def run_test_sdpa_tt(
     Q = fa_rand(b, nh, s, d)
     K = fa_rand(b, nkv, s, d)
     V = fa_rand(b, nkv, s, d)
+    attn_logit_softcapping = 1.0
 
     tt_Q = ttnn.from_torch(Q, dtype=dtype, layout=ttnn.TILE_LAYOUT, device=device, pad_value=0.0)
     tt_K = ttnn.from_torch(K, dtype=dtype, layout=ttnn.TILE_LAYOUT, device=device, pad_value=0.0)
     tt_V = ttnn.from_torch(V, dtype=dtype, layout=ttnn.TILE_LAYOUT, device=device, pad_value=0.0)
     tt_back = ttnn.transformer.scaled_dot_product_attention(
-        tt_Q, tt_K, tt_V, is_causal=True, program_config=program_config, compute_kernel_config=compute_kernel_config
+        tt_Q,
+        tt_K,
+        tt_V,
+        is_causal=True,
+        attn_logit_softcapping=attn_logit_softcapping,
+        program_config=program_config,
+        compute_kernel_config=compute_kernel_config,
     )
     tt_back = ttnn.to_torch(tt_back)
     # Slice out any tile-padding
@@ -76,7 +125,8 @@ def run_test_sdpa_tt(
 
     K_repeated = torch.cat([K[:, i : i + 1, :, :].repeat(1, nh // nkv, 1, 1) for i in range(nkv)], dim=1)  # b, nh, d, S
     V_repeated = torch.cat([V[:, i : i + 1, :, :].repeat(1, nh // nkv, 1, 1) for i in range(nkv)], dim=1)  # b, nh, d, S
-    gt = torch.nn.functional.scaled_dot_product_attention(Q, K_repeated, V_repeated, is_causal=True)
+    # gt = torch.nn.functional.scaled_dot_product_attention(Q, K_repeated, V_repeated, is_causal=True)
+    gt = gemma3_sdpa(Q, K_repeated, V_repeated, attn_logit_softcapping=attn_logit_softcapping, is_causal=True)
 
     out_pass, out_pcc = comp_pcc(gt, tt_back, 0.994)
     logger.debug(f"python vs pytorch: {out_pcc}")

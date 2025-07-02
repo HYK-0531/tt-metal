@@ -25,6 +25,16 @@ namespace tt::tt_fabric {
 class FabricContext;
 
 /*
+* The following is copied from tt_cluster.hpp
+* No need to duplicate in both places
+*/
+enum class EthRouterMode : uint32_t {
+    IDLE = 0,
+    BI_DIR_TUNNELING = 1,
+    FABRIC_ROUTER = 2,
+};
+
+/*
 * EthernetContext is a singleton class
 * used to hold all Ethernet context
 * and provides accessor functions for

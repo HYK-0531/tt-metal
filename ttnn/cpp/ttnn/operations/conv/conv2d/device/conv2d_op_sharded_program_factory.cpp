@@ -555,10 +555,10 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     std::vector<uint32_t> act_mcast_noc_y;
     if (block_sharded) {
         // 2D mcast
-        if (transpose_mcast) {
+        if (transpose_mcast && total_num_cores > 1) {
             mcast_sender_cores = CoreRange(top_left_core, CoreCoord(0, num_cores_y - 1));
             mcast_receiver_cores = CoreRange(CoreCoord(1, 0), bottom_right_core);
-        } else {
+        } else if (total_num_cores > 1) {
             mcast_sender_cores = CoreRange(top_left_core, CoreCoord(num_cores_x - 1, 0));
             mcast_receiver_cores = CoreRange(CoreCoord(0, 1), bottom_right_core);
         }

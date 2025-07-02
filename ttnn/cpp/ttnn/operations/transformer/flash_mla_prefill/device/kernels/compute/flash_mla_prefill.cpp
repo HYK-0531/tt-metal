@@ -17,30 +17,31 @@ void MAIN {
     constexpr uint32_t NKH = get_compile_time_arg_val(2);
     constexpr uint32_t Skt = get_compile_time_arg_val(3);
     constexpr uint32_t DHt = get_compile_time_arg_val(4);
-    constexpr uint32_t Sq_chunk_t = get_compile_time_arg_val(5);
-    constexpr uint32_t q_num_chunks = get_compile_time_arg_val(6);
-    constexpr uint32_t Sk_chunk_t = get_compile_time_arg_val(7);
-    constexpr uint32_t k_num_chunks = get_compile_time_arg_val(8);
+    constexpr uint32_t vDHt = get_compile_time_arg_val(5);
+    constexpr uint32_t Sq_chunk_t = get_compile_time_arg_val(6);
+    constexpr uint32_t q_num_chunks = get_compile_time_arg_val(7);
+    constexpr uint32_t Sk_chunk_t = get_compile_time_arg_val(8);
+    constexpr uint32_t k_num_chunks = get_compile_time_arg_val(9);
 
-    constexpr uint32_t qk_in0_block_w = get_compile_time_arg_val(9);
-    constexpr uint32_t qk_subblock_w = get_compile_time_arg_val(10);
-    constexpr uint32_t qk_subblock_h = get_compile_time_arg_val(11);
-    constexpr uint32_t qk_in0_num_subblocks = get_compile_time_arg_val(12);
-    constexpr uint32_t qk_in1_num_subblocks = get_compile_time_arg_val(13);
-    constexpr uint32_t qk_num_blocks = get_compile_time_arg_val(14);
-    constexpr uint32_t out_in0_block_w = get_compile_time_arg_val(15);
-    constexpr uint32_t out_subblock_w = get_compile_time_arg_val(16);
-    constexpr uint32_t out_subblock_h = get_compile_time_arg_val(17);
-    constexpr uint32_t out_in0_num_subblocks = get_compile_time_arg_val(18);
-    constexpr uint32_t out_in1_num_subblocks = get_compile_time_arg_val(19);
-    constexpr uint32_t out_num_blocks = get_compile_time_arg_val(20);
+    constexpr uint32_t qk_in0_block_w = get_compile_time_arg_val(10);
+    constexpr uint32_t qk_subblock_w = get_compile_time_arg_val(11);
+    constexpr uint32_t qk_subblock_h = get_compile_time_arg_val(12);
+    constexpr uint32_t qk_in0_num_subblocks = get_compile_time_arg_val(13);
+    constexpr uint32_t qk_in1_num_subblocks = get_compile_time_arg_val(14);
+    constexpr uint32_t qk_num_blocks = get_compile_time_arg_val(15);
+    constexpr uint32_t out_in0_block_w = get_compile_time_arg_val(16);
+    constexpr uint32_t out_subblock_w = get_compile_time_arg_val(17);
+    constexpr uint32_t out_subblock_h = get_compile_time_arg_val(18);
+    constexpr uint32_t out_in0_num_subblocks = get_compile_time_arg_val(19);
+    constexpr uint32_t out_in1_num_subblocks = get_compile_time_arg_val(20);
+    constexpr uint32_t out_num_blocks = get_compile_time_arg_val(21);
 
-    constexpr uint32_t num_cores = get_compile_time_arg_val(21);
+    constexpr uint32_t num_cores = get_compile_time_arg_val(22);
 
-    constexpr uint32_t is_causal = get_compile_time_arg_val(22) == 1;
-    constexpr uint32_t use_provided_mask = get_compile_time_arg_val(23) == 1;
-    constexpr uint32_t use_padded_mask = get_compile_time_arg_val(24) == 1;
-    constexpr uint32_t is_chunked = get_compile_time_arg_val(25) == 1;
+    constexpr uint32_t is_causal = get_compile_time_arg_val(23) == 1;
+    constexpr uint32_t use_provided_mask = get_compile_time_arg_val(24) == 1;
+    constexpr uint32_t use_padded_mask = get_compile_time_arg_val(25) == 1;
+    constexpr uint32_t is_chunked = get_compile_time_arg_val(26) == 1;
 
     const uint32_t core_id = get_arg_val<uint32_t>(0);
     const uint32_t local_batch_start = get_arg_val<uint32_t>(1);
@@ -56,7 +57,7 @@ void MAIN {
     constexpr uint32_t q_chunk_tiles = Sq_chunk_t * DHt;
     constexpr uint32_t k_chunk_tiles = Sk_chunk_t * DHt;
     constexpr uint32_t qk_chunk_tiles = Sq_chunk_t * Sk_chunk_t;
-    constexpr uint32_t out_chunk_tiles = Sq_chunk_t * DHt;
+    constexpr uint32_t out_chunk_tiles = Sq_chunk_t * vDHt;
 
     constexpr uint32_t cb_q_in = tt::CBIndex::c_0;
     constexpr uint32_t cb_k_in = tt::CBIndex::c_1;
@@ -197,7 +198,7 @@ void MAIN {
                         cb_v_in,
                         alias_mm2_cur_out,
                         Sq_chunk_t,
-                        DHt,
+                        vDHt,
                         Sk_chunk_t,
                         out_num_blocks,
                         out_in0_num_subblocks,
@@ -222,7 +223,7 @@ void MAIN {
                         add_block_inplace(alias_cur_sum, alias_prev_sum, Sq_chunk_t);
 
                         /* cb_out_accumulate_im *= cb_exp_max_diff */
-                        mul_block_bcast_cols_inplace<Sq_chunk_t, DHt>(alias_mm2_prev_out, cb_exp_max_diff);
+                        mul_block_bcast_cols_inplace<Sq_chunk_t, vDHt>(alias_mm2_prev_out, cb_exp_max_diff);
                         add_block_inplace(alias_mm2_cur_out, alias_mm2_prev_out, out_chunk_tiles);
                     }
 
@@ -237,7 +238,7 @@ void MAIN {
 
                 /* cb_out_accumulate_im *= cb_cur_sum */
                 // NOTE: PCC bug if we modify below function to directy output to cb_out.
-                mul_block_bcast_cols_inplace<Sq_chunk_t, DHt>(alias_mm2_prev_out, alias_prev_sum);
+                mul_block_bcast_cols_inplace<Sq_chunk_t, vDHt>(alias_mm2_prev_out, alias_prev_sum);
                 pack_reconfig_data_format(cb_out);
                 copy_block(alias_mm2_prev_out, cb_out, out_chunk_tiles);
 

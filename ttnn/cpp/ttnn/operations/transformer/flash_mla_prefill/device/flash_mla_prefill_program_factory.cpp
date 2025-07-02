@@ -15,6 +15,8 @@
 #include <tt-metalium/host_api.hpp>
 #include "ttnn/operations/math.hpp"
 #include "ttnn/operation.hpp"
+#include <iostream>
+#include <sstream>
 
 using namespace tt::constants;
 using namespace tt::tt_metal;
@@ -68,6 +70,7 @@ operation::ProgramWithCallbacks flash_mla_prefill_multi_core(
     const uint32_t Sqt = padded_Sq / TILE_HEIGHT;
     const uint32_t Skt = padded_Sk / TILE_HEIGHT;
     const uint32_t DHt = DH / TILE_WIDTH;
+    const uint32_t vDHt = head_dim_v / TILE_WIDTH;
 
     const uint32_t valid_Sqt = std::ceil((float)Sq / TILE_HEIGHT);
     const uint32_t valid_Skt = std::ceil((float)Sk / TILE_HEIGHT);
@@ -99,6 +102,7 @@ operation::ProgramWithCallbacks flash_mla_prefill_multi_core(
     log_debug(tt::LogOp, "Sqt: {}", Sqt);
     log_debug(tt::LogOp, "Skt: {}", Skt);
     log_debug(tt::LogOp, "DHt: {}", DHt);
+    log_debug(tt::LogOp, "vDHt: {}", vDHt);
     log_debug(tt::LogOp, "Sq_chunk_t: {}", Sq_chunk_t);
     log_debug(tt::LogOp, "Sk_chunk_t: {}", Sk_chunk_t);
     log_debug(tt::LogOp, "q_chunk_size: {}", q_chunk_size);
@@ -202,11 +206,11 @@ operation::ProgramWithCallbacks flash_mla_prefill_multi_core(
     // These tile capacity counts for CBs need to match the number of tiles expected by the kernel (softmax.cpp)
     uint32_t q_tiles = Sq_chunk_t * DHt * q_buffer_factor;
     uint32_t k_tiles = Sk_chunk_t * DHt * 2;            // double buffer
-    uint32_t v_tiles = Sk_chunk_t * DHt * 2;            // double buffer
+    uint32_t v_tiles = Sk_chunk_t * vDHt * 2;           // double buffer
     uint32_t mask_tiles = Sq_chunk_t * Sk_chunk_t * 2;  // double buffer
     uint32_t qk_tiles = Sq_chunk_t * Sk_chunk_t;
-    uint32_t out_im_tiles = Sq_chunk_t * DHt;
-    uint32_t out0_t = Sq_chunk_t * DHt;
+    uint32_t out_im_tiles = Sq_chunk_t * vDHt;
+    uint32_t out0_t = Sq_chunk_t * vDHt;
     uint32_t scale_tiles = 1;
     uint32_t statistics_tiles = Sq_chunk_t;  // Single column of values in each iteration
 
@@ -236,12 +240,12 @@ operation::ProgramWithCallbacks flash_mla_prefill_multi_core(
 
     // now for out0
     const uint32_t out_in0_block_w = Sk_chunk_t;
-    const uint32_t out_out_subblock_w = std::min(DHt, dst_size);
+    const uint32_t out_out_subblock_w = std::min(vDHt, dst_size);
     const uint32_t out_out_subblock_h =
-        (out_out_subblock_w == DHt) ? (std::min(Sq_chunk_t, dst_size / out_out_subblock_w)) : 1;
+        (out_out_subblock_w == vDHt) ? (std::min(Sq_chunk_t, dst_size / out_out_subblock_w)) : 1;
 
     const uint32_t out_in0_num_subblocks = Sq_chunk_t / out_out_subblock_h;
-    const uint32_t out_in1_num_subblocks = DHt / out_out_subblock_w;
+    const uint32_t out_in1_num_subblocks = vDHt / out_out_subblock_w;
     const uint32_t out_num_blocks = Sk_chunk_t / out_in0_block_w;
 
     // log all values
@@ -324,6 +328,7 @@ operation::ProgramWithCallbacks flash_mla_prefill_multi_core(
                                                       valid_Sqt,
                                                       valid_Skt,
                                                       DHt,
+                                                      vDHt,
                                                       Sq_chunk_t,
                                                       q_num_chunks,
                                                       Sk_chunk_t,
@@ -346,6 +351,7 @@ operation::ProgramWithCallbacks flash_mla_prefill_multi_core(
         valid_Sqt,
         Sk,
         DHt,
+        vDHt,
         Sq_chunk_t,
         q_num_chunks,
         Sk_chunk_t,
@@ -366,6 +372,7 @@ operation::ProgramWithCallbacks flash_mla_prefill_multi_core(
         NKH,
         Skt,
         DHt,
+        vDHt,
         Sq_chunk_t,
         q_num_chunks,
         Sk_chunk_t,

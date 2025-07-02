@@ -110,6 +110,18 @@ void FlashMLAPrefill::validate(
                 Sq == Sk, "Causal SDPA requires Q and K to have the same sequence length. Got Q: {}, K: {}", Sq, Sk);
         }
 
+        // Head dim v validation
+        TT_FATAL(
+            this->head_dim_v <= q_shape[3],
+            "Head dimension of V must be less than or equal to head dim of Q, got {} and {}",
+            head_dim_v,
+            q_shape[3]);
+        TT_FATAL(
+            this->head_dim_v <= k_shape[3],
+            "Head dimension of V must be less than or equal to head dim of K, got {} and {}",
+            this->head_dim_v,
+            q_shape[3]);
+
         TT_FATAL(
             nqh >= nkv && nqh % nkv == 0,
             "Q num_heads must be >= K num_heads and divisible by K num_heads. Got Q: {}, K: {}",
@@ -233,8 +245,10 @@ void FlashMLAPrefill::validate(
 
 std::vector<TensorSpec> FlashMLAPrefill::compute_output_specs(const std::vector<Tensor>& input_tensors) const {
     auto& input = input_tensors.at(0);
-    return {
-        TensorSpec(input.logical_shape(), TensorLayout(input.dtype(), PageConfig(Layout::TILE), output_mem_config))};
+    auto shape = input.logical_shape();
+    shape[3] = this->head_dim_v;
+
+    return {TensorSpec(shape, TensorLayout(input.dtype(), PageConfig(Layout::TILE), output_mem_config))};
 }
 
 std::uint32_t FlashMLAPrefill::get_q_chunk_size() const {

@@ -76,7 +76,39 @@ public:
     }
 };
 
-class InterMeshDeviceRoutingFabric2DFixture : public tt::tt_metal::T3000MeshDevice2DFabricFixture {
+class InterMeshDual2x4Fabric2DFixture : public InterMeshRoutingFabric2DFixture {
+    std::string get_path_to_mesh_graph_desc() override {
+        return "tests/tt_metal/tt_fabric/custom_mesh_descriptors/dual_t3k_mesh_graph_descriptor.yaml";
+    }
+
+    std::vector<std::vector<eth_coord_t>> get_eth_coord_mapping() override {
+        return {
+            {{0, 0, 0, 0, 0},
+             {0, 1, 0, 0, 0},
+             {0, 2, 0, 0, 0},
+             {0, 3, 0, 0, 0},
+             {0, 0, 1, 0, 0},
+             {0, 1, 1, 0, 0},
+             {0, 2, 1, 0, 0},
+             {0, 3, 1, 0, 0}},
+
+            {{0, 0, 0, 0, 0},
+             {0, 1, 0, 0, 0},
+             {0, 2, 0, 0, 0},
+             {0, 3, 0, 0, 0},
+             {0, 0, 1, 0, 0},
+             {0, 1, 1, 0, 0},
+             {0, 2, 1, 0, 0},
+             {0, 3, 1, 0, 0}}};
+    }
+
+    bool system_supported() override {
+        const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
+        return cluster.user_exposed_chip_ids().size() == 8;
+    }
+};
+
+class MultiMeshDevice2DFabricFixture : public tt::tt_metal::T3000MeshDevice2DFabricFixture {
 public:
     void SetUp() override {
         if (not system_supported()) {
@@ -118,7 +150,7 @@ public:
     virtual bool system_supported() = 0;
 };
 
-class InterMeshDual2x4Fabric2DFixture : public InterMeshDeviceRoutingFabric2DFixture {
+class MeshDeviceDual2x4Fixture : public MultiMeshDevice2DFabricFixture {
     std::string get_path_to_mesh_graph_desc() override {
         return "tests/tt_metal/tt_fabric/custom_mesh_descriptors/dual_t3k_mesh_graph_descriptor.yaml";
     }

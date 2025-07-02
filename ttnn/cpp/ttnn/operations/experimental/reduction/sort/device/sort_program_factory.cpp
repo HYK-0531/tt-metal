@@ -466,17 +466,17 @@ SortProgramFactoryHybrid::cached_program_t SortProgramFactoryHybrid::create(
     const auto cb_physical_core_lookup_table =
         tt::tt_metal::CreateCircularBuffer(program, core_range, physical_core_lookup_table_cb_config);
 
-    constexpr uint32_t exchange_buffer_cb_index = tt::CBIndex::c_7;
+    constexpr uint32_t exchange_buffer_cb_index = tt::CBIndex::c_7;  // Compute to reader
     const tt::tt_metal::CircularBufferConfig exchange_buffer_cb_config =
         tt::tt_metal::CircularBufferConfig(
-            input_tensor_tile_size, {{exchange_buffer_cb_index, input_tensor_cb_data_format}})
+            cb_scale_factor * input_tensor_tile_size, {{exchange_buffer_cb_index, input_tensor_cb_data_format}})
             .set_page_size(exchange_buffer_cb_index, input_tensor_tile_size);
     const auto cb_exchange_buffer = tt::tt_metal::CreateCircularBuffer(program, core_range, exchange_buffer_cb_config);
 
-    constexpr uint32_t exchange_buffer_receive_cb_index = tt::CBIndex::c_8;
+    constexpr uint32_t exchange_buffer_receive_cb_index = tt::CBIndex::c_8;  // reader to compute
     const tt::tt_metal::CircularBufferConfig exchange_buffer_receive_cb_config =
         tt::tt_metal::CircularBufferConfig(
-            input_tensor_tile_size, {{exchange_buffer_receive_cb_index, input_tensor_cb_data_format}})
+            cb_scale_factor * input_tensor_tile_size, {{exchange_buffer_receive_cb_index, input_tensor_cb_data_format}})
             .set_page_size(exchange_buffer_receive_cb_index, input_tensor_tile_size);
     const auto cb_exchange_buffer_receive =
         tt::tt_metal::CreateCircularBuffer(program, core_range, exchange_buffer_receive_cb_config);
@@ -601,9 +601,9 @@ uint32_t SortProgramFactoryHybrid::get_number_of_tiles_per_core(
     const DataType& input_dtype, const DataType& index_dtype) {
     if (input_dtype == DataType::FLOAT32 || input_dtype == DataType::UINT32 || input_dtype == DataType::INT32 ||
         index_dtype == DataType::INT32 || index_dtype == DataType::UINT32) {
-        return 64;
+        return 2;
     }
-    return 128;
+    return 2;
 }
 
 // Single row - multi core

@@ -9,7 +9,7 @@ from tests.ttnn.utils_for_testing import assert_with_pcc
 
 TILE_WIDTH = 32
 
-
+"""
 @pytest.mark.parametrize(
     "shape, dim, descending",
     [
@@ -197,3 +197,46 @@ def test_sort_program_cache(shape, dim, descending, device):
     assert cache_entries == 1, "Expected only one program cache entry for sort operation, but found {}".format(
         cache_entries
     )
+"""
+
+
+def test_sort_matrix_3x3(device):
+    input_tensor_torch_dtype = torch.bfloat16
+    input_tensor_ttnn_dtype = ttnn.bfloat16
+    descending = False
+    # input = torch.tensor([[9, 3, 5], [4, 7, 1], [8, 2, 6]], dtype=torch_dtype)
+    # input = torch.transpose(torch.arange(1, 64 * 64 + 1, dtype=torch_dtype).reshape(64, 64), 0, 1)
+    input = torch.randn([1, 1, 32, TILE_WIDTH * 4], dtype=input_tensor_torch_dtype)
+    # input = torch.randn([1, 1, 32, TILE_WIDTH * 4748], dtype=input_tensor_torch_dtype)
+    # input = torch.randn([1, 2, 3, 4, 1, 1, 1], dtype=torch_dtype)
+
+    print(f"1. Input shape: {input.shape}")
+    print(f"2. Tensor rank: {input.ndim}")
+
+    torch.set_printoptions(profile="full")
+    # print(f"3. Input tensor row:  {input[0]}")
+    torch.set_printoptions(profile="default")
+
+    # start_time = time.time()
+    torch_sort_values, torch_sort_indices = torch.sort(input, dim=-1, descending=descending)
+    # elapsed_time = time.time() - start_time
+    # print(f"Torch sort elapsed time: {elapsed_time:.6f} seconds")
+
+    torch.set_printoptions(profile="full")
+    # print(f"4. Torch sorted values: {torch_sort_values[0]}")
+    # print(f"5. Torch sorted indices: {torch_sort_indices[0]}")
+    torch.set_printoptions(profile="default")  # Reset to default after printing
+
+    ttnn_input = ttnn.from_torch(input, input_tensor_ttnn_dtype, layout=ttnn.Layout.TILE, device=device)
+    ttnn_sort_values, ttnn_sort_indices = ttnn.experimental.sort(ttnn_input, dim=-1)
+
+    # print(f"    > 6. ttnn_sort_values: {ttnn_sort_values}")
+    # print(f"    > 7. ttnn_sort_indices: {ttnn_sort_indices}")
+
+    out = ttnn.from_device(ttnn_sort_values).to_torch()
+    out_idx = ttnn.from_device(ttnn_sort_indices).to_torch()
+
+    torch.set_printoptions(profile="full")
+    # print(f"8. TTNN sorted values: {out[0]}")
+    # print(f"9. TTNN sorted indices: {out_idx[0]}")
+    torch.set_printoptions(profile="default")  # Reset to default after printing

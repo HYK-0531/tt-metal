@@ -123,56 +123,134 @@ void MAIN {
 
                             tile_regs_release();
                         } else if (i >= global_tile_start && i < global_tile_end) {
-                            DPRINT << "COMPUTE: 1" << ENDL();
-                            // J is on a remote core
-                            // TODO: Swapping tiles
-                            cb_reserve_back(exchange_buffer_cb_index, one_tile);
-                            UNPACK(
-                                DPRINT << "COMPUTE: J is on a remote core, sending I: " << i
-                                       << ENDL());  // TODO: Remove
-                            // TODO: Send tile I to reader kernel
+                            // J is on a remote core nneed to send i
+                            const uint32_t tile_id = i;  // TODO: Compute correct index
+                            constexpr uint32_t FIRST_TILE = 0;
+
                             tile_regs_acquire();
-                            copy_tile_to_dst_init_short_with_dt(
-                                index_tensor_transposed_cb_index, input_tensor_transposed_cb_index);
-                            copy_tile(input_tensor_transposed_cb_index, i, 0);
+                            // Move value tile from CB to DST
+                            copy_tile_to_dst_init_short(input_tensor_transposed_cb_index);
+                            copy_tile(input_tensor_transposed_cb_index, tile_id, 0);
+
+                            // DPRINT_MATH(DPRINT << "THIS INPUT [input_dest_start] = " << ENDL());
+                            // dprint_tensix_dest_reg(input_dest_start);
+
+                            tile_regs_commit();
+
+                            tile_regs_wait();
+
+                            // Send current index to reader
+                            cb_reserve_back(exchange_buffer_cb_index, one_tile);
                             pack_reconfig_data_format(exchange_buffer_cb_index);
-                            pack_tile(0, exchange_buffer_cb_index, 0);
+                            pack_tile<true>(index_dest_start, exchange_buffer_cb_index, FIRST_TILE);
+                            cb_push_back(exchange_buffer_cb_index, one_tile);
+
+                            // Send current tile to writer
+                            // cb_reserve_back(value_tensor_intermediate_cb_index, one_tile);
+                            // pack_reconfig_data_format(value_tensor_intermediate_cb_index);
+                            // pack_tile<true>(input_dest_start, value_tensor_intermediate_cb_index, FIRST_TILE);
+                            // cb_push_back(value_tensor_intermediate_cb_index, one_tile);
+
                             tile_regs_release();
 
-                            cb_push_back(exchange_buffer_cb_index, one_tile);  // Sending tile I to reader kernel
-                            cb_wait_front(
-                                exchange_buffer_receive_cb_index, one_tile);       // Receiving tile to be processed
-                            UNPACK(DPRINT << "COMPUTE: Received tile" << ENDL());  // TODO: Remove
-                            // TODO: Process tiles
+                            // TODO: Do we need to Sync Unpacker/Packer ?
+                            //       It may not be necessary because dest regs values are different
 
-                            cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
-                            cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
+                            // Read other indices from reader
+                            tile_regs_acquire();
+                            cb_wait_front(exchange_buffer_receive_cb_index, one_tile);
+                            copy_tile_to_dst_init_short_with_dt(
+                                input_tensor_transposed_cb_index, exchange_buffer_receive_cb_index);
+                            copy_tile(index_tensor_peer_cb_index, FIRST_TILE, index_dest_end);
+                            cb_pop_front(index_tensor_peer_cb_index, one_tile);
+
+                            // // Read other tile from writer
+                            // cb_wait_front(value_tensor_peer_cb_index, one_tile);
+                            // copy_tile_to_dst_init_short_with_dt(index_tensor_peer_cb_index,
+                            // value_tensor_peer_cb_index); copy_tile(value_tensor_peer_cb_index, FIRST_TILE,
+                            // input_dest_end); cb_pop_front(value_tensor_peer_cb_index, one_tile);
+
+                            DPRINT_MATH(DPRINT << "INPUT0 [input_dest_start] = " << ENDL());
+                            // dprint_tensix_dest_reg(input_dest_start);
+
+                            DPRINT_MATH(DPRINT << "INPUT1 [input_dest_end] = " << ENDL());
+                            // dprint_tensix_dest_reg(input_dest_end);
+
+                            ckernel::topk_local_sort(0, (int)dir, 5);
+
+                            // TODO: Fix output tile selection w.r.t ascending
+                            uint32_t value_output_tile = input_dest_start;
+                            uint32_t index_output_tile = index_dest_start;
+                            if (i > j) {
+                                value_output_tile = input_dest_end;
+                                index_output_tile = index_dest_end;
+                            }
+
+                            DPRINT << "OUTPUT [value_output_tile] = ";
+                            // dprint_tensix_dest_reg(value_output_tile);
+
+                            tile_regs_commit();
+
+                            tile_regs_wait();
+                            pack_reconfig_data_format(input_tensor_transposed_cb_index);
+                            pack_tile<true>(value_output_tile, input_tensor_transposed_cb_index, tile_id);
+                            // pack_tile<true>(input_dest_end, input_tensor_transposed_cb_index, right_tile_id);
+
+                            pack_reconfig_data_format(index_tensor_transposed_cb_index);
+                            pack_tile<true>(index_output_tile, index_tensor_transposed_cb_index, tile_id);
+                            // pack_tile<true>(index_dest_end, index_tensor_transposed_cb_index, right_tile_id);
+                            tile_regs_release();
+
+                            // DPRINT << "COMPUTE: 1" << ENDL();
+                            // // J is on a remote core
+                            // // TODO: Swapping tiles
+                            // cb_reserve_back(exchange_buffer_cb_index, one_tile);
+                            // UNPACK(
+                            //     DPRINT << "COMPUTE: J is on a remote core, sending I: " << i
+                            //            << ENDL());  // TODO: Remove
+                            // // TODO: Send tile I to reader kernel
+                            // tile_regs_acquire();
+                            // copy_tile_to_dst_init_short_with_dt(
+                            //     index_tensor_transposed_cb_index, input_tensor_transposed_cb_index);
+                            // copy_tile(input_tensor_transposed_cb_index, i, 0);
+                            // pack_reconfig_data_format(exchange_buffer_cb_index);
+                            // pack_tile(0, exchange_buffer_cb_index, 0);
+                            // tile_regs_release();
+
+                            // cb_push_back(exchange_buffer_cb_index, one_tile);  // Sending tile I to reader kernel
+                            // cb_wait_front(
+                            //     exchange_buffer_receive_cb_index, one_tile);       // Receiving tile to be processed
+                            // UNPACK(DPRINT << "COMPUTE: Received tile" << ENDL());  // TODO: Remove
+                            // // TODO: Process tiles
+
+                            // cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
+                            // cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
                         } else if (j >= global_tile_start && j < global_tile_end) {
-                            DPRINT << "COMPUTE: 2" << ENDL();
-                            // I is on a remote core
-                            // TODO: Swapping tiles
-                            cb_reserve_back(exchange_buffer_cb_index, one_tile);
-                            cb_reserve_back(exchange_buffer_cb_index, one_tile);
-                            UNPACK(
-                                DPRINT << "COMPUTE: I is on a remote core, sending J: " << j
-                                       << ENDL());  // TODO: Remove
-                            // TODO: Send tile J to reader kernel
-                            tile_regs_acquire();
-                            copy_tile_to_dst_init_short_with_dt(
-                                index_tensor_transposed_cb_index, input_tensor_transposed_cb_index);
-                            copy_tile(input_tensor_transposed_cb_index, j, 0);
-                            pack_reconfig_data_format(exchange_buffer_cb_index);
-                            pack_tile(0, exchange_buffer_cb_index, 0);
-                            tile_regs_release();
+                            // DPRINT << "COMPUTE: 2" << ENDL();
+                            // // I is on a remote core
+                            // // TODO: Swapping tiles
+                            // cb_reserve_back(exchange_buffer_cb_index, one_tile);
+                            // cb_reserve_back(exchange_buffer_cb_index, one_tile);
+                            // UNPACK(
+                            //     DPRINT << "COMPUTE: I is on a remote core, sending J: " << j
+                            //            << ENDL());  // TODO: Remove
+                            // // TODO: Send tile J to reader kernel
+                            // tile_regs_acquire();
+                            // copy_tile_to_dst_init_short_with_dt(
+                            //     index_tensor_transposed_cb_index, input_tensor_transposed_cb_index);
+                            // copy_tile(input_tensor_transposed_cb_index, j, 0);
+                            // pack_reconfig_data_format(exchange_buffer_cb_index);
+                            // pack_tile(0, exchange_buffer_cb_index, 0);
+                            // tile_regs_release();
 
-                            cb_push_back(exchange_buffer_cb_index, one_tile);  // Sending tile J to reader kernel
-                            cb_wait_front(
-                                exchange_buffer_receive_cb_index, one_tile);       // Receiving tile to be processed
-                            UNPACK(DPRINT << "COMPUTE: Received tile" << ENDL());  // TODO: Remove
-                            // TODO: Process tiles
+                            // cb_push_back(exchange_buffer_cb_index, one_tile);  // Sending tile J to reader kernel
+                            // cb_wait_front(
+                            //     exchange_buffer_receive_cb_index, one_tile);       // Receiving tile to be processed
+                            // UNPACK(DPRINT << "COMPUTE: Received tile" << ENDL());  // TODO: Remove
+                            // // TODO: Process tiles
 
-                            cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
-                            cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
+                            // cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
+                            // cb_pop_front(exchange_buffer_receive_cb_index, one_tile);
                         }
                     }  // if j > i
                 }  // i loop

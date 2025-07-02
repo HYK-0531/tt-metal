@@ -384,8 +384,11 @@ static void run_daemon_mode() {
     log_info(tt::LogTest, "Daemon shutdown complete");
 }
 
+#include "tt-metalium/persistent_kernel_cache.hpp"
+
 int main(int argc, char** argv) {
     if (argc > 1 && std::string(argv[1]) == "daemon_mode") {
+        detail::EnablePersistentKernelCache();
         run_daemon_mode();
         return 0;
     }

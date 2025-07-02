@@ -90,6 +90,12 @@ class TtTransformer2DModel(nn.Module):
         hidden_states = ttnn.to_memory_config(hidden_states, ttnn.L1_MEMORY_CONFIG)
 
         hidden_states = ttnn.to_layout(hidden_states, ttnn.TILE_LAYOUT)
+
+        print("Transformer2DModel initial sync")
+        ttnn.synchronize_device(self.device)
+        print("Transformer2DModel initial sync end")
+
+        print(f"Transformer2DModel begin linear 1, shapes: {hidden_states.shape} x {self.tt_weights_in.shape}")
         hidden_states = ttnn.linear(
             hidden_states,
             self.tt_weights_in,
@@ -97,10 +103,18 @@ class TtTransformer2DModel(nn.Module):
             program_config=self.program_config_in,
             compute_kernel_config=self.compute_config_in,
         )
+        print("Transformer2DModel linear 1 sync begin")
+        ttnn.synchronize_device(self.device)
+        print("Transformer2DModel linear 1 sync end")
 
         for i, transformer_block in enumerate(self.transformer_blocks):
             hidden_states = transformer_block(hidden_states, attention_mask, encoder_hidden_states)
 
+        print("Transformer2DModel post transformer blocks sync begin")
+        ttnn.synchronize_device(self.device)
+        print("Transformer2DModel post transformer blocks sync end")
+
+        print(f"Transformer2DModel begin linear 2, shapes: {hidden_states.shape} x {self.tt_weights_out.shape}")
         hidden_states = ttnn.linear(
             hidden_states,
             self.tt_weights_out,
@@ -108,6 +122,9 @@ class TtTransformer2DModel(nn.Module):
             program_config=self.program_config_out,
             compute_kernel_config=self.compute_config_out,
         )
+        print("Transformer2DModel linear 2 sync begin")
+        ttnn.synchronize_device(self.device)
+        print("Transformer2DModel linear 2 sync end")
 
         hidden_states = ttnn.add(hidden_states, input_tensor)
 

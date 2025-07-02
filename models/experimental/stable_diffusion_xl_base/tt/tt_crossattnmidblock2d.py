@@ -5,6 +5,7 @@
 import torch.nn as nn
 from models.experimental.stable_diffusion_xl_base.tt.tt_transformermodel import TtTransformer2DModel
 from models.experimental.stable_diffusion_xl_base.tt.tt_resnetblock2d import TtResnetBlock2D
+import ttnn
 
 
 class TtUNetMidBlock2DCrossAttn(nn.Module):
@@ -22,6 +23,7 @@ class TtUNetMidBlock2DCrossAttn(nn.Module):
 
         num_layers_attn = 1
         num_layers_resn = num_layers_attn + 1
+        self.device = device
         self.attentions = []
         self.resnets = []
 
@@ -47,6 +49,10 @@ class TtUNetMidBlock2DCrossAttn(nn.Module):
         B, C, H, W = input_shape
         hidden_states = input_tensor
 
+        print("CrossAttnMidBlock2D initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print("CrossAttnMidBlock2D initial sync end")
+
         hidden_states, [C, H, W] = self.resnets[0].forward(hidden_states, temb, [B, C, H, W])
 
         tt_blocks = list(zip(self.resnets[1:], self.attentions))
@@ -54,4 +60,7 @@ class TtUNetMidBlock2DCrossAttn(nn.Module):
             hidden_states = attn.forward(hidden_states, [B, C, H, W], encoder_hidden_states=encoder_hidden_states)
             hidden_states, [C, H, W] = resnet.forward(hidden_states, temb, [B, C, H, W])
 
+        print("CrossAttnMidBlock2D final sync begin")
+        ttnn.synchronize_device(self.device)
+        print("CrossAttnMidBlock2D final sync end")
         return hidden_states, [C, H, W]

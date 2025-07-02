@@ -158,6 +158,10 @@ class TtResnetBlock2D(nn.Module):
         B, C, H, W = input_shape
         hidden_states = input_tensor
 
+        print("ResnetBlock2D initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print("ResnetBlock2D initial sync end")
+
         if C >= 640 and H >= 128 and W >= 128:
             hidden_states = ttnn.group_norm(
                 hidden_states,
@@ -201,6 +205,9 @@ class TtResnetBlock2D(nn.Module):
 
         if self.split_conv:
             hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
+            print(
+                f"ResnetBlock2D split_conv_1 begin, shapes: {hidden_states.shape} x {self.tt_conv1_weights[0][0].shape}"
+            )
             hidden_states, [C, H, W], [self.tt_conv1_weights, self.tt_conv1_bias] = split_conv2d(
                 device=self.device,
                 hidden_states=hidden_states,
@@ -217,7 +224,11 @@ class TtResnetBlock2D(nn.Module):
                 dilation=self.dilation,
                 groups=self.groups,
             )
+            print("ResnetBlock2D split_conv_1 sync begin")
+            ttnn.synchronize_device(self.device)
+            print("ResnetBlock2D split_conv_1 sync end")
         else:
+            print(f"ResnetBlock2D conv_1 begin, shapes: {hidden_states.shape} x {self.tt_conv1_weights.shape}")
             [hidden_states, [H, W], [self.tt_conv1_weights, self.tt_conv1_bias]] = ttnn.conv2d(
                 input_tensor=hidden_states,
                 weight_tensor=self.tt_conv1_weights,
@@ -239,10 +250,14 @@ class TtResnetBlock2D(nn.Module):
                 return_output_dim=True,
                 return_weights_and_bias=True,
             )
+            print("ResnetBlock2D conv_1 sync begin")
+            ttnn.synchronize_device(self.device)
+            print("ResnetBlock2D conv_1 sync end")
             C = self.conv1_params["output_channels"]
 
         temb = ttnn.silu(temb)
 
+        print(f"ResnetBlock2D linear begin, shapes: {temb.shape} x {self.tt_time_emb_weights.shape}")
         temb = ttnn.linear(
             temb,
             self.tt_time_emb_weights,
@@ -250,6 +265,9 @@ class TtResnetBlock2D(nn.Module):
             program_config=self.linear_program_config,
             compute_kernel_config=self.default_compute_config,
         )
+        print("ResnetBlock2D linear sync begin")
+        ttnn.synchronize_device(self.device)
+        print("ResnetBlock2D linear sync end")
 
         hidden_states = ttnn.sharded_to_interleaved(hidden_states, ttnn.L1_MEMORY_CONFIG)
         hidden_states = ttnn.add(hidden_states, temb)
@@ -278,6 +296,7 @@ class TtResnetBlock2D(nn.Module):
 
         hidden_states = ttnn.silu(hidden_states)
 
+        print(f"ResnetBlock2D conv_2 begin, shapes: {hidden_states.shape} x {self.tt_conv2_weights.shape}")
         [hidden_states, [H, W], [self.tt_conv2_weights, self.tt_conv2_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_conv2_weights,
@@ -299,10 +318,14 @@ class TtResnetBlock2D(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+        print("ResnetBlock2D conv_2 sync begin")
+        ttnn.synchronize_device(self.device)
+        print("ResnetBlock2D conv_2 sync end")
         C = self.conv2_params["output_channels"]
 
         if self.tt_conv3_weights is not None:
             input_tensor_pre_conv = input_tensor
+            print(f"ResnetBlock2D linear_3 begin, shapes: {input_tensor.shape} x {self.tt_conv3_weights.shape}")
             input_tensor = ttnn.linear(
                 input_tensor,
                 self.tt_conv3_weights,
@@ -313,6 +336,9 @@ class TtResnetBlock2D(nn.Module):
                 if C == 320 and (input_shape[1] == 960 or input_shape[1] == 640)
                 else hidden_states.memory_config(),
             )
+            print("ResnetBlock2D linear_3 sync begin")
+            ttnn.synchronize_device(self.device)
+            print("ResnetBlock2D linear_3 sync end")
             ttnn.deallocate(input_tensor_pre_conv)
             if input_tensor.memory_config() != hidden_states.memory_config():
                 input_tensor = ttnn.to_memory_config(input_tensor, memory_config=hidden_states.memory_config())

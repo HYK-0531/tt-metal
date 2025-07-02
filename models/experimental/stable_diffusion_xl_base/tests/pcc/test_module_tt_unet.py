@@ -137,7 +137,7 @@ def run_unet_model(
     ttnn.deallocate(ttnn_timestep_tensor)
     ttnn.deallocate(ttnn_encoder_tensor)
 
-    ttnn.DumpDeviceProfiler(device)
+    # ttnn.DumpDeviceProfiler(device)
 
     _, pcc_message = assert_with_pcc(torch_output_tensor, output_tensor, 0.994)
     logger.info(f"PCC of first iteration is: {pcc_message}")
@@ -165,7 +165,7 @@ def run_unet_model(
         ttnn.deallocate(ttnn_timestep_tensor)
         ttnn.deallocate(ttnn_encoder_tensor)
 
-        ttnn.DumpDeviceProfiler(device)
+        # ttnn.DumpDeviceProfiler(device)
 
     del unet
     gc.collect()

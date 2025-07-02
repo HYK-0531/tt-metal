@@ -58,9 +58,17 @@ class TtUpsample2D(nn.Module):
         return hidden_states, [B, C, H, W]
 
     def forward(self, hidden_states):
+        print("Upsample2D initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print("Upsample2D initial sync end")
+
+        print("Upsample2D interpolate begin")
         hidden_states, input_shape = self.interpolate(hidden_states)
+        ttnn.synchronize_device(self.device)
+        print("Upsample2D interpolate end")
         B, C, H, W = input_shape
 
+        print(f"Upsample2D conv begin, shapes: {hidden_states.shape} x {self.tt_weights.shape}")
         [hidden_states, [H, W], [self.tt_weights, self.tt_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_weights,
@@ -82,6 +90,9 @@ class TtUpsample2D(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+        print("Upsample2D conv sync begin")
+        ttnn.synchronize_device(self.device)
+        print("Upsample2D conv sync end")
         C = self.conv_params["output_channels"]
 
         hidden_states = ttnn.sharded_to_interleaved(hidden_states, ttnn.DRAM_MEMORY_CONFIG)

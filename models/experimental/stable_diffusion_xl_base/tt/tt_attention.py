@@ -95,6 +95,10 @@ class TtAttention(nn.Module):
             encoder_hidden_states = hidden_states
         B = list(hidden_states.shape)[0]
 
+        print("Attention begin sync")
+        ttnn.synchronize_device(self.device)
+        print("Attention end sync")
+
         if self.is_self_attention:
             if hidden_states.shape[-1] == 640:
                 memory_config = ttnn.create_sharded_memory_config(
@@ -111,6 +115,7 @@ class TtAttention(nn.Module):
                     use_height_and_width_as_shard_shape=True,
                 )
 
+            print(f"Attention begin qkv_fused, shapes: {hidden_states.shape} x {self.tt_qkv_weights.shape}")
             qkv_fused = ttnn.matmul(
                 hidden_states,
                 self.tt_qkv_weights,
@@ -119,6 +124,9 @@ class TtAttention(nn.Module):
                 compute_kernel_config=self.q_compute_kernel_config,
                 program_config=self.q_program_config,
             )
+            print(f"Attention qkv sync begin")
+            ttnn.synchronize_device(self.device)
+            print(f"Attention qkv sync end")
             qkv_fused = ttnn.sharded_to_interleaved(qkv_fused, ttnn.L1_MEMORY_CONFIG)
 
             (
@@ -130,6 +138,7 @@ class TtAttention(nn.Module):
             )
             ttnn.deallocate(qkv_fused)
         else:
+            print(f"Attention begin q matmul, shapes: {hidden_states.shape} x {self.tt_q_weights.shape}")
             q_heads = ttnn.matmul(
                 hidden_states,
                 self.tt_q_weights,
@@ -137,6 +146,11 @@ class TtAttention(nn.Module):
                 compute_kernel_config=self.q_compute_kernel_config,
                 memory_config=ttnn.L1_MEMORY_CONFIG,
             )
+            print(f"Attention q matmul sync begin")
+            ttnn.synchronize_device(self.device)
+            print(f"Attention q matmul sync end")
+
+            print(f"Attention begin k matmul, shapes: {encoder_hidden_states.shape} x {self.tt_k_weights.shape}")
             k_heads = ttnn.matmul(
                 encoder_hidden_states,
                 self.tt_k_weights,
@@ -144,6 +158,14 @@ class TtAttention(nn.Module):
                 compute_kernel_config=self.default_compute_kernel_config,
                 program_config=self.k_program_config,
             )
+
+            print(f"Attention k matmul sync begin")
+            ttnn.synchronize_device(self.device)
+            print(f"Attention k matmul sync end")
+
+            print(f"Attention begin v matmul, shapes: {encoder_hidden_states.shape} x {self.tt_v_weights.shape}")
+            ttnn.synchronize_device(self.device)
+
             v_heads = ttnn.matmul(
                 encoder_hidden_states,
                 self.tt_v_weights,
@@ -151,6 +173,9 @@ class TtAttention(nn.Module):
                 compute_kernel_config=self.default_compute_kernel_config,
                 program_config=self.v_program_config,
             )
+            print(f"Attention v matmul sync begin")
+            ttnn.synchronize_device(self.device)
+            print(f"Attention v matmul sync end")
 
             q_heads, _, _ = ttnn.experimental.nlp_create_qkv_heads(
                 q_heads,
@@ -187,6 +212,11 @@ class TtAttention(nn.Module):
         )
         hidden_states = ttnn.experimental.nlp_concat_heads(hidden_states, memory_config=ttnn.L1_MEMORY_CONFIG)
 
+        print("Pre DO sync begin")
+        ttnn.synchronize_device(self.device)
+        print("Pre DO sync end")
+
+        print(f"Attention begin dense out, shapes: {hidden_states.shape} x {self.tt_out_weights.shape}")
         hidden_states = ttnn.linear(
             hidden_states,
             self.tt_out_weights,
@@ -195,5 +225,8 @@ class TtAttention(nn.Module):
             compute_kernel_config=self.default_compute_kernel_config,
             memory_config=ttnn.L1_MEMORY_CONFIG,
         )
+        print(f"Attention dense out sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"Attention dense out sync end")
 
         return hidden_states

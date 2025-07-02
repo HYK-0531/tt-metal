@@ -46,6 +46,11 @@ class TtGEGLU(nn.Module):
             )
             input_tensor = ttnn.to_memory_config(input_tensor, block_sharded_mem_config)
 
+        print("Pre geglu sync begin")
+        ttnn.synchronize_device(self.device)
+        print("Pre geglu sync end")
+
+        print(f"GEGLU begin linear, shapes: {input_tensor.shape} x {self.tt_weights_1.shape}")
         hidden_states = ttnn.linear(
             input_tensor,
             self.tt_weights_1,
@@ -54,6 +59,11 @@ class TtGEGLU(nn.Module):
             program_config=self.program_config,
             compute_kernel_config=self.compute_config,
         )
+        print(f"GEGLU linear sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"GEGLU linear sync end")
+
+        print(f"GEGLU begin gate, shapes: {input_tensor.shape} x {self.tt_weights_2.shape}")
         gate = ttnn.linear(
             input_tensor,
             self.tt_weights_2,
@@ -62,6 +72,11 @@ class TtGEGLU(nn.Module):
             program_config=self.program_config_gelu,
             compute_kernel_config=self.compute_config,
         )
+
+        print(f"GEGLU gate sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"GEGLU gate sync end")
+
         ttnn.deallocate(input_tensor)
         hidden_states = ttnn.mul_(hidden_states, gate)
         return hidden_states

@@ -67,6 +67,10 @@ class TtCrossAttnDownBlock2D(nn.Module):
         B, C, H, W = input_shape
         output_states = ()
 
+        print("CrossAttnDownBlock2D initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print("CrossAttnDownBlock2D initial sync end")
+
         hidden_states = input_tensor
         tt_blocks = list(zip(self.resnets, self.attentions))
         for resnet, attn in tt_blocks:
@@ -75,10 +79,14 @@ class TtCrossAttnDownBlock2D(nn.Module):
             residual = ttnn.to_memory_config(hidden_states, ttnn.DRAM_MEMORY_CONFIG)
             output_states = output_states + (residual,)
 
-        ttnn.DumpDeviceProfiler(self.device)
+        # ttnn.DumpDeviceProfiler(self.device)
 
         if self.downsamplers is not None:
             hidden_states, [C, H, W] = self.downsamplers.forward(hidden_states, [B, C, H, W])
             residual = ttnn.to_memory_config(hidden_states, ttnn.DRAM_MEMORY_CONFIG)
             output_states = output_states + (residual,)
+
+        print("CrossAttnDownBlock2D final sync begin")
+        ttnn.synchronize_device(self.device)
+        print("CrossAttnDownBlock2D final sync end")
         return hidden_states, [C, H, W], output_states

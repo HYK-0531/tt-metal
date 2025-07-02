@@ -71,6 +71,10 @@ class TtCrossAttnUpBlock2D(nn.Module):
     ):
         B, C, H, W = input_shape
 
+        print("CrossAttnUpBlock2D initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print("CrossAttnUpBlock2D initial sync end")
+
         hidden_states = input_tensor
         tt_blocks = list(zip(self.resnets, self.attentions))
         for resnet, attn in tt_blocks:
@@ -84,11 +88,21 @@ class TtCrossAttnUpBlock2D(nn.Module):
             hidden_states = attn.forward(
                 hidden_states, [B, C, H, W], encoder_hidden_states=encoder_hidden_states, attention_mask=attention_mask
             )
+        print("CrossAttnUpBlock2D resnet and attention sync begin")
+        ttnn.synchronize_device(self.device)
+        print("CrossAttnUpBlock2D resnet and attention sync end")
 
-        ttnn.DumpDeviceProfiler(self.device)
+        # ttnn.DumpDeviceProfiler(self.device)
 
         if self.upsamplers is not None:
             hidden_states = ttnn.reshape(hidden_states, [B, H, W, C])
             hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
             hidden_states, [C, H, W] = self.upsamplers.forward(hidden_states)
+            print("CrossAttnUpBlock2D upsample sync begin")
+            ttnn.synchronize_device(self.device)
+            print("CrossAttnUpBlock2D upsample sync end")
+
+        print("CrossAttnUpBlock2D final sync begin")
+        ttnn.synchronize_device(self.device)
+        print("CrossAttnUpBlock2D final sync end")
         return hidden_states, [C, H, W]

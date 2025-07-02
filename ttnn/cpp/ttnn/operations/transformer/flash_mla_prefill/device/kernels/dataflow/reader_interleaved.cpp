@@ -93,7 +93,7 @@ void kernel_main() {
 
     const auto q_tile_shape = TensorTileShape(B, NQH, valid_Sqt, DHt);
     const auto k_tile_shape = TensorTileShape(B, NKH, valid_Skt, DHt);
-    const auto v_tile_shape = TensorTileShape(B, NKH, valid_Skt, vDHt);
+    const auto v_tile_shape = TensorTileShape(B, NKH, valid_Skt, DHt /* Use K's dim here! */);
     const auto mask_tile_shape = TensorTileShape(B, 1, valid_Sqt, valid_Skt);
 
     volatile tt_l1_ptr uint32_t* page_table_ptr;
@@ -261,7 +261,8 @@ void kernel_main() {
                             v_tile_bytes,
                             barrier_threshold,
                             page_table_ptr,
-                            false);
+                            false,
+                            DHt - vDHt /* src_skip_cols */);
                     } else {
                         read_chunk_with_padding(
                             v_reader,
@@ -273,7 +274,8 @@ void kernel_main() {
                             vDHt,
                             v_tile_bytes,
                             barrier_threshold,
-                            false);
+                            false,
+                            DHt - vDHt /* src_skip_cols */);
                     }
                 }
             }

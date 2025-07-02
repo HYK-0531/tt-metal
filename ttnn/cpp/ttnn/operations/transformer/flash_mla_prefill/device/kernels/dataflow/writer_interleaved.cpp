@@ -53,7 +53,7 @@ void kernel_main() {
     const InterleavedAddrGenFast<is_dram> out_writer = {
         .bank_base_address = out_addr, .page_size = tile_bytes, .data_format = data_format};
 
-    const auto out_tile_shape = TensorTileShape(B, NQH, valid_Sqt, DHt);
+    const auto out_tile_shape = TensorTileShape(B, NQH, valid_Sqt, vDHt);
 
     constexpr uint32_t barrier_threshold = get_barrier_read_threshold<tile_bytes, num_cores>();
     uint32_t barrier_count = 0;
@@ -124,7 +124,7 @@ void kernel_main() {
                 barrier_count = 0;
                 uint32_t l1_read_addr = get_read_ptr(cb_out);
                 for (uint32_t row = 0; row < out_row_tile_count; ++row) {
-                    for (uint32_t col = 0; col < DHt; ++col) {
+                    for (uint32_t col = 0; col < vDHt; ++col) {
                         noc_async_write_tile(out_tile_id, out_writer, l1_read_addr);
                         ++out_tile_id;
                         l1_read_addr += tile_bytes;

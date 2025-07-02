@@ -62,7 +62,8 @@ void read_chunk_with_padding(
     const uint32_t dst_cols,
     const uint32_t tile_bytes,
     const uint32_t barrier_threshold,
-    const bool transpose = false) {
+    const bool transpose = false,
+    const uint32_t skip_src_cols = 0) {
     /*
     Method always reads tiles from memory in row-major order.
     It assumes that the block of rows x cols in stored in contiguous tile order.
@@ -91,6 +92,7 @@ void read_chunk_with_padding(
                 barrier_count = 0;
             }
         }
+        start_tile_id += skip_src_cols;  // Skip src cols if needed
     }
     noc_async_read_barrier();
 
@@ -110,7 +112,8 @@ void read_paged_chunk_with_padding(
     const uint32_t tile_bytes,
     const uint32_t barrier_threshold,
     const volatile tt_l1_ptr uint32_t* const page_table_ptr,
-    const bool transpose = false) {
+    const bool transpose = false,
+    const uint32_t skip_src_cols = 0) {
     const uint32_t num_tiles = dst_rows * dst_cols;
     cb_reserve_back(cb_id, num_tiles);
     const uint32_t base_write_ptr = get_write_ptr(cb_id);
@@ -136,6 +139,7 @@ void read_paged_chunk_with_padding(
                 barrier_count = 0;
             }
         }
+        physical_tile_id += skip_src_cols;  // Skip src cols if needed
     }
     noc_async_read_barrier();
     cb_push_back(cb_id, num_tiles);

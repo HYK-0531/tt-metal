@@ -160,8 +160,7 @@ def run_flash_mla_prefill_impl(
     "batch, seq_len, nh, nkv, kv_lora_rank, d_rope",
     # batch, seq_len, num heads q, num heads kv, kv lora rank, dim rope
     [
-        # (2, 1024, 16, 16, 512, 64), # DeepSeek V3 TG TP=8, DP=4 (OOM)
-        (2, 1024, 8, 8, 128, 64),
+        (8, 1024, 128, 1, 512, 64),  # DeepSeek V3 TG Full DP
     ],
 )
 @pytest.mark.parametrize(

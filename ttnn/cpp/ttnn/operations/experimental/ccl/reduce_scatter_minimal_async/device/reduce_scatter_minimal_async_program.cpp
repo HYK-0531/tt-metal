@@ -300,8 +300,6 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
                     .opt_level = tt::tt_metal::KernelBuildOptLevel::O3});
             mux_kernel_ids.push_back(mux_kernel_id);
 
-            std::vector<std::pair<size_t, size_t>> addresses_to_clear = {std::make_pair(
-                mux_kernel_config.get_start_address_to_clear(), mux_kernel_config.get_num_bytes_to_clear())};
             std::vector<uint32_t> mux_rt_args = {};
             if (dir) {  // forward
                 tt::tt_fabric::append_fabric_connection_rt_args(
@@ -311,11 +309,6 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
                     sender_device->id(), backward_device.value()->id(), link, program, {mux_logical_core}, mux_rt_args);
             }
             tt::tt_metal::SetRuntimeArgs(program, mux_kernel_id, {mux_logical_core}, mux_rt_args);
-
-            for (const auto& [start_address, num_bytes] : addresses_to_clear) {
-                std::vector<uint32_t> zero_vec((num_bytes / sizeof(uint32_t)), 0);
-                // tt::tt_metal::detail::WriteToDeviceL1(sender_device, mux_logical_core, start_address, zero_vec);
-            }
 
             CoreCoord drain_sync_core;
             for (uint32_t worker = 0; worker < num_workers_per_direction; worker++) {

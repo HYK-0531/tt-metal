@@ -9,7 +9,6 @@
 #include "tt_metal/api/tt-metalium/fabric_edm_packet_header.hpp"
 #include "tt_metal/fabric/hw/inc/tt_fabric_mux_interface.hpp"
 #include "tt_metal/fabric/hw/inc/edm_fabric/fabric_stream_regs.hpp"
-#include "debug/dprint.h"
 
 #include <cstddef>
 #include <array>
@@ -55,7 +54,6 @@ void setup_channel(
     size_t& connection_handshake_address,
     size_t& sender_flow_control_address,
     StreamId my_channel_free_slots_stream_id) {
-    DPRINT << "setting up channel with base address " << (uint32_t)channel_base_address << ENDL();
     new (channel_ptr) tt::tt_fabric::FabricMuxChannelBuffer<NUM_BUFFERS>(
         channel_base_address, buffer_size_bytes, sizeof(PACKET_HEADER_TYPE), channel_id);
     channel_base_address += NUM_BUFFERS * buffer_size_bytes;
@@ -120,16 +118,6 @@ void kernel_main() {
     auto status_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(status_address);
     status_ptr[0] = tt::tt_fabric::FabricMuxStatus::STARTED;
 
-    // volatile tt_l1_ptr uint32_t* addr_to_clear = status_ptr;
-    // for (uint32_t b = 0; b < num_bytes_to_clear; b++) {
-    //     addr_to_clear[b] = 0;
-    // }
-    // HACK! reset the addresses I know about
-    volatile tt_l1_ptr uint32_t* addr_to_clear = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(97504);
-    *addr_to_clear = 0;
-    addr_to_clear = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(97488);
-    *addr_to_clear = 0;
-
     size_t rt_args_idx = 0;
     auto fabric_connection = tt::tt_fabric::FabricMuxToEdmSender::build_from_args<CORE_TYPE>(rt_args_idx);
 
@@ -151,8 +139,6 @@ void kernel_main() {
     size_t connection_handshake_address = connection_handshake_base_address;
     size_t sender_flow_control_address = sender_flow_control_base_address;
 
-    // DPRINT << "MUX: setting up full size channels" << ENDL();
-
     for (uint8_t i = 0; i < NUM_FULL_SIZE_CHANNELS; i++) {
         setup_channel<NUM_BUFFERS_FULL_SIZE_CHANNEL>(
             &full_size_channels[i],
@@ -166,8 +152,6 @@ void kernel_main() {
             sender_flow_control_address,
             StreamId{i});
     }
-
-    // DPRINT << "MUX: setting up header only channels" << ENDL();
 
     for (uint8_t i = 0; i < NUM_HEADER_ONLY_CHANNELS; i++) {
         setup_channel<NUM_BUFFERS_HEADER_ONLY_CHANNEL>(
@@ -186,27 +170,20 @@ void kernel_main() {
     volatile auto termination_signal_ptr =
         reinterpret_cast<volatile tt::tt_fabric::TerminationSignal*>(termination_signal_address);
 
-    // Reset termination signal before signaling ready
-    *termination_signal_ptr = tt::tt_fabric::TerminationSignal::KEEP_RUNNING;
-
-    DPRINT << "MUX: waiting for fabric router to be ready" << ENDL();
     // wait for fabric router to be ready before setting up the connection
     tt::tt_fabric::wait_for_fabric_endpoint_ready(
         fabric_connection.edm_noc_x,
         fabric_connection.edm_noc_y,
         fabric_router_status_address,
         local_fabric_router_status_address);
-    DPRINT << "MUX: fabric router ready" << ENDL();
 
     fabric_connection.open();
 
     status_ptr[0] = tt::tt_fabric::FabricMuxStatus::READY_FOR_TRAFFIC;
-    DPRINT << "MUX: fabric mux ready for traffic" << ENDL();
 #if defined(COMPILE_FOR_IDLE_ERISC)
     uint32_t heartbeat = 0;
 #endif
     while (!got_immediate_termination_signal(termination_signal_ptr)) {
-        // DPRINT << "MUX: iterating and waiting for termination signal" << ENDL();
         for (size_t i = 0; i < NUM_ITERS_BETWEEN_TEARDOWN_CHECKS; i++) {
             for (size_t iter = 0; iter < NUM_FULL_SIZE_CHANNELS_ITERS; iter++) {
                 for (uint8_t channel_id = 0; channel_id < NUM_FULL_SIZE_CHANNELS; channel_id++) {

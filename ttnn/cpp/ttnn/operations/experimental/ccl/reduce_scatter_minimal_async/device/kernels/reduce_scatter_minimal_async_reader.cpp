@@ -8,7 +8,6 @@
 #include "ttnn/operations/ccl/ccl_host_types.hpp"
 #include <cstdint>
 #include <utility>
-#include "debug/dprint.h"
 
 using address_t = uint32_t;
 using tt::tt_metal::BufferType;
@@ -53,12 +52,6 @@ void kernel_main() {
     uint32_t start_tiles_read = get_arg_val<uint32_t>(arg_idx++);
     uint32_t start_tiles_to_read = get_arg_val<uint32_t>(arg_idx++);
 
-    DPRINT << "READER " << (direction ? "forward" : "backward") << ": my_chip_id " << my_chip_id << ENDL();
-    DPRINT << "READER " << (direction ? "forward" : "backward") << ": out_ready_sem " << (uint32_t)out_ready_sem
-           << " value " << *reinterpret_cast<volatile tt_l1_ptr uint32_t*>(out_ready_sem) << ENDL();
-    DPRINT << "READER " << (direction ? "forward" : "backward") << ": batch_ready_sem " << (uint32_t)batch_ready_sem
-           << " value " << *reinterpret_cast<volatile tt_l1_ptr uint32_t*>(batch_ready_sem) << ENDL();
-
     ReduceScatterOpReceiver matmul_receiver;
     if constexpr (fuse_op) {
         matmul_receiver = ReduceScatterOpReceiver(arg_idx);
@@ -91,7 +84,6 @@ void kernel_main() {
         // If slices_forwarded in writer is 7, we don't forward anymore and write it to output_buffer
         // Otherwise, the writer will write cb_output_id to the next chip in the forward direction
         for (uint32_t i = 0; i < ring_size; ++i) {
-            DPRINT << "READER " << (direction ? "forward" : "backward") << ": iteration " << i << ENDL();
             const bool do_reduce = i != 0;
             uint32_t cb_in0 = do_reduce ? cb_input_id : cb_reader_output_id;
 
@@ -132,8 +124,6 @@ void kernel_main() {
             if (do_reduce) {
                 while (*reinterpret_cast<volatile tt_l1_ptr uint32_t*>(out_ready_sem) <= i - 1);
             }
-            // DPRINT << "READER " << (direction ? "forward" : "backward") << ": tiles_read " << tiles_read << "
-            // tiles_to_read " << tiles_to_read << ENDL();
             while (tiles_read < tiles_to_read) {
                 uint32_t num_pages_to_read = 0;
                 if (direction) {
@@ -143,8 +133,6 @@ void kernel_main() {
                 }
 
                 cb_reserve_back(cb_in0, tile_granularity);
-                // DPRINT << "READER " << (direction ? "forward" : "backward") << ": reserved back cb_in0 with
-                // tile_read:" << tiles_read << ENDL();
                 const uint32_t l1_write_addr_base = get_write_ptr(cb_in0);
                 uint32_t l1_write_addr = l1_write_addr_base;
 
@@ -180,12 +168,10 @@ void kernel_main() {
                     }
 
                     noc_async_read_barrier();
-                    WAYPOINT("CJGA");
                     cb_push_back(cb_intermediate_id, tile_granularity);
                 }
 
                 noc_async_read_barrier();
-                WAYPOINT("CJGB");
                 cb_push_back(cb_in0, tile_granularity);
 
                 // Skip the tiles going the other direction
@@ -215,5 +201,4 @@ void kernel_main() {
             }
         }
     }
-    DPRINT << "READER: done" << ENDL();
 }

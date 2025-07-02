@@ -7,7 +7,6 @@
 #include "dataflow_api.h"
 #include "tt_metal/fabric/hw/inc/edm_fabric/edm_fabric_worker_adapters.hpp"
 #include "tt_metal/fabric/hw/inc/tt_fabric_mux.hpp"
-#include "debug/dprint.h"
 
 namespace tt::tt_fabric {
 
@@ -33,9 +32,6 @@ WorkerToFabricMuxSender<FABRIC_MUX_CHANNEL_NUM_BUFFERS> build_connection_to_fabr
     };
     auto local_flow_control_ptr = reinterpret_cast<volatile uint32_t* const>(local_flow_control_address);
     auto local_teardown_ptr = reinterpret_cast<volatile uint32_t* const>(local_teardown_address);
-
-    DPRINT << "in WorkerToFabricMuxSender constructor local_teardown_ptr " << (uint32_t)local_teardown_ptr << " value "
-           << *reinterpret_cast<volatile tt_l1_ptr uint32_t*>(local_teardown_ptr) << ENDL();
 
     auto mux_channel_credits_stream_id = get_mux_channel_stream_id_from_channel_id(fabric_mux_channel_id);
     return WorkerToFabricMuxSender<FABRIC_MUX_CHANNEL_NUM_BUFFERS>(
@@ -92,7 +88,6 @@ FORCE_INLINE void fabric_async_write(
     uint32_t source_payload_address,
     uint32_t packet_payload_size_bytes) {
     connection_handle.wait_for_empty_write_slot();
-    // DPRINT << "WRITER: got empty write slot" << ENDL();
     connection_handle.send_payload_without_header_non_blocking_from_address(
         source_payload_address, packet_payload_size_bytes);
     connection_handle.send_payload_flush_blocking_from_address((uint32_t)packet_header, sizeof(PACKET_HEADER_TYPE));

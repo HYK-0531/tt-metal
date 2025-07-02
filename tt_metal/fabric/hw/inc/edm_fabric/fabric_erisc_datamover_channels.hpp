@@ -191,8 +191,8 @@ struct EdmChannelWorkerInterface {
         cached_worker_semaphore_address(0),
         connection_live_semaphore(connection_live_semaphore),
         sender_sync_noc_cmd_buf(sender_sync_noc_cmd_buf) {
-        *reinterpret_cast<volatile uint32_t*>(&(worker_location_info_ptr->edm_read_counter)) =
-            edm_read_counter_initial_value;
+        *reinterpret_cast<volatile uint32_t*>(&(worker_location_info_ptr->edm_read_counter)) = edm_read_counter_initial_value;
+        DPRINT << "resetting local write counter " << ENDL();
         local_write_counter.reset();
         local_read_counter.reset();
     }

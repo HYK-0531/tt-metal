@@ -51,15 +51,7 @@ target_sources(
         all_broadcast_async/device/all_broadcast_async_program.cpp
 )
 
-target_include_directories(
-    ttnn_op_experimental_ccl
-    PRIVATE
-        ${FixmeOpIncDirs}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../tt_metal
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../tt_metal/hw/inc
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../tt_metal/api/tt-metalium
-)
+target_include_directories(ttnn_op_experimental_ccl PRIVATE ${FixmeOpIncDirs})
 target_link_libraries(
     ttnn_op_experimental_ccl
     PRIVATE

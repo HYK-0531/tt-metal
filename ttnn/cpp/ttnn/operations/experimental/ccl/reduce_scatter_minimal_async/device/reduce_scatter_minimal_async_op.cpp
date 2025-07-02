@@ -27,10 +27,10 @@ void ReduceScatterMinimalAsync::validate_with_output_tensors(
         this->num_links <= input_tensor.device()->compute_with_storage_grid_size().y,
         "Worker cores used by links are parallelizaed over rows");
 
-    TT_FATAL(
-        input_tensor.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED,
-        "Unsupported memory layout {}.",
-        input_tensor.memory_config().memory_layout());
+    // TT_FATAL(
+    //     input_tensor.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED,
+    //     "Unsupported memory layout {}.",
+    //     input_tensor.memory_config().memory_layout());
 
     // TODO: (GR) Fix
     // if (output_tensors.size() > 0 and output_tensors[0].has_value()) {
@@ -114,8 +114,7 @@ std::vector<ttnn::TensorSpec> ReduceScatterMinimalAsync::compute_output_specs(
     return {
         TensorSpec(
             intermediate_shape,
-            TensorLayout(input_tensor.get_dtype(), input_tensor.get_tensor_spec().page_config(), output_mem_config)),
-
+            TensorLayout(input_tensor.get_dtype(), input_tensor.get_tensor_spec().page_config(), L1_MEMORY_CONFIG)),
         TensorSpec(
             output_shape,
             TensorLayout(input_tensor.get_dtype(), input_tensor.get_tensor_spec().page_config(), output_mem_config))};

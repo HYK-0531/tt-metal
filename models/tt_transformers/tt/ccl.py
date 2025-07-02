@@ -47,9 +47,9 @@ def tt_all_reduce(
             input_tensor_sharded = input_tensor
             input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.DRAM_MEMORY_CONFIG)
             input_tensor_sharded.deallocate(True)
-        elif input_is_sharded and sharded:
-            rs_memory_config = ttnn.L1_MEMORY_CONFIG
-            input_tensor = ttnn.to_memory_config(input_tensor, rs_memory_config)
+        # elif input_is_sharded and sharded:
+        #     rs_memory_config = ttnn.L1_MEMORY_CONFIG
+        #     input_tensor = ttnn.to_memory_config(input_tensor, rs_memory_config)
 
         # rs_input_dtype = input_tensor.dtype
         # rs_input_shape = list(input_tensor.shape)
@@ -71,8 +71,8 @@ def tt_all_reduce(
             subdevice_id=worker_sub_device_id,
         )
 
-        if input_is_sharded and sharded:
-            reduced = ttnn.to_memory_config(reduced, target_memory_config)
+        # if input_is_sharded and sharded:
+        #     reduced = ttnn.to_memory_config(reduced, target_memory_config)
 
         # print("end ccl 43")
 

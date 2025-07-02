@@ -9,6 +9,7 @@
 #include "cpp/ttnn/operations/ccl/kernel_common/worker_sync_utils.hpp"
 #include "cpp/ttnn/operations/ccl/ccl_host_types.hpp"
 #include "cpp/ttnn/operations/ccl/shared_with_host/hetergeneous_data_structs.hpp"
+#include "ttnn/operations/ccl/kernel_common/sharding_addrgen.hpp"
 #include "minimal_ccl_common.hpp"
 #include <cstdint>
 #include <utility>
@@ -58,6 +59,36 @@ void kernel_main() {
     int32_t start_tiles_read = get_arg_val<int32_t>(arg_idx++);
     uint32_t start_tiles_to_read = get_arg_val<uint32_t>(arg_idx++);
 
+    constexpr bool intermediate_is_dram = intermediate_type == tt::tt_metal::BufferType::DRAM;
+    auto intermediate_addrgen = InterleavedAddrGenFast<intermediate_is_dram>{
+        .bank_base_address = intermediate_address,
+        .page_size = intermediate_page_size,
+        .data_format = get_dataformat(cb_compute_output_id)};
+
+#ifdef SHARDED
+    using output_tensor_shard_info = ShardedInfo<
+        get_compile_time_arg_val(15),   // Memory layout
+        get_compile_time_arg_val(16),   // The number of sharding cores
+        get_compile_time_arg_val(17),   // The page size we offset each write to
+        get_compile_time_arg_val(18),   // The number of pages in each sharding row not including padding pages
+        get_compile_time_arg_val(19),   // This defines times when contiguous pages can't be calculated
+        get_compile_time_arg_val(20),   // pages_per_shard_x
+        get_compile_time_arg_val(21)>;  // pages_per_shard_y
+
+    const auto [output_mapping_table, output_rt_increment] =
+        experimental::shard_addr_gen_utils::get_shard_map<output_tensor_shard_info>(get_arg_addr(arg_idx));
+    experimental::ShardedAddrGen<output_tensor_shard_info> output_addrgen = {
+        .bank_base_address = output_address, .shard_array = output_mapping_table};
+
+    arg_idx += output_rt_increment;
+#else
+    constexpr bool output_is_dram = output_type == tt::tt_metal::BufferType::DRAM;
+    auto output_addrgen = InterleavedAddrGenFast<output_is_dram>{
+        .bank_base_address = output_address,
+        .page_size = intermediate_page_size,
+        .data_format = get_dataformat(cb_compute_output_id)};
+#endif
+
     size_t arg_for_fab = arg_idx;
     auto fabric_connection = FabricConnectionManager::build_from_args(arg_for_fab);
 
@@ -72,18 +103,6 @@ void kernel_main() {
     // pre-populate packet headers
     volatile PACKET_HEADER_TYPE* pkt_hdr = reinterpret_cast<volatile PACKET_HEADER_TYPE*>(packet_header_buffer_addr);
     pkt_hdr->to_chip_unicast(1);
-
-    // interleaved addrgen
-    constexpr bool intermediate_is_dram = intermediate_type == tt::tt_metal::BufferType::DRAM;
-    auto intermediate_addrgen = InterleavedAddrGenFast<intermediate_is_dram>{
-        .bank_base_address = intermediate_address,
-        .page_size = intermediate_page_size,
-        .data_format = get_dataformat(cb_compute_output_id)};
-    constexpr bool output_is_dram = output_type == tt::tt_metal::BufferType::DRAM;
-    auto output_addrgen = InterleavedAddrGenFast<output_is_dram>{
-        .bank_base_address = output_address,
-        .page_size = intermediate_page_size,
-        .data_format = get_dataformat(cb_compute_output_id)};
 
     if (fabric_connection.is_logically_connected()) {
         fabric_connection.open();
@@ -279,7 +298,8 @@ void kernel_main() {
                     size_t l1_read_addr = get_read_ptr(cb_output_id);
                     for (uint32_t j = 0; j < tiles_to_read_in_current_direction; ++j) {
                         uint32_t tile_id = tile_id_start + tiles_read;
-                        noc_async_write_tile(tile_id, output_addrgen, l1_read_addr);
+                        uint64_t local_noc_addr = get_noc_addr(tile_id, output_addrgen, 0 /*offset*/, 1 /*noc_id*/);
+                        noc_async_write(l1_read_addr, local_noc_addr, intermediate_page_size);
                         l1_read_addr += intermediate_page_size;
                         tiles_read++;
                     }

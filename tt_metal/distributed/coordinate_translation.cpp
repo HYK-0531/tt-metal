@@ -31,7 +31,7 @@ const MeshContainer<PhysicalMeshCoordinate>& get_system_mesh_coordinate_translat
         // }
 
         // const auto mesh_id = mesh_ids.front();
-        auto mesh_id = control_plane.get_local_mesh_id_binding().value();
+        auto mesh_id = control_plane.get_local_mesh_id_bindings()[0];
         std::cout << "Using Local Mesh ID: " << *(mesh_id) << std::endl;
         const auto mesh_shape = control_plane.get_physical_mesh_shape(mesh_id);
 

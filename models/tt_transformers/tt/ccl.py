@@ -83,7 +83,7 @@ def tt_all_reduce(
             persistent_intermediate_buffer=persistent_intermediate_buffer,
             persistent_output_buffer=persistent_output_buffer,
             dim=dim,
-            multi_device_global_semaphore=get_next_semaphores(remote_semaphore_handles, semaphore_offset_index, 3),
+            multi_device_global_semaphore=get_next_semaphores(remote_semaphore_handles, 3),
             num_links=num_reduce_scatter_links,
             memory_config=memory_config,
             topology=topology,
@@ -204,7 +204,7 @@ def tt_all_gather(
             input_tensor,
             persistent_output_buffer=output_buffer,
             dim=dim,
-            multi_device_global_semaphore=get_next_semaphores(remote_semaphore_handles, semaphore_offset_index, 2),
+            multi_device_global_semaphore=get_next_semaphores(remote_semaphore_handles, 2),
             num_links=num_links,
             subdevice_id=worker_sub_device_id,
         )
@@ -214,7 +214,7 @@ def tt_all_gather(
             persistent_output_buffer=output_buffer,
             dim=dim,
             cluster_axis=cluster_axis,
-            multi_device_global_semaphore=get_next_semaphores(remote_semaphore_handles, semaphore_offset_index, 2),
+            multi_device_global_semaphore=get_next_semaphores(remote_semaphore_handles, 2),
             num_links=num_links,
             subdevice_id=worker_sub_device_id,
         )

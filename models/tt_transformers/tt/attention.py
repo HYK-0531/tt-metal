@@ -12,8 +12,6 @@ from models.common.rmsnorm import RMSNorm
 from models.tt_transformers.tt.ccl import tt_all_gather, tt_all_reduce
 from models.tt_transformers.tt.model_config import OpGroup, TensorGroup
 from models.tt_transformers.tt.semaphores import get_next_semaphores
-from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_pcc
-from ttnn import ConcatMeshToTensor
 
 persistent_buffer_shapes = set()
 
@@ -606,7 +604,7 @@ class Attention(LightweightModule):
             weight_tensor = self.wo
             output_buffer = persistent_output_buffer
             dim = 3
-            semaphores = get_next_semaphores(self.remote_semaphore_handles, self.semaphore_offset_index, 2)
+            semaphores = get_next_semaphores(self.remote_semaphore_handles, 2)
             grid_offset = ttnn.CoreCoord(0, 4)  # Make sure to wrap in CoreCoord, not (0, 4)
 
             core_grid = (8, 1)
@@ -638,49 +636,8 @@ class Attention(LightweightModule):
                 compute_kernel_config=kernel_cfg,
             )
             ttnn.synchronize_device(self.mesh_device, sub_device_ids=self.sub_device_stall_group)
-            # tt_all_gather_out_tensor = ttnn.experimental.all_gather_async(
-            #         input_tensor,
-            #         persistent_output_buffer=output_buffer,
-            #         dim=dim,
-            #         multi_device_global_semaphore=semaphores,
-            #         num_links=num_links,
-            #         subdevice_id=subdevice,
-            #     )
 
-            # # ttnn.synchronize_device(self.mesh_device, sub_device_ids=self.sub_device_stall_group)
-
-            # dense_out_sharded = ttnn.linear(
-            #     tt_all_gather_out_tensor,
-            #     weight_tensor,
-            #     program_config=progcfg,
-            #     compute_kernel_config=kernel_cfg,
-            # )
-
-            tt_input_tensor = ttnn.from_device(input_tensor)
-            tt_input_tensor = ttnn.to_torch(tt_input_tensor, mesh_composer=ConcatMeshToTensor(self.mesh_device, dim=3))
-            # tt_input_tensor = tt_input_tensor[:, :, :, 0 : input_tensor.shape[3]]
-            print("input shape: ", tt_input_tensor.shape)
-            eq, output = comp_pcc(torch.zeros(tt_input_tensor.shape), tt_input_tensor)
-            assert not eq, f"input is just ZEROS: {output}"
-            print(output)
-
-            tt_ag_out = ttnn.from_device(tt_all_gather_out_tensor)
-            tt_ag_out = ttnn.to_torch(tt_ag_out, mesh_composer=ConcatMeshToTensor(self.mesh_device, dim=3))
-            tt_ag_out = tt_ag_out[:, :, :, 0 : tt_all_gather_out_tensor.shape[3]]
-            print("AG out shape: ", tt_ag_out.shape)
-            eq, output = comp_pcc(torch.zeros(tt_ag_out.shape), tt_ag_out)
-            assert not eq, f"ag is just ZEROS: {output}"
-            print(output)
-
-            tt_mm_out = ttnn.from_device(dense_out_sharded)
-            tt_mm_out = ttnn.to_torch(tt_mm_out, mesh_composer=ConcatMeshToTensor(self.mesh_device, dim=3))
-            print(tt_mm_out.shape)
-            # tt_mm_out = tt_mm_out[:, :, :, 0 : dense_out_sharded.shape[3]]
-            eq, output = comp_pcc(torch.zeros(tt_mm_out.shape), tt_mm_out)
-            assert not eq, f"mm is just ZEROS: {output}"
-            print(output)
-
-            # ttnn.deallocate(attn_output_cat)
+            ttnn.deallocate(attn_output_cat)
             dense_out_sharded = ttnn.to_memory_config(dense_out_sharded, self.model_config["DECODE_RESIDUAL_MEMCFG"])
             return dense_out_sharded
 

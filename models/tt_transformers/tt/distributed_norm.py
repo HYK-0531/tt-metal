@@ -115,9 +115,7 @@ class DistributedNorm(LightweightModule):
                 x,
                 persistent_output_buffer=persistent_output_buffer,
                 dim=3,
-                multi_device_global_semaphore=get_next_semaphores(
-                    self.remote_semaphore_handles, self.semaphore_offset_index, 2
-                ),
+                multi_device_global_semaphore=get_next_semaphores(self.remote_semaphore_handles, 2),
                 num_links=1,
                 memory_config=ttnn.MemoryConfig(ttnn.TensorMemoryLayout.INTERLEAVED, ttnn.BufferType.DRAM),
                 topology=self.args.ccl_topology(),

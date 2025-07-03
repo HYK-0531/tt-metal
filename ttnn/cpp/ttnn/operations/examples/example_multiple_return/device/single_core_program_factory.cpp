@@ -111,7 +111,7 @@ ExampleMultipleReturnDeviceOperation::SingleCore::create(
         }
 
         tt::tt_metal::SetRuntimeArgs(
-            program, unary_reader_kernel_id, core, {src1_buffer->address(), src2_buffer->address(), 1});
+            program, unary_reader_kernel_id, core, {src1_buffer->address(), src2_buffer->address(), i});
 
         auto dst_buffer_address = output.buffer()->address();
         tt::tt_metal::SetRuntimeArgs(program, unary_writer_kernel_id, core, {dst_buffer_address, i});

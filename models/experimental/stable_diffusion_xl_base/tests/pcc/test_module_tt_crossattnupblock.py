@@ -26,7 +26,7 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import SDXL_
             20,
             1280,
             0,
-            0.965,
+            0.966,
         ),
         (
             (1, 1280, 64, 64),
@@ -112,7 +112,6 @@ def test_crossattnup(
         temb=ttnn_temb_tensor,
         encoder_hidden_states=ttnn_encoder_tensor,
     )
-    model_config.clear_weight_preprocess()
 
     output_tensor = ttnn.to_torch(ttnn_output_tensor)
     output_tensor = output_tensor.reshape(B, output_shape[1], output_shape[2], output_shape[0])

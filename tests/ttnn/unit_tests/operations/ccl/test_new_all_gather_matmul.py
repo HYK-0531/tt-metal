@@ -9,6 +9,7 @@ from loguru import logger
 import ttnn
 from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_equal, comp_pcc
 from tests.ttnn.unit_tests.operations.ccl.test_all_gather import is_unsupported_case
+from models.tt_transformers.tt.common import get_out_subblock_w
 
 from ttnn import ShardTensorToMesh, ConcatMeshToTensor
 
@@ -153,18 +154,90 @@ def run_all_gather_impl(
         bias_tt = None
 
     ##### Configs for ttnn.matmul #####
-    core_grid = (8, 6)
-    program_config = ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
+    tile_size = 32
+    max_batch_size = 1
+    tile_padded_batch_rows = tile_size * int(math.ceil(max_batch_size / tile_size))
+    if False:
+        core_grid = (8, 6)
+        in0_block_w = min(max_in0_block_w, hidden_dim // 32 // core_grid[0])
+        out_subblock_h = 1
+        out_subblock_w = 4
+        per_core_M = max(1, math.ceil(ag_output_shape[2] / 32 / core_grid[1]))
+        per_core_N = max(1, math.ceil(matmul_output_dim / 32 / core_grid[0]))
+    else:
+        core_grid = (8, 1)
+        per_core_N = hidden_dim // num_devices // tile_size // (core_grid[0] * core_grid[1])
+        in0_block_w = hidden_dim // tile_size // (core_grid[0] * core_grid[1])  # [32 x 8k] x [8k x 1k] = [32 x 1k]
+        out_subblock_h = 1
+        out_subblock_w = get_out_subblock_w(per_core_N, out_subblock_h=1)
+        per_core_M = tile_padded_batch_rows // tile_size
+
+    print(f"core_grid: {core_grid}")
+    print(f"in0_block_w: {in0_block_w}")
+    print(f"out_subblock_h: {out_subblock_h}")
+    print(f"out_subblock_w: {out_subblock_w}")
+    print(f"per_core_M: {per_core_M}")
+    print(f"per_core_N: {per_core_N}")
+
+    program_config = ttnn.MatmulMultiCoreReuseMultiCast1DProgramConfig(
         compute_with_storage_grid_size=core_grid,
-        in0_block_w=min(max_in0_block_w, hidden_dim // 32 // core_grid[0]),  # how much inner dim you take each time
-        out_subblock_h=1,  # Must be divisible by per_core_M
-        out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
-        per_core_M=max(1, math.ceil(ag_output_shape[2] / 32 / core_grid[1])),  # M / TILE_HEIGHT / Grid_Size
-        per_core_N=max(1, math.ceil(matmul_output_dim / 32 / core_grid[0])),  # N / TILE_WIDTH / Grid_Size
-        transpose_mcast=False,
-        fused_activation=None,  # ttnn.UnaryOpType.SILU,
-        fuse_batch=False,
+        in0_block_w=in0_block_w,  # how much inner dim you take each time
+        out_subblock_h=out_subblock_h,
+        out_subblock_w=out_subblock_w,
+        per_core_M=per_core_M,
+        per_core_N=per_core_N,
+        # transpose_mcast=False,
+        fuse_batch=True,
+        fused_activation=None,
+        mcast_in0=True,
     )
+
+    # program_config = ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
+    #     compute_with_storage_grid_size=core_grid,
+    #     in0_block_w=min(max_in0_block_w, hidden_dim // 32 // core_grid[0]),  # how much inner dim you take each time
+    #     out_subblock_h=1,  # Must be divisible by per_core_M
+    #     out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
+    #     per_core_M=max(1, math.ceil(ag_output_shape[2] / 32 / core_grid[1])),  # M / TILE_HEIGHT / Grid_Size
+    #     per_core_N=max(1, math.ceil(matmul_output_dim / 32 / core_grid[0])),  # N / TILE_WIDTH / Grid_Size
+    #     transpose_mcast=False,
+    #     fused_activation=None,  # ttnn.UnaryOpType.SILU,
+    #     fuse_batch=False,
+    # )
+
+    # program_config = ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
+    #     compute_with_storage_grid_size=core_grid,
+    #     # in0_block_w=matmul_output_dim // tile_size // (core_grid[0] * core_grid[1]),  # [32 x 8k] x [8k x 1k] = [32 x 1k]
+    #     # in0_block_w=min(max_in0_block_w, hidden_dim // 32 // core_grid[0]),  # how much inner dim you take each time
+    #     in0_block_w=32,
+    #     out_subblock_h=1,
+    #     # out_subblock_w=get_out_subblock_w(
+    #     #     do_per_core_N, out_subblock_h=1
+    #     # ),  # Max out_subblock_w = 4, needs to be divisible by per_core_N
+    #     out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
+    #     # per_core_M=tile_padded_batch_rows // tile_size,
+    #     per_core_M=1,
+    #     # per_core_N=do_per_core_N,
+    #     per_core_N=4,
+    #     transpose_mcast=False,
+    #     fused_activation=None,
+    #     fuse_batch=True,
+    # )
+
+    # program_config = ttnn.MatmulMultiCoreReuseMultiCast1DProgramConfig(
+    #     compute_with_storage_grid_size=core_grid,
+    #     # in0_block_w=self.dim // self.tile_size // (do_core_grid_size[0] * do_core_grid_size[1]),  # [32 x 8k] x [8k x 1k] = [32 x 1k]
+    #     in0_block_w=32,
+    #     out_subblock_h=1,
+    #     # out_subblock_w=get_out_subblock_w(do_per_core_N, out_subblock_h=1),  # Max out_subblock_w = 4, needs to be divisible by per_core_N
+    #     out_subblock_w=4,
+    #     # per_core_M=self.tile_padded_batch_rows // self.tile_size,
+    #     per_core_M=1,
+    #     # per_core_N=do_per_core_N,
+    #     per_core_N=4,
+    #     fuse_batch=True,
+    #     fused_activation=None,
+    #     mcast_in0=True,
+    # )
     compute_kernel_config = ttnn.WormholeComputeKernelConfig(
         math_fidelity=ttnn.MathFidelity.HiFi2,
         math_approx_mode=True,
@@ -189,6 +262,7 @@ def run_all_gather_impl(
 
     def run_op(i):
         if use_non_fused:
+            print("Running non-fused op")
             if use_legacy_allgather:
                 tt_all_gather_out_tensor = ttnn.all_gather(
                     input_tensor_mesh_list[i],
@@ -197,6 +271,7 @@ def run_all_gather_impl(
                     memory_config=mem_config_ag,
                 )
             else:
+                print("running AG and MM separately")
                 tt_all_gather_out_tensor = ttnn.experimental.all_gather_async(
                     input_tensor_mesh_list[i],
                     persistent_output_buffer=persistent_output_buffers[i],
@@ -218,6 +293,7 @@ def run_all_gather_impl(
             )
         else:
             if use_legacy_allgather:
+                print("Running legacy fused?")
                 tt_all_gather_out_tensor, tt_matmul_out_tensor, _ = ttnn.experimental.all_gather_matmul(
                     input_tensor_mesh_list[i],
                     weight_tt,
@@ -233,6 +309,8 @@ def run_all_gather_impl(
                     compute_kernel_config=compute_kernel_config,
                 )
             else:
+                print("a shape: ", input_tensor_mesh_list[i].shape)
+                print("b shape: ", weight_tt.shape)
                 tt_all_gather_out_tensor, tt_matmul_out_tensor = ttnn.experimental.all_gather_matmul_async(
                     input_tensor_mesh_list[i],
                     weight_tt,
@@ -269,6 +347,7 @@ def run_all_gather_impl(
 
         # Execute trace
         for i in range(num_iters):
+            print(i)
             ttnn.execute_trace(t3k_mesh_device, trace_id, cq_id=0, blocking=False)
             if not use_legacy_allgather:
                 ttnn.synchronize_device(t3k_mesh_device, sub_device_ids=sub_device_stall_group)
@@ -316,7 +395,7 @@ def run_all_gather_impl(
 @pytest.mark.parametrize(
     "num_devices, num_links, ag_output_shape, dim, layout, matmul_output_dim, max_in0_block_w, matmul_weights_dtype, ag_input_dtype, use_bias",
     [
-        (8, 1, [1, 1, 4096, 2560], 3, ttnn.TILE_LAYOUT, 960, 2, ttnn.bfloat16, ttnn.bfloat16, True),
+        (8, 1, [1, 1, 32, 8192], 3, ttnn.TILE_LAYOUT, 1024, 2, ttnn.bfloat16, ttnn.bfloat16, False),
     ],
 )
 @pytest.mark.parametrize(

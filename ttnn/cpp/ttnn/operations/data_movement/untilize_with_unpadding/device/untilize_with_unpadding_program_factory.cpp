@@ -793,7 +793,6 @@ operation::ProgramWithCallbacks untilize_with_unpadding_multi_core_interleaved(
 
     uint32_t tile_start_id = 0;
     uint32_t row_start_id = 0;
-    uint32_t ncores_x = grid_size.x;
 
     const auto& cores = grid_to_cores(ncores, grid_size.x, grid_size.y, true);
     for (uint32_t i = 0; i < ncores; ++i) {
@@ -891,9 +890,6 @@ operation::ProgramWithCallbacks untilize_with_unpadding_multi_core_sharded(
     tt::DataFormat output_cb_data_format = tt::tt_metal::datatype_to_dataformat_converter(output.dtype());
     uint32_t output_single_tile_size = tt::tt_metal::detail::TileSize(output_cb_data_format);
 
-    IDevice* device = a.device();
-
-    auto grid_size = device->compute_with_storage_grid_size();
     uint32_t num_rows_block = 0, block_row_size = 0, output_row_size = 0, last_block_row_size_unpadded = 0,
              num_output_rows_unpadded = 0;
     CoreCoord end_core;
@@ -960,7 +956,6 @@ operation::ProgramWithCallbacks untilize_with_unpadding_multi_core_sharded(
                                                                           output.buffer())
                                                                     : std::make_tuple(tt::CBIndex::c_17, CBHandle{});
 
-    Buffer* src0_buffer = a.buffer();
     Buffer* dst_buffer = output.buffer();
     TT_ASSERT(dst_buffer != nullptr, "Output buffer should be allocated on device!");
 

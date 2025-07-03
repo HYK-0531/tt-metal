@@ -337,8 +337,7 @@ tt::tt_metal::operation::ProgramWithCallbacks reshape_tiled_program_factory(
         tt::tt_metal::CircularBufferConfig(
             mapping_page_size_bytes * reader_cb_len, {{mapping_cb_idx, mapping_dataformat}})
             .set_page_size(mapping_cb_idx, mapping_page_size_bytes);
-    const auto cb_mapping = tt::tt_metal::CreateCircularBuffer(program, total_cores, cb_mapping_config);
-
+    tt::tt_metal::CreateCircularBuffer(program, total_cores, cb_mapping_config);
     // set up CB for input tiles
     const auto input_cb_data_format = tt::tt_metal::datatype_to_dataformat_converter(input_tensor.dtype());
     const auto input_tile_size_bytes = tt::tile_size(input_cb_data_format);
@@ -348,8 +347,7 @@ tt::tt_metal::operation::ProgramWithCallbacks reshape_tiled_program_factory(
         tt::tt_metal::CircularBufferConfig(
             input_tile_size_bytes * reader_cb_len, {{input_cb_idx, input_cb_data_format}})
             .set_page_size(input_cb_idx, input_tile_size_bytes);
-    auto cb_input = tt::tt_metal::CreateCircularBuffer(program, total_cores, cb_input_config);
-
+    tt::tt_metal::CreateCircularBuffer(program, total_cores, cb_input_config);
     // TODO assert output tile size and data format same as input
     const auto output_cb_data_format = tt::tt_metal::datatype_to_dataformat_converter(output_tensor.dtype());
     const auto output_tile_size_bytes = tt::tile_size(output_cb_data_format);
@@ -358,8 +356,7 @@ tt::tt_metal::operation::ProgramWithCallbacks reshape_tiled_program_factory(
     tt::tt_metal::CircularBufferConfig cb_output_config =
         tt::tt_metal::CircularBufferConfig(output_tile_size_bytes, {{output_cb_idx, output_cb_data_format}})
             .set_page_size(output_cb_idx, output_tile_size_bytes);
-    auto cb_output = tt::tt_metal::CreateCircularBuffer(program, total_cores, cb_output_config);
-
+    tt::tt_metal::CreateCircularBuffer(program, total_cores, cb_output_config);
     const auto
         [num_cores, all_cores, core_group_1, core_group_2, num_tiles_per_core_group_1, num_tiles_per_core_group_2] =
             tt::tt_metal::split_work_to_cores(grid, num_output_pages);

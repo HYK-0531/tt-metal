@@ -98,8 +98,7 @@ operation::ProgramWithCallbacks sharded_to_interleaved_multi_core(
         tt_metal::CircularBufferConfig output_cb_out_config =
             tt_metal::CircularBufferConfig(num_input_units * output_page_size, {{out_cb_index, output_cb_data_format}})
                 .set_page_size(out_cb_index, output_page_size);
-        auto cb_output = tt_metal::CreateCircularBuffer(program, all_cores, output_cb_out_config);
-    }
+        tt_metal::CreateCircularBuffer(program, all_cores, output_cb_out_config);    }
 
     auto src_buffer = input.buffer();
 

@@ -44,6 +44,8 @@ test_id_to_name = {
     20: "Reshard Hardcoded 2 Cores to Many Cores",
     200: "Deinterleave Single Core",
     201: "Deinterleave Multi Core",
+    500: "Matmul Sharded",
+    550: "Matmul Interleaved",
     21: "Conv Act with halo 3x3",
     22: "Conv Act with halo 3x3 Small",
     23: "Conv Halo Gather",

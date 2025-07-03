@@ -23,9 +23,6 @@ void kernel_main() {
     uint32_t phy_x_coord = noc_id_reg & NOC_NODE_ID_MASK;
     uint32_t phy_y_coord = (noc_id_reg >> NOC_ADDR_NODE_ID_BITS) & NOC_NODE_ID_MASK;
 
-    // todo
-    //*((volatile uint32_t*)0xffb20000) = origin_x_coord;
-
     DeviceTimestampedData("Test id", test_id);
 
     if (g_mhartid == 0) {

@@ -466,6 +466,9 @@ def test_model_inference(
             logger.info("[ttnn generation User 0] " + tokenizer.decode(all_outputs).replace("\n", "\\n"))
             if run_ref_pt:
                 logger.info("[Ref generation User 0] " + tokenizer.decode(all_outputs_ref).replace("\n", "\\n"))
+        worker_sub_device_id = ttnn.SubDeviceId(0)
+        sub_device_stall_group = [worker_sub_device_id]
+        ttnn.synchronize_device(mesh_device, sub_device_ids=sub_device_stall_group)
 
     if run_ref_pt:
         if all_tests_pass:

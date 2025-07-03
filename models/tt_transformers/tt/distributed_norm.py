@@ -2,26 +2,35 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+import torch
+
 import ttnn
 from models.common.lightweightmodule import LightweightModule
 from models.tt_transformers.tt.ccl import tt_distributed_rmsnorm, tt_sharded_distributed_rmsnorm
+from models.tt_transformers.tt.semaphores import get_next_semaphores
+
+persistent_buffer_shapes = set()
 
 
 class DistributedNorm(LightweightModule):
     def __init__(
         self,
         norm,
+        mesh_device,
         args,
         TG=False,
-        from_remote_semaphore_handles=None,
-        to_remote_semaphore_handles=None,
+        remote_semaphore_handles=None,
+        semaphore_offset_index=None,
         worker_sub_device_id=None,
     ):
+        self.mesh_device = mesh_device
         self.norm = norm
         self.args = args
+        print(type(self.norm))
+        print(type(self.args))
 
-        self.from_remote_semaphore_handles = from_remote_semaphore_handles
-        self.to_remote_semaphore_handles = to_remote_semaphore_handles
+        self.remote_semaphore_handles = remote_semaphore_handles
+        self.semaphore_offset_index = semaphore_offset_index
         self.worker_sub_device_id = worker_sub_device_id
 
         if TG:
@@ -82,17 +91,40 @@ class DistributedNorm(LightweightModule):
 
         # Distributed norm already performs a gather
         if self.args.is_multichip and not self.args.is_distributed_norm(mode):
-            print("gathering 73 distributed_norm.py")
-            # x = ttnn.all_gather(x, dim=3, num_links=1, topology=self.args.ccl_topology(), memory_config=input_mem_cfg)
+            # print("gathering 73 distributed_norm.py")
+            x = ttnn.sharded_to_interleaved(x, ttnn.DRAM_MEMORY_CONFIG)
+            x = ttnn.to_memory_config(x, ttnn.MemoryConfig(ttnn.TensorMemoryLayout.INTERLEAVED, ttnn.BufferType.DRAM))
+            ag_input_dtype = x.dtype
+            ag_output_shape = list(x.shape)
+            ag_output_shape[3] *= self.mesh_device.get_num_devices()
+
+            persistent_output_buffer = ttnn.from_torch(
+                torch.zeros(ag_output_shape),
+                device=self.mesh_device,
+                layout=ttnn.TILE_LAYOUT,
+                dtype=ag_input_dtype,
+                memory_config=ttnn.MemoryConfig(ttnn.TensorMemoryLayout.INTERLEAVED, ttnn.BufferType.DRAM),
+                mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+            )
+
+            if tuple(ag_output_shape) not in persistent_buffer_shapes:
+                persistent_buffer_shapes.add(tuple(ag_output_shape))
+                print("adding output persistent buffer shape for all_gather:", ag_output_shape)
+
             x = ttnn.experimental.all_gather_async(
                 x,
+                persistent_output_buffer=persistent_output_buffer,
                 dim=3,
-                multi_device_global_semaphore=self.from_remote_semaphore_handles,
+                multi_device_global_semaphore=get_next_semaphores(
+                    self.remote_semaphore_handles, self.semaphore_offset_index, 2
+                ),
                 num_links=1,
-                memory_config=input_mem_cfg,
+                memory_config=ttnn.MemoryConfig(ttnn.TensorMemoryLayout.INTERLEAVED, ttnn.BufferType.DRAM),
                 topology=self.args.ccl_topology(),
                 subdevice_id=self.worker_sub_device_id,
             )
+            ttnn.synchronize_device(self.mesh_device, sub_device_ids=[self.worker_sub_device_id])
+            x = ttnn.to_memory_config(x, input_mem_cfg)
         else:
             x = ttnn.to_memory_config(x, input_mem_cfg)
 

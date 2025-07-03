@@ -607,6 +607,7 @@ class ModelArgs:
 
         self.dummy_weights = dummy_weights
         self.tile_padded_batch_rows = self.tile_size * int(math.ceil(self.max_batch_size / self.tile_size))
+        print("max batch size: ", max_batch_size)
 
         # Enable workarounds by default until di/dt issues are fixed
         self.di_dt_workaround = os.getenv("DISABLE_DI_DT_WORKAROUND") != "1"
@@ -738,9 +739,30 @@ class ModelArgs:
 
             if self.model_config["USE_FUSED_ALL_GATHER_MATMUL"]:
                 do_core_grid_size = (8, 1)
+                print("dim:", self.dim)
                 do_per_core_N = (
                     self.dim // self.num_devices // self.tile_size // (do_core_grid_size[0] * do_core_grid_size[1])
                 )
+                # self.model_config["ATTN_ALL_GATHER_MATMUL_PROGCFG"] = ttnn.MatmulMultiCoreReuseMultiCast1DProgramConfig(
+                #     compute_with_storage_grid_size=do_core_grid_size,
+                #     in0_block_w=self.dim
+                #     // self.tile_size
+                #     // (do_core_grid_size[0] * do_core_grid_size[1]),  # [32 x 8k] x [8k x 1k] = [32 x 1k]
+                #     out_subblock_h=1,
+                #     out_subblock_w=get_out_subblock_w(
+                #         do_per_core_N, out_subblock_h=1
+                #     ),  # Max out_subblock_w = 4, needs to be divisible by per_core_N
+                #     per_core_M=self.tile_padded_batch_rows // self.tile_size,
+                #     per_core_N=do_per_core_N,
+                #     fuse_batch=True,
+                #     fused_activation=None,
+                #     mcast_in0=True,
+                # )
+                print(do_core_grid_size)
+                print(self.dim // self.tile_size // (do_core_grid_size[0] * do_core_grid_size[1]))
+                print(get_out_subblock_w(do_per_core_N, out_subblock_h=1))
+                print(self.tile_padded_batch_rows // self.tile_size)
+                print(do_per_core_N)
                 self.model_config["ATTN_ALL_GATHER_MATMUL_PROGCFG"] = ttnn.MatmulMultiCoreReuseMultiCast1DProgramConfig(
                     compute_with_storage_grid_size=do_core_grid_size,
                     in0_block_w=self.dim
@@ -752,8 +774,9 @@ class ModelArgs:
                     ),  # Max out_subblock_w = 4, needs to be divisible by per_core_N
                     per_core_M=self.tile_padded_batch_rows // self.tile_size,
                     per_core_N=do_per_core_N,
-                    fuse_batch=True,
+                    # transpose_mcast=False,
                     fused_activation=None,
+                    fuse_batch=True,
                     mcast_in0=True,
                 )
             else:

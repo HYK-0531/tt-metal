@@ -5,6 +5,10 @@
 import torch
 
 import ttnn
+from models.tt_transformers.tt.semaphores import get_next_semaphores
+
+intermediate_persistent_buffer_shapes = set()
+persistent_buffer_shapes = set()
 
 
 # def tt_all_reduce(input_tensor, mesh_device, cluster_axis=0, dim=0, num_links=2, memory_config=None, sharded=False):
@@ -21,8 +25,7 @@ def tt_all_reduce(
     dtype=ttnn.bfloat16,
     use_composite=False,
     remote_semaphore_handles=None,
-    from_remote_semaphore_handles=None,
-    to_remote_semaphore_handles=None,
+    semaphore_offset_index=None,
     worker_sub_device_id=None,
 ):
     # N150
@@ -42,14 +45,6 @@ def tt_all_reduce(
             input_tensor_sharded = input_tensor
             input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.L1_MEMORY_CONFIG)
             input_tensor_sharded.deallocate(True)
-        # reduced = ttnn.reduce_scatter(
-        #     input_tensor,
-        #     dim=dim,
-        #     math_op=ttnn.ReduceType.Sum,
-        #     num_links=num_reduce_scatter_links,
-        #     topology=topology,
-        #     memory_config=memory_config,
-        # )
         rs_input_dtype = input_tensor.dtype
         rs_input_shape = list(input_tensor.shape)
 
@@ -64,6 +59,9 @@ def tt_all_reduce(
             memory_config=memory_config,
             mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
         )
+        if tuple(single_batch_input_shape) not in intermediate_persistent_buffer_shapes:
+            persistent_buffer_shapes.add(tuple(single_batch_input_shape))
+            print("adding intermediate persistent buffer shape for reduce scatter:", single_batch_input_shape)
 
         rs_output_shape = rs_input_shape[:]
         rs_output_shape[3] //= mesh_device.get_num_devices()
@@ -76,17 +74,22 @@ def tt_all_reduce(
             mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
         )
 
+        if tuple(rs_output_shape) not in persistent_buffer_shapes:
+            persistent_buffer_shapes.add(tuple(rs_output_shape))
+            print("adding output persistent buffer shape for reduce scatter:", rs_output_shape)
+
         reduced = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
             persistent_intermediate_buffer=persistent_intermediate_buffer,
             persistent_output_buffer=persistent_output_buffer,
             dim=dim,
-            multi_device_global_semaphore=remote_semaphore_handles,
+            multi_device_global_semaphore=get_next_semaphores(remote_semaphore_handles, semaphore_offset_index, 3),
             num_links=num_reduce_scatter_links,
             memory_config=memory_config,
             topology=topology,
             subdevice_id=worker_sub_device_id,
         )
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[worker_sub_device_id])
         input_tensor.deallocate(True)
         return reduced
 
@@ -162,6 +165,9 @@ def tt_all_gather(
     sharded=False,
     topology=ttnn.Topology.Linear,
     dtype=ttnn.bfloat16,
+    remote_semaphore_handles=None,
+    semaphore_offset_index=None,
+    worker_sub_device_id=None,
 ):
     # N150
     if list(mesh_device.shape) == (1, 1) or (cluster_axis == 1 and 1 in list(mesh_device.shape)):
@@ -177,25 +183,43 @@ def tt_all_gather(
         if sharded and memory_config is not None:
             input_tensor = ttnn.to_memory_config(input_tensor, memory_config, dtype)  # to sharded
 
+    ag_output_shape = list(input_tensor.shape)
+    ag_output_shape[dim] *= mesh_device.get_num_devices()
+    persistent_output_buffer = ttnn.from_torch(
+        torch.zeros(ag_output_shape),
+        device=mesh_device,
+        layout=ttnn.TILE_LAYOUT,
+        dtype=dtype,
+        memory_config=ttnn.MemoryConfig(ttnn.TensorMemoryLayout.INTERLEAVED, ttnn.BufferType.DRAM),
+        mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
+    )
+
+    input_tensor = ttnn.sharded_to_interleaved(input_tensor, ttnn.DRAM_MEMORY_CONFIG)
+    input_tensor = ttnn.to_memory_config(
+        input_tensor, ttnn.MemoryConfig(ttnn.TensorMemoryLayout.INTERLEAVED, ttnn.BufferType.DRAM)
+    )
+
     if cluster_axis is None:
-        gathered = ttnn.all_gather(
+        gathered = ttnn.experimental.all_gather_async(
             input_tensor,
-            dim,
+            persistent_output_buffer=output_buffer,
+            dim=dim,
+            multi_device_global_semaphore=get_next_semaphores(remote_semaphore_handles, semaphore_offset_index, 2),
             num_links=num_links,
-            topology=topology,
-            memory_config=memory_config,
+            subdevice_id=worker_sub_device_id,
         )
     else:
-        gathered = ttnn.all_gather(
+        gathered = ttnn.experimental.all_gather_async(
             input_tensor,
-            dim,
-            num_links=num_links,
+            persistent_output_buffer=output_buffer,
+            dim=dim,
             cluster_axis=cluster_axis,
-            mesh_device=mesh_device,
-            topology=topology,
-            memory_config=memory_config,
+            multi_device_global_semaphore=get_next_semaphores(remote_semaphore_handles, semaphore_offset_index, 2),
+            num_links=num_links,
+            subdevice_id=worker_sub_device_id,
         )
     input_tensor.deallocate(True)
+    gathered = ttnn.to_memory_config(gathered, memory_config)
     return gathered
 
 

@@ -23,8 +23,7 @@ class TransformerBlock(LightweightModule):
         paged_attention_config=None,
         use_paged_kv_cache=False,
         remote_semaphore_handles=None,
-        from_remote_semaphore_handles=None,
-        to_remote_semaphore_handles=None,
+        semaphore_offset_index=None,
         worker_sub_device_id=None,
     ):
         super().__init__()
@@ -55,8 +54,8 @@ class TransformerBlock(LightweightModule):
             configuration=args,
             paged_attention_config=paged_attention_config,
             use_paged_kv_cache=use_paged_kv_cache,
-            from_remote_semaphore_handles=from_remote_semaphore_handles,
-            to_remote_semaphore_handles=to_remote_semaphore_handles,
+            remote_semaphore_handles=remote_semaphore_handles,
+            semaphore_offset_index=semaphore_offset_index,
             worker_sub_device_id=worker_sub_device_id,
         )
         self.feed_forward = MLP(
@@ -68,8 +67,7 @@ class TransformerBlock(LightweightModule):
             dtype=dtype,
             model_config=self.model_config,
             remote_semaphore_handles=remote_semaphore_handles,
-            from_remote_semaphore_handles=from_remote_semaphore_handles,
-            to_remote_semaphore_handles=to_remote_semaphore_handles,
+            semaphore_offset_index=semaphore_offset_index,
             worker_sub_device_id=worker_sub_device_id,
         )
         self.attention_norm = DistributedNorm(
@@ -87,10 +85,11 @@ class TransformerBlock(LightweightModule):
                 sharded_output_config=self.model_config["SHARDED_ATTN_INPUT_MEMCFG"],
                 ccl_topology=self.args.ccl_topology(),
             ),
+            mesh_device,
             args,
             TG=args.is_galaxy,
-            from_remote_semaphore_handles=from_remote_semaphore_handles,
-            to_remote_semaphore_handles=to_remote_semaphore_handles,
+            remote_semaphore_handles=remote_semaphore_handles,
+            semaphore_offset_index=semaphore_offset_index,
             worker_sub_device_id=worker_sub_device_id,
         )
         self.ff_norm = DistributedNorm(
@@ -108,10 +107,11 @@ class TransformerBlock(LightweightModule):
                 sharded_output_config=self.model_config["SHARDED_MLP_INPUT_MEMCFG"],
                 ccl_topology=self.args.ccl_topology(),
             ),
+            mesh_device,
             args,
             TG=args.is_galaxy,
-            from_remote_semaphore_handles=from_remote_semaphore_handles,
-            to_remote_semaphore_handles=to_remote_semaphore_handles,
+            remote_semaphore_handles=remote_semaphore_handles,
+            semaphore_offset_index=semaphore_offset_index,
             worker_sub_device_id=worker_sub_device_id,
         )
 

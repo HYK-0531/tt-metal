@@ -23,8 +23,7 @@ class MLP(LightweightModule):
         model_config,
         state_dict_prefix=None,
         remote_semaphore_handles=None,
-        from_remote_semaphore_handles=None,
-        to_remote_semaphore_handles=None,
+        semaphore_offset_index=None,
         worker_sub_device_id=None,
     ):
         super().__init__()
@@ -42,9 +41,7 @@ class MLP(LightweightModule):
         hidden_dim_string = f".hidden_dim_{args.hidden_dim}" if args.hidden_dim != args.unpadded_hidden_dim else ""
 
         self.remote_semaphore_handles = remote_semaphore_handles
-        self.from_remote_semaphore_handles = remote_semaphore_handles
-        self.from_remote_semaphore_handles = from_remote_semaphore_handles
-        self.to_remote_semaphore_handles = to_remote_semaphore_handles
+        self.semaphore_offset_index = semaphore_offset_index
         self.worker_sub_device_id = worker_sub_device_id
 
         if args.dummy_weights:
@@ -239,7 +236,7 @@ class MLP(LightweightModule):
         ttnn.deallocate(w2_in)
         if mode == "decode" and not TG:
             w2_out = ttnn.sharded_to_interleaved(w2_out, ttnn.DRAM_MEMORY_CONFIG)
-        print("reducing 224 mlp.py")
+        # print("reducing 224 mlp.py")
         # w2_out_reduced = tt_all_reduce(
         #     w2_out,
         #     self.mesh_device,
@@ -274,8 +271,7 @@ class MLP(LightweightModule):
             use_composite=True if self.dim == 8192 else False,
             topology=self.args.ccl_topology(),
             remote_semaphore_handles=self.remote_semaphore_handles,
-            from_remote_semaphore_handles=self.from_remote_semaphore_handles,
-            to_remote_semaphore_handles=self.to_remote_semaphore_handles,
+            semaphore_offset_index=self.semaphore_offset_index,
             worker_sub_device_id=self.worker_sub_device_id,
         )
 

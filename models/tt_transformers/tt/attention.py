@@ -11,6 +11,11 @@ from models.common.lightweightmodule import LightweightModule
 from models.common.rmsnorm import RMSNorm
 from models.tt_transformers.tt.ccl import tt_all_gather, tt_all_reduce
 from models.tt_transformers.tt.model_config import OpGroup, TensorGroup
+from models.tt_transformers.tt.semaphores import get_next_semaphores
+from tests.tt_eager.python_api_testing.sweep_tests.comparison_funcs import comp_pcc
+from ttnn import ConcatMeshToTensor
+
+persistent_buffer_shapes = set()
 
 
 class Attention(LightweightModule):
@@ -25,8 +30,8 @@ class Attention(LightweightModule):
         configuration,
         paged_attention_config=None,
         use_paged_kv_cache=False,
-        from_remote_semaphore_handles=None,
-        to_remote_semaphore_handles=None,
+        remote_semaphore_handles=None,
+        semaphore_offset_index=None,
         worker_sub_device_id=None,
     ):
         super().__init__()
@@ -54,8 +59,8 @@ class Attention(LightweightModule):
             max(self.max_batch_size // self.num_device_groups, 1) if self.TG else self.max_batch_size
         )
 
-        self.from_remote_semaphore_handles = (from_remote_semaphore_handles,)
-        self.to_remote_semaphore_handles = (to_remote_semaphore_handles,)
+        self.remote_semaphore_handles = remote_semaphore_handles
+        self.semaphore_offset_index = semaphore_offset_index
         self.worker_sub_device_id = (worker_sub_device_id,)
 
         self.n_local_heads = self.n_heads // self.num_devices_per_group
@@ -411,7 +416,7 @@ class Attention(LightweightModule):
             xqkv_fused_sharded = xqkv_fused_sharded + self.wqkv_bias_decode[num_tiles - 1]
 
         ttnn.deallocate(x)
-        print("reducing 407 attention.py")
+        # print("reducing 407 attention.py")
         xqkv_fused = tt_all_reduce(
             xqkv_fused_sharded,
             self.mesh_device,
@@ -422,6 +427,9 @@ class Attention(LightweightModule):
             sharded=True,
             dtype=self.ccl_dtype,
             topology=self.ccl_topology,
+            remote_semaphore_handles=self.remote_semaphore_handles,
+            semaphore_offset_index=self.semaphore_offset_index,
+            worker_sub_device_id=self.worker_sub_device_id,
         )
 
         if self.TG:
@@ -537,11 +545,12 @@ class Attention(LightweightModule):
         ttnn.deallocate(attn_output_11BH)
         ttnn.deallocate(attn_output_1G4D)
 
+        # self.use_fused_all_gather_matmul = False
         if self.use_fused_all_gather_matmul:
             attn_output_cat = ttnn.to_memory_config(
                 attn_output_cat, self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"]
             )
-            print("all_gather_matmul 537 attention.py")
+            # print("all_gather_matmul 537 attention.py")
             # _, dense_out_sharded, _ = ttnn.experimental.all_gather_matmul(
             #     attn_output_cat,
             #     self.wo,
@@ -570,39 +579,37 @@ class Attention(LightweightModule):
             #     fuse_batch=False,
             # )
 
-            print("ag_output")
-            print(ag_output_shape)
+            L1 = False
+            zero = True
+
+            if tuple(ag_output_shape) not in persistent_buffer_shapes:
+                persistent_buffer_shapes.add(tuple(ag_output_shape))
+                # print("adding output persistent buffer shape:", ag_output_shape)
             persistent_output_buffer = ttnn.from_torch(
-                torch.zeros(ag_output_shape),
+                torch.zeros(ag_output_shape) if zero else torch.ones(ag_output_shape),
                 device=self.mesh_device,
                 layout=ttnn.TILE_LAYOUT,
                 dtype=ag_input_dtype,
-                memory_config=self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"],
+                memory_config=self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"]
+                if L1
+                else ttnn.MemoryConfig(ttnn.TensorMemoryLayout.INTERLEAVED, ttnn.BufferType.DRAM),
                 mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
             )
             # Assign to named variables for clarity and inspection
-            input_tensor = attn_output_cat
+            if L1:
+                input_tensor = attn_output_cat
+            else:
+                input_tensor = ttnn.sharded_to_interleaved(attn_output_cat, ttnn.DRAM_MEMORY_CONFIG)
+                input_tensor = ttnn.to_memory_config(
+                    input_tensor, ttnn.MemoryConfig(ttnn.TensorMemoryLayout.INTERLEAVED, ttnn.BufferType.DRAM)
+                )
             weight_tensor = self.wo
             output_buffer = persistent_output_buffer
             dim = 3
-            semaphores = list([self.from_remote_semaphore_handles[0], self.to_remote_semaphore_handles[0]])
+            semaphores = get_next_semaphores(self.remote_semaphore_handles, self.semaphore_offset_index, 2)
             grid_offset = ttnn.CoreCoord(0, 4)  # Make sure to wrap in CoreCoord, not (0, 4)
 
             core_grid = (8, 1)
-            print(self.model_config["ATTN_ALL_GATHER_MATMUL_PROGCFG"])
-            program_config = ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
-                compute_with_storage_grid_size=core_grid,
-                in0_block_w=32,  # how much inner dim you take each time
-                out_subblock_h=1,  # Must be divisible by per_core_M
-                out_subblock_w=4,  # Must be divisible by per_core_N, out_subblock_w * out_subblock_h <= 4
-                per_core_M=max(1, math.ceil(ag_output_shape[2] / 32 / core_grid[1])),  # M / TILE_HEIGHT / Grid_Size
-                per_core_N=max(
-                    1, math.ceil(attn_output_cat.shape[3] / 32 / core_grid[0])
-                ),  # N / TILE_WIDTH / Grid_Size
-                transpose_mcast=False,
-                fused_activation=None,  # ttnn.UnaryOpType.SILU,
-                fuse_batch=True,
-            )
 
             # Optional keyword arguments
             num_links = 1
@@ -610,25 +617,11 @@ class Attention(LightweightModule):
             memcfg_mm = self.model_config["DECODE_RESIDUAL_MEMCFG"]
             subdevice = self.worker_sub_device_id[0]
             progcfg = self.model_config["ATTN_ALL_GATHER_MATMUL_PROGCFG"]
-            # progcfg = program_config
             kernel_cfg = self.li_o_decode_compute_kernel_cfg
 
-            # Debug print for each
-            # print("input_tensor:", type(input_tensor), getattr(input_tensor, "shape", "no shape"))
-            # print("weight_tensor:", type(weight_tensor), getattr(weight_tensor, "shape", "no shape"))
-            # print("output_buffer:", type(output_buffer), getattr(output_buffer, "shape", "no shape"))
-            # print("dim:", type(dim))
-            # print("semaphores:", type(semaphores), "len =", len(semaphores), "types =", [type(s) for s in semaphores])
-            # print("grid_offset:", type(grid_offset))
-
-            # print("num_links:", type(num_links))
-            # print("memcfg_ag:", type(memcfg_ag))
-            # print("memcfg_mm:", type(memcfg_mm))
-            # print("subdevice:", type(subdevice))
-            # print("progcfg:", progcfg)
-            # print("kernel_cfg:", type(kernel_cfg))
-
+            self.sub_device_stall_group = [self.worker_sub_device_id[0]]
             # Actual function call
+            ttnn.synchronize_device(self.mesh_device, sub_device_ids=self.sub_device_stall_group)
             tt_all_gather_out_tensor, dense_out_sharded = ttnn.experimental.all_gather_matmul_async(
                 input_tensor,
                 weight_tensor,
@@ -637,14 +630,57 @@ class Attention(LightweightModule):
                 semaphores,
                 grid_offset,
                 num_links=num_links,
-                memory_config_ag=memcfg_ag,
-                memory_config_mm=memcfg_mm,
+                # memory_config_ag=memcfg_ag,
+                # memory_config_mm=memcfg_mm,
+                topology=ttnn.Topology.Ring,
                 subdevice_id=subdevice,
                 program_config=progcfg,
                 compute_kernel_config=kernel_cfg,
             )
-            print("finished agmm")
-            ttnn.deallocate(attn_output_cat)
+            ttnn.synchronize_device(self.mesh_device, sub_device_ids=self.sub_device_stall_group)
+            # tt_all_gather_out_tensor = ttnn.experimental.all_gather_async(
+            #         input_tensor,
+            #         persistent_output_buffer=output_buffer,
+            #         dim=dim,
+            #         multi_device_global_semaphore=semaphores,
+            #         num_links=num_links,
+            #         subdevice_id=subdevice,
+            #     )
+
+            # # ttnn.synchronize_device(self.mesh_device, sub_device_ids=self.sub_device_stall_group)
+
+            # dense_out_sharded = ttnn.linear(
+            #     tt_all_gather_out_tensor,
+            #     weight_tensor,
+            #     program_config=progcfg,
+            #     compute_kernel_config=kernel_cfg,
+            # )
+
+            tt_input_tensor = ttnn.from_device(input_tensor)
+            tt_input_tensor = ttnn.to_torch(tt_input_tensor, mesh_composer=ConcatMeshToTensor(self.mesh_device, dim=3))
+            # tt_input_tensor = tt_input_tensor[:, :, :, 0 : input_tensor.shape[3]]
+            print("input shape: ", tt_input_tensor.shape)
+            eq, output = comp_pcc(torch.zeros(tt_input_tensor.shape), tt_input_tensor)
+            assert not eq, f"input is just ZEROS: {output}"
+            print(output)
+
+            tt_ag_out = ttnn.from_device(tt_all_gather_out_tensor)
+            tt_ag_out = ttnn.to_torch(tt_ag_out, mesh_composer=ConcatMeshToTensor(self.mesh_device, dim=3))
+            tt_ag_out = tt_ag_out[:, :, :, 0 : tt_all_gather_out_tensor.shape[3]]
+            print("AG out shape: ", tt_ag_out.shape)
+            eq, output = comp_pcc(torch.zeros(tt_ag_out.shape), tt_ag_out)
+            assert not eq, f"ag is just ZEROS: {output}"
+            print(output)
+
+            tt_mm_out = ttnn.from_device(dense_out_sharded)
+            tt_mm_out = ttnn.to_torch(tt_mm_out, mesh_composer=ConcatMeshToTensor(self.mesh_device, dim=3))
+            print(tt_mm_out.shape)
+            # tt_mm_out = tt_mm_out[:, :, :, 0 : dense_out_sharded.shape[3]]
+            eq, output = comp_pcc(torch.zeros(tt_mm_out.shape), tt_mm_out)
+            assert not eq, f"mm is just ZEROS: {output}"
+            print(output)
+
+            # ttnn.deallocate(attn_output_cat)
             dense_out_sharded = ttnn.to_memory_config(dense_out_sharded, self.model_config["DECODE_RESIDUAL_MEMCFG"])
             return dense_out_sharded
 
@@ -653,11 +689,14 @@ class Attention(LightweightModule):
             attn_output = tt_all_gather(
                 attn_output_cat,
                 self.mesh_device,
-                dim=2,
+                dim=3,
                 cluster_axis=1,
                 num_links=2,
                 memory_config=self.model_config["GATHER_USERS_MEMCFG"](list(self.mesh_device.shape)[1]),
                 sharded=True,
+                remote_semaphore_handles=self.remote_semaphore_handles,
+                semaphore_offset_index=self.semaphore_offset_index,
+                worker_sub_device_id=self.worker_sub_device_id,
                 # dtype=self.ccl_dtype,  # Running bf16 until we have SDPA output bfp8 df; otherwise we have two sharded to interleaved/interleaved to sharded conversions
             )
             if self.TG:
@@ -673,6 +712,8 @@ class Attention(LightweightModule):
                 )
 
             # TODO: Fix this once self.TG supports dram-sharded matmuls
+            print("a shape: ", attn_output.shape)
+            print("b shape: ", self.wo.shape)
             dense_out_sharded = ttnn.matmul(
                 attn_output,
                 self.wo,
@@ -707,6 +748,9 @@ class Attention(LightweightModule):
                 sharded=True,
                 dtype=self.ccl_dtype,
                 use_composite=True if self.hidden_size == 8192 else False,
+                remote_semaphore_handles=self.remote_semaphore_handles,
+                semaphore_offset_index=self.semaphore_offset_index,
+                worker_sub_device_id=self.worker_sub_device_id,
             )
 
             if not self.TG:

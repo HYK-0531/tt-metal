@@ -53,12 +53,12 @@ class Transformer(LightweightModule):
         self.sub_device_manager = mesh_device.create_sub_device_manager([self.worker_sub_device], 0)
         self.mesh_device.load_sub_device_manager(self.sub_device_manager)
         # # create global semaphore handles
-        self.from_remote_semaphore_handles = ttnn.create_global_semaphore(mesh_device, self.ccl_sub_device_crs, 0)
-        self.to_remote_semaphore_handles = ttnn.create_global_semaphore(mesh_device, self.ccl_sub_device_crs, 0)
         self.remote_semaphore_handles = [
-            ttnn.create_global_semaphore(mesh_device, self.ccl_sub_device_crs, 0) for i in range(3)
+            ttnn.create_global_semaphore(mesh_device, self.ccl_sub_device_crs, 0) for i in range(6)
         ]
-        self.mesh_device.set_sub_device_stall_group([self.worker_sub_device_id])
+        self.mesh_device.set_sub_device_stall_group(self.sub_device_stall_group)
+        self.semaphore_offset_index = 0
+
         # print("USING FABRIC CCL")
 
         self.embd = Embedding(
@@ -92,8 +92,7 @@ class Transformer(LightweightModule):
                 paged_attention_config=paged_attention_config,
                 use_paged_kv_cache=use_paged_kv_cache,
                 remote_semaphore_handles=self.remote_semaphore_handles,
-                from_remote_semaphore_handles=self.from_remote_semaphore_handles,
-                to_remote_semaphore_handles=self.to_remote_semaphore_handles,
+                semaphore_offset_index=self.semaphore_offset_index,
                 worker_sub_device_id=self.worker_sub_device_id,
             )
             for i in tqdm(range(self.n_layers))
@@ -113,10 +112,11 @@ class Transformer(LightweightModule):
                 sharded_output_config=self.model_config["LM_HEAD_INPUT_MEMCFG"],
                 ccl_topology=self.args.ccl_topology(),
             ),
+            self.mesh_device,
             args,
             args.is_galaxy,
-            from_remote_semaphore_handles=self.from_remote_semaphore_handles,
-            to_remote_semaphore_handles=self.to_remote_semaphore_handles,
+            remote_semaphore_handles=self.remote_semaphore_handles,
+            semaphore_offset_index=self.semaphore_offset_index,
             worker_sub_device_id=self.worker_sub_device_id,
         )
 
@@ -428,4 +428,6 @@ class Transformer(LightweightModule):
         if mode == "prefill":
             x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT)
             x = ttnn.to_memory_config(x, memory_config=ttnn.DRAM_MEMORY_CONFIG)
+        print("synchronizing device after lm_head")
+        ttnn.synchronize_device(self.mesh_device, sub_device_ids=self.sub_device_stall_group)
         return x

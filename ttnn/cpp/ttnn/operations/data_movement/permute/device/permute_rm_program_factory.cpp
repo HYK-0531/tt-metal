@@ -72,8 +72,7 @@ PermuteDeviceOperation::MultiCoreRowInvariant::cached_program_t PermuteDeviceOpe
         tt::tt_metal::CircularBufferConfig(
             num_input_pages_to_read * input_rm_page_size, {{src0_cb_index, cb_data_format}})
             .set_page_size(src0_cb_index, input_rm_page_size);
-    auto cb_src0 = tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_src0_config);
-
+    tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_src0_config);
     uint32_t N = operation_attributes.dims.size();
 
     bool src_is_dram = src_buffer->buffer_type() == tt::tt_metal::BufferType::DRAM;

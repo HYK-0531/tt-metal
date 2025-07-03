@@ -81,15 +81,13 @@ Fold::MultiCoreDRAMFold::cached_program_t fold_multi_core_tiled_interleaved(
         tt::tt_metal::CircularBufferConfig(
             num_input_tiles * single_tile_size * double_buffer, {{src0_cb_index, cb_data_format}})
             .set_page_size(src0_cb_index, single_tile_size);
-    auto cb_src0 = tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_src0_config);
-
+    tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_src0_config);
     uint32_t src1_cb_index = tt::CBIndex::c_1;
     tt::tt_metal::CircularBufferConfig cb_src1_config =
         tt::tt_metal::CircularBufferConfig(
             num_input_tiles * single_tile_size * double_buffer, {{src1_cb_index, cb_data_format}})
             .set_page_size(src1_cb_index, single_tile_size);
-    auto cb_src1 = tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_src1_config);
-
+    tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_src1_config);
     // Configure compile-time arguments for reader kernel
     std::vector<uint32_t> reader_compile_time_args = {
         ntiles_per_row,
@@ -288,8 +286,7 @@ Fold::MultiCoreDRAMFold::cached_program_t fold_multi_core_row_major_interleaved(
     // Create source circular buffer - sized for input work per core
     auto src_cb_config = CircularBufferConfig(double_buffer * aligned_stick_nbytes, {{cb_src0_index, cb_data_format}})
                              .set_page_size(cb_src0_index, aligned_stick_nbytes);
-    auto cb_src0 = CreateCircularBuffer(program, all_cores, src_cb_config);
-
+    CreateCircularBuffer(program, all_cores, src_cb_config);
     bool src_stick_size_is_power_of_two = is_power_of_two_at_least_32(stick_nbytes);
     uint32_t src_log2_stick_size = src_stick_size_is_power_of_two ? (std::uint32_t)std::log2(stick_nbytes) : 0;
     // Create reader kernel

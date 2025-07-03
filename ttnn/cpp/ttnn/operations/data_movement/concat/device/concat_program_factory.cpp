@@ -762,8 +762,7 @@ tt_metal::operation::ProgramWithCallbacks concat_multi_core(
     tt_metal::CircularBufferConfig cb_src0_config =
         tt_metal::CircularBufferConfig(num_input_pages * single_page_size, {{src0_cb_index, cb_data_format}})
             .set_page_size(src0_cb_index, single_page_size);
-    auto cb_src0 = tt_metal::CreateCircularBuffer(program, all_cores, cb_src0_config);
-
+    tt_metal::CreateCircularBuffer(program, all_cores, cb_src0_config);
     uint32_t num_dims = output.padded_shape().rank();
 
     std::vector<uint32_t> src_addr(num_input_tensors);

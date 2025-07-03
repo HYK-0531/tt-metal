@@ -12,7 +12,16 @@ from models.demos.t3000.mixtral8x7b.tt.mixtral_decoder import TtTransformerBlock
 
 
 class TtTransformer(LightweightModule):
-    def __init__(self, mesh_device, state_dict, args, dtype, layers, start_pos_ids, rotary_on_host=False):
+    def __init__(
+        self,
+        mesh_device,
+        state_dict,
+        args,
+        dtype,
+        layers,
+        start_pos_ids,
+        rotary_on_host=False,
+    ):
         super().__init__()
         self.args = args
         self.vocab_size = args.vocab_size
@@ -22,6 +31,28 @@ class TtTransformer(LightweightModule):
         self.rotary_on_host = rotary_on_host
         assert self.vocab_size > 0
 
+        self.compute_grid_size = mesh_device.compute_with_storage_grid_size()
+        self.ccl_sub_device_crs = ttnn.CoreRangeSet(
+            {
+                ttnn.CoreRange(
+                    ttnn.CoreCoord(0, 0), ttnn.CoreCoord(self.compute_grid_size.x - 1, self.compute_grid_size.y - 1)
+                )
+            }
+        )
+
+        # The used CCLs use up to 3 global semaphores
+        self.multi_device_global_semaphore_handles = [
+            ttnn.create_global_semaphore(mesh_device, self.ccl_sub_device_crs, 0) for _ in range(3)
+        ]
+
+        self.worker_sub_device_id = ttnn.SubDeviceId(0)
+
+        self.worker_sub_device = ttnn.SubDevice([self.ccl_sub_device_crs])
+        self.sub_device_stall_group = [self.worker_sub_device_id]
+        self.sub_device_manager = mesh_device.create_sub_device_manager([self.worker_sub_device], 0)
+        self.mesh_device.load_sub_device_manager(self.sub_device_manager)
+        self.mesh_device.set_sub_device_stall_group(self.sub_device_stall_group)
+
         self.layers = [
             TtTransformerBlock(
                 mesh_device=mesh_device,
@@ -29,6 +60,8 @@ class TtTransformer(LightweightModule):
                 args=args,
                 dtype=dtype,
                 layer_num=i,
+                multi_device_global_semaphore_handles=self.multi_device_global_semaphore_handles,
+                worker_sub_device_id=self.worker_sub_device_id,
             )
             for i in layers
         ]

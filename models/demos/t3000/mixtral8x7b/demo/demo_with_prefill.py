@@ -233,6 +233,8 @@ def run_mixtral_demo(user_input, batch_size, mesh_device, instruct_mode, test_pr
         current_rot_mat,
         rot_matrix,
         dtype,
+        tt_model.multi_device_global_semaphore_handles,
+        tt_model.worker_sub_device_id,
     )
     profiler.end("cache_attention")
 
@@ -484,6 +486,11 @@ def run_mixtral_demo(user_input, batch_size, mesh_device, instruct_mode, test_pr
         "16k-instruct",
         "32k-instruct",
     ],
+)
+@pytest.mark.parametrize(
+    "device_params",
+    [{"fabric_config": ttnn.FabricConfig.FABRIC_1D}],
+    indirect=True,
 )
 def test_mixtral8x7b_demo(t3k_mesh_device, use_program_cache, input_prompts, instruct_weights, prefill_len, is_ci_env):
     if is_ci_env and instruct_weights == False:

@@ -17,6 +17,8 @@ class TtTransformerBlock(LightweightModule):
         args,
         layer_num,
         dtype,
+        multi_device_global_semaphore_handles=None,
+        worker_sub_device_id=None,
     ):
         super().__init__()
 
@@ -32,6 +34,8 @@ class TtTransformerBlock(LightweightModule):
             args=args,
             layer_num=layer_num,
             dtype=dtype,
+            multi_device_global_semaphore_handles=multi_device_global_semaphore_handles,
+            worker_sub_device_id=worker_sub_device_id,
         )
 
         self.feed_forward = TtMoeLayer(
@@ -51,6 +55,8 @@ class TtTransformerBlock(LightweightModule):
             args=args,
             layer_num=layer_num,
             dtype=dtype,
+            multi_device_global_semaphore_handles=multi_device_global_semaphore_handles,
+            worker_sub_device_id=worker_sub_device_id,
         )
         self.attention_norm = RMSNorm(
             device=mesh_device,

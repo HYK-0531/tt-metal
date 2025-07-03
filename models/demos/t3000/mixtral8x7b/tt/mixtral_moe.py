@@ -10,13 +10,25 @@ from ttnn import ReplicateTensorToMesh, ShardTensorToMesh
 
 
 class TtMoeLayer(LightweightModule):
-    def __init__(self, mesh_device, state_dict, experts, args, layer_num, dtype):
+    def __init__(
+        self,
+        mesh_device,
+        state_dict,
+        experts,
+        args,
+        layer_num,
+        dtype,
+        multi_device_global_semaphore_handles=None,
+        worker_sub_device_id=None,
+    ):
         super().__init__()
         self.mesh_device = mesh_device
         self.experts = experts
         self.args = args
         self.dtype = dtype
         self.model_config = args.get_model_config()
+        self.multi_device_global_semaphore_handles = multi_device_global_semaphore_handles
+        self.worker_sub_device_id = worker_sub_device_id
 
         gate_name = f"layers.{layer_num}.feed_forward.gate.weight"
         if args.dummy_weights:
@@ -131,7 +143,19 @@ class TtMoeLayer(LightweightModule):
 
         # All gather
         if mode == "prefill":
-            output_11BH_gathered = ttnn.all_gather(results_11BH, dim=1, num_links=1)
+            # print("start mixtral_moe 134")
+            # output_11BH_gathered = ttnn.all_gather(results_11BH, dim=1, num_links=1)
+
+            output_11BH_gathered = ttnn.experimental.all_gather_async(
+                results_11BH,
+                dim=1,
+                multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
+                num_links=1,
+                memory_config=results_11BH.memory_config(),
+                subdevice_id=self.worker_sub_device_id,
+            )
+
+            # print("end mixtral_moe 134")
             results_11BH.deallocate(True)
             # Sum reduction
             output_11BH_reduced = ttnn.experimental.fast_reduce_nc(
@@ -139,7 +163,19 @@ class TtMoeLayer(LightweightModule):
             )
             output_11BH_gathered.deallocate(True)
         else:  # Decode mode
-            output_11BH_gathered = ttnn.all_gather(results_11BH, dim=2, num_links=1)
+            # print("start mixtral_moe 154")
+            # output_11BH_gathered = ttnn.all_gather(results_11BH, dim=2, num_links=1)
+
+            output_11BH_gathered = ttnn.experimental.all_gather_async(
+                results_11BH,
+                dim=2,
+                multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
+                num_links=1,
+                memory_config=results_11BH.memory_config(),
+                subdevice_id=self.worker_sub_device_id,
+            )
+
+            # print("end mixtral_moe 154")
             results_11BH.deallocate(True)
             # Reduction
             output_11BH_reduced = ttnn.matmul(

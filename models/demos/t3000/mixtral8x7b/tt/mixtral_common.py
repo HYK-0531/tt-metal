@@ -214,7 +214,16 @@ def sample(logits: torch.Tensor, temperature: float, top_p: float):
     return next_token
 
 
-def cache_attention(mesh_device, state_dict, model_args, current_rot_mat, rot_matrix, dtype):
+def cache_attention(
+    mesh_device,
+    state_dict,
+    model_args,
+    current_rot_mat,
+    rot_matrix,
+    dtype,
+    multi_device_global_semaphore_handles,
+    worker_sub_device_id,
+):
     from models.demos.t3000.mixtral8x7b.tt.mixtral_attention import TtMixtralAttention
 
     logger.info(f"Caching attention...")
@@ -234,6 +243,8 @@ def cache_attention(mesh_device, state_dict, model_args, current_rot_mat, rot_ma
         model_args,
         layer_num=0,
         dtype=dtype,
+        multi_device_global_semaphore_handles=multi_device_global_semaphore_handles,
+        worker_sub_device_id=worker_sub_device_id,
     )
 
     # SDPA in attention only supports chunk sizes of 32, 256, 512. This loop caches all 3 variants of SDPA

@@ -1748,6 +1748,20 @@ TEST_F(UnitMeshCQFixture, TestLogicalCoordinatesCompute) {
     }
 }
 
+<<<<<<< HEAD
+=======
+// Ensure the eth core can access their own logical coordinate. Same binary enqueued to multiple cores.
+TEST_F(UnitMeshCQFixture, TestLogicalCoordinatesEth) {
+    for (const auto& device : devices_) {
+        if (!does_device_have_active_eth_cores(device->get_devices()[0])) {
+            GTEST_SKIP() << "Skipping test because device " << device->id()
+                         << " does not have any active ethernet cores";
+        }
+        local_test_functions::test_my_coordinates(device, tt::RISCV::ERISC);
+    }
+}
+
+>>>>>>> c821b17242 (fixed some formatting/naming)
 // Ensure the data movement core can access their own logical coordinate. Same binary enqueued to multiple cores.
 TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TestLogicalCoordinatesDataMovement) {
     for (const auto& device : devices_) {
@@ -1766,6 +1780,21 @@ TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TestLogicalCoordinatesCompute)
     }
 }
 
+<<<<<<< HEAD
+=======
+// Ensure the eth core can access their own logical coordinate. Same binary enqueued to multiple cores.
+TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TestLogicalCoordinatesEth) {
+    for (const auto& device : devices_) {
+        if (!does_device_have_active_eth_cores(device->get_devices()[0])) {
+            GTEST_SKIP() << "Skipping test because device " << device->id()
+                         << " does not have any active ethernet cores";
+        }
+        local_test_functions::test_my_coordinates(device, tt::RISCV::ERISC, 0);
+        local_test_functions::test_my_coordinates(device, tt::RISCV::ERISC, 1);
+    }
+}
+
+>>>>>>> c821b17242 (fixed some formatting/naming)
 }  // end namespace multicore_tests
 }  // namespace basic_tests
 

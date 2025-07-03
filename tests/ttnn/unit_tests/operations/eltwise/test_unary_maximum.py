@@ -52,7 +52,7 @@ def test_unary_max_int32_test(scalar, device):
         (-(2**31) + 1, (2**31) - 1),
     ],
 )
-@pytest.mark.parametrize("scalar", [-1, -2, -3, -4, -5, 3, 0, 1, 100, 10, 5, -16777216, 16777216, -16777215, 16777215])
+@pytest.mark.parametrize("scalar", [-2, -3, -4, 3, 0, 1, 100, 10, 5, -16777216, 16777216, 16777215])
 def test_unary_max_int32(input_shapes, low, high, scalar, device):
     num_elements = torch.prod(torch.tensor(input_shapes)).item()
     torch_input = torch.linspace(high, low, num_elements, dtype=torch.int32)

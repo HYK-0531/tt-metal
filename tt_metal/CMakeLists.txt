@@ -73,7 +73,6 @@ target_sources(
             api/tt-metalium/dispatch_core_common.hpp
             api/tt-metalium/event.hpp
             api/tt-metalium/fabric_host_interface.h
-            api/tt-metalium/fabric_edm_packet_header.hpp
             api/tt-metalium/global_circular_buffer.hpp
             api/tt-metalium/global_semaphore.hpp
             api/tt-metalium/graph_tracking.hpp

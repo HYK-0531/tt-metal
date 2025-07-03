@@ -6,7 +6,7 @@
 #include <tt-metalium/buffer_types.hpp>
 #include "tt_metal/fabric/hw/inc/edm_fabric/fabric_connection_manager.hpp"
 #include "tt_metal/fabric/hw/inc/noc_addr.h"
-#include <tt-metalium/fabric_edm_packet_header.hpp>
+#include "tt_metal/fabric/fabric_edm_packet_header.hpp"
 #include <cstdint>
 #include <utility>
 

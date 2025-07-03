@@ -44,6 +44,7 @@ target_sources(
             hw/inc/edm_fabric/fabric_edm_packet_header_validate.hpp
             hw/inc/edm_fabric/fabric_edm_packet_transmission.hpp
             hw/inc/edm_fabric/fabric_erisc_datamover_channels.hpp
+            fabric_edm_packet_header.hpp
 )
 
 # Include helper functions and generate headers from flatbuffer schemas

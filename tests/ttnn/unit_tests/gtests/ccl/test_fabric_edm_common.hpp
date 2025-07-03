@@ -14,7 +14,6 @@
 #include <tt-metalium/fabric.hpp>
 #include "tt_metal/test_utils/df/df.hpp"
 #include "tt_metal/test_utils/env_vars.hpp"
-#include <tt-metalium/fabric_edm_packet_header.hpp>
 
 #include "ttnn/common/queue_id.hpp"
 #include "ttnn/distributed/distributed_tensor.hpp"

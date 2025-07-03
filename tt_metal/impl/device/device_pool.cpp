@@ -336,11 +336,13 @@ void DevicePool::initialize(
     _inst->use_max_eth_core_count_on_all_devices_ = use_max_eth_core_count_on_all_devices;
     _inst->add_devices_to_pool(device_ids);
     _inst->init_firmware_on_active_devices();
+    std::cout << "Device Pool Initialized" << std::endl;
 }
 
 void DevicePool::initialize_fabric_and_dispatch_fw() const {
     this->initialize_active_devices();
     this->wait_for_fabric_router_sync();
+    std::cout << "Done wait for fabric router sync" << std::endl;
 }
 
 void DevicePool::initialize_host(IDevice* dev) const {
@@ -456,6 +458,7 @@ void DevicePool::initialize_active_devices() const {
     }
 
     // Init command queue
+    std::cout << "Initializing Command Queue" << std::endl;
     for (auto dev : active_devices) {
         // For Galaxy init, we only need to loop over mmio devices
         const auto& mmio_device_id =
@@ -479,6 +482,7 @@ void DevicePool::initialize_active_devices() const {
         }
     }
     _inst->dispatch_firmware_active_ = true;
+    std::cout << "Active Devices Initialized" << std::endl;
 }
 
 void DevicePool::activate_device(chip_id_t id) {
@@ -703,9 +707,11 @@ void DevicePool::init_firmware_on_active_devices() const {
     if (init_profiler_) {
         this->init_profiler();
     }
+    std::cout << "Initializing Fabric and Dispatch Firmware" << std::endl;
     if (initialize_fabric_and_dispatch_fw_) {
         this->initialize_fabric_and_dispatch_fw();
     }
+    std::cout << "Active Devices Initialized with Firmware" << std::endl;
 }
 
 DevicePool::DevicePool() {

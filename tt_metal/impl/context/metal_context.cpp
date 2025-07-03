@@ -127,7 +127,7 @@ void MetalContext::initialize(
         int ai_clk = cluster_->get_device_aiclk(device_id);
         log_info(tt::LogMetal, "AI CLK for device {} is:   {} MHz", device_id, ai_clk);
         generate_device_bank_to_noc_tables(device_id);
-
+        std::cout << "Done generating device bank to noc tables for device " << device_id << std::endl;
         // Create build env for this device, and build FW if it's not built already
         BuildEnvManager::get_instance().add_build_env(device_id, num_hw_cqs_);
         uint32_t fw_build_key = BuildEnvManager::get_instance().get_device_build_env(device_id).build_key;
@@ -135,15 +135,16 @@ void MetalContext::initialize(
             BuildEnvManager::get_instance().build_firmware(device_id);
             firmware_built_keys_.insert(fw_build_key);
         }
-
+        std::cout << "Done building firmware for device " << device_id << std::endl;
         // Clear the entire launch message ring buffer on ethernet cores before application firmware is activated.
         // This is required since ethernet cores context switch between application and routing firmware.
         // If ERISC application firmware is activated before the launch messages are cleared, it can enter an undefined
         // state by reading a corrupted launch message. Routing firmware will never run in this case, causing UMD issued
         // transactions to hang.
         clear_launch_messages_on_eth_cores(device_id);
+        std::cout << "Done clearing launch messages on ethernet cores for device " << device_id << std::endl;
     }
-
+    std::cout << "Final setup" << std::endl;
     // Populate FD topology across all devices
     if (rtoptions_.get_fast_dispatch()) {
         std::set<chip_id_t> all_devices_set(all_devices.begin(), all_devices.end());
@@ -180,7 +181,7 @@ void MetalContext::initialize(
         std::atexit([]() { MetalContext::instance().teardown(); });
         teardown_registered_ = true;
     }
-
+    std::cout << "Metal Context initialized successfully." << std::endl;
 }
 
 void MetalContext::teardown() {

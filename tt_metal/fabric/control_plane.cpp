@@ -318,20 +318,28 @@ LocalMeshBinding ControlPlane::initialize_local_mesh_binding() {
 }
 
 ControlPlane::ControlPlane(const std::string& mesh_graph_desc_file) {
+    std::cout << "Init CP" << std::endl;
     this->routing_table_generator_ = std::make_unique<RoutingTableGenerator>(mesh_graph_desc_file);
+    std::cout << "Routing table generator initialized" << std::endl;
     this->local_mesh_binding_ = this->initialize_local_mesh_binding();
+    std::cout << "Local mesh binding initialized" << std::endl;
     // Printing, only enabled with log_debug
     this->routing_table_generator_->mesh_graph->print_connectivity();
+    std::cout << "Mesh graph connectivity printed" << std::endl;
     // Printing, only enabled with log_debug
     this->routing_table_generator_->print_routing_tables();
-
+    std::cout << "Routing tables printed" << std::endl;
     // Initialize the control plane routers based on mesh graph
     const auto& logical_mesh_chip_id_to_physical_chip_id_mapping =
         this->get_physical_chip_mapping_from_mesh_graph_desc_file(mesh_graph_desc_file);
+    std::cout << "Logical to physical chip mapping loaded" << std::endl;
     this->load_physical_chip_mapping(logical_mesh_chip_id_to_physical_chip_id_mapping);
+    std::cout << "Physical chip mapping loaded" << std::endl;
     // Query and generate intermesh ethernet links per physical chip
     this->initialize_intermesh_eth_links();
+    std::cout << "Intermesh ethernet links initialized" << std::endl;
     this->generate_local_intermesh_link_table();
+    std::cout << "Done Init CP" << std::endl;
 }
 
 ControlPlane::ControlPlane(

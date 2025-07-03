@@ -28,7 +28,7 @@ def test_yolov6l(device, reset_seeds):
     model = fuse_model(model).eval()
     stride = int(model.stride.max())
 
-    torch_input = torch.randn(1, 3, 640, 480)
+    torch_input = torch.randn(1, 3, 640, 640)
 
     parameters = create_yolov6l_model_parameters(model, torch_input, device)
 

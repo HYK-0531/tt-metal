@@ -1773,14 +1773,22 @@ TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TestLogicalCoordinatesCompute)
 namespace stress_tests {
 
 TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TensixTestRandomizedProgram) {
-    uint32_t NUM_PROGRAMS = 100;
+    uint32_t NUM_WORKLOADS = 100;
     uint32_t MAX_LOOP = 100;
     uint32_t page_size = 1024;
 
     if (this->arch_ == tt::ARCH::BLACKHOLE) {
         GTEST_SKIP();  // Running on second CQ is hanging on CI
     }
+    if (this->arch_ == tt::ARCH::BLACKHOLE) {
+        GTEST_SKIP();  // Running on second CQ is hanging on CI
+    }
 
+    // Make random
+    auto random_seed = 0;  // (unsigned int)time(NULL);
+    uint32_t seed = tt::parse_env("TT_METAL_SEED", random_seed);
+    log_info(tt::LogTest, "Using Test Seed: {}", seed);
+    srand(seed);
     // Make random
     auto random_seed = 0;  // (unsigned int)time(NULL);
     uint32_t seed = tt::parse_env("TT_METAL_SEED", random_seed);
@@ -1796,7 +1804,7 @@ TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TensixTestRandomizedProgram) {
     log_info(tt::LogTest, "Starting compile of {} programs now.", NUM_PROGRAMS);
 
     vector<distributed::MeshWorkload> workloads;
-    for (uint32_t i = 0; i < NUM_PROGRAMS; i++) {
+    for (uint32_t i = 0; i < NUM_WORKLOADS; i++) {
         workloads.push_back(distributed::MeshWorkload());
         distributed::MeshWorkload& workload = workloads.back();
         distributed::MeshCoordinate zero_coord = distributed::MeshCoordinate::zero_coordinate(device->shape().dims());
@@ -1812,7 +1820,27 @@ TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TensixTestRandomizedProgram) {
         // brisc
         uint32_t BRISC_OUTER_LOOP, BRISC_MIDDLE_LOOP, BRISC_INNER_LOOP, NUM_CBS, NUM_SEMS;
         bool USE_MAX_RT_ARGS;
+        // brisc
+        uint32_t BRISC_OUTER_LOOP, BRISC_MIDDLE_LOOP, BRISC_INNER_LOOP, NUM_CBS, NUM_SEMS;
+        bool USE_MAX_RT_ARGS;
 
+        if (i == 0) {
+            // Ensures that we get at least one compilation with the max amount to
+            // ensure it compiles and runs
+            BRISC_OUTER_LOOP = MAX_LOOP;
+            BRISC_MIDDLE_LOOP = MAX_LOOP;
+            BRISC_INNER_LOOP = MAX_LOOP;
+            NUM_CBS = NUM_CIRCULAR_BUFFERS;
+            NUM_SEMS = NUM_SEMAPHORES;
+            USE_MAX_RT_ARGS = true;
+        } else {
+            BRISC_OUTER_LOOP = rand() % (MAX_LOOP) + 1;
+            BRISC_MIDDLE_LOOP = rand() % (MAX_LOOP) + 1;
+            BRISC_INNER_LOOP = rand() % (MAX_LOOP) + 1;
+            NUM_CBS = rand() % (NUM_CIRCULAR_BUFFERS) + 1;
+            NUM_SEMS = rand() % (NUM_SEMAPHORES) + 1;
+            USE_MAX_RT_ARGS = false;
+        }
         if (i == 0) {
             // Ensures that we get at least one compilation with the max amount to
             // ensure it compiles and runs
@@ -1866,7 +1894,30 @@ TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TensixTestRandomizedProgram) {
             num_brisc_unique_rtargs,
             num_brisc_common_rtargs,
             page_size};
+        auto [brisc_unique_rtargs, brisc_common_rtargs] = create_runtime_args(USE_MAX_RT_ARGS);
+        uint32_t num_brisc_unique_rtargs = brisc_unique_rtargs.size();
+        uint32_t num_brisc_common_rtargs = brisc_common_rtargs.size();
+        vector<uint32_t> brisc_compile_args = {
+            BRISC_OUTER_LOOP,
+            BRISC_MIDDLE_LOOP,
+            BRISC_INNER_LOOP,
+            NUM_CBS,
+            NUM_SEMS,
+            num_brisc_unique_rtargs,
+            num_brisc_common_rtargs,
+            page_size};
 
+        // ncrisc
+        uint32_t NCRISC_OUTER_LOOP, NCRISC_MIDDLE_LOOP, NCRISC_INNER_LOOP;
+        if (i == 0) {
+            NCRISC_OUTER_LOOP = MAX_LOOP;
+            NCRISC_MIDDLE_LOOP = MAX_LOOP;
+            NCRISC_INNER_LOOP = MAX_LOOP;
+        } else {
+            NCRISC_OUTER_LOOP = rand() % (MAX_LOOP) + 1;
+            NCRISC_MIDDLE_LOOP = rand() % (MAX_LOOP) + 1;
+            NCRISC_INNER_LOOP = rand() % (MAX_LOOP) + 1;
+        }
         // ncrisc
         uint32_t NCRISC_OUTER_LOOP, NCRISC_MIDDLE_LOOP, NCRISC_INNER_LOOP;
         if (i == 0) {
@@ -1891,6 +1942,18 @@ TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TensixTestRandomizedProgram) {
             num_ncrisc_unique_rtargs,
             num_ncrisc_common_rtargs,
             page_size};
+        auto [ncrisc_unique_rtargs, ncrisc_common_rtargs] = create_runtime_args(USE_MAX_RT_ARGS);
+        uint32_t num_ncrisc_unique_rtargs = ncrisc_unique_rtargs.size();
+        uint32_t num_ncrisc_common_rtargs = ncrisc_common_rtargs.size();
+        vector<uint32_t> ncrisc_compile_args = {
+            NCRISC_OUTER_LOOP,
+            NCRISC_MIDDLE_LOOP,
+            NCRISC_INNER_LOOP,
+            NUM_CBS,
+            NUM_SEMS,
+            num_ncrisc_unique_rtargs,
+            num_ncrisc_common_rtargs,
+            page_size};
 
         // trisc
         uint32_t TRISC_OUTER_LOOP, TRISC_MIDDLE_LOOP, TRISC_INNER_LOOP;
@@ -1903,7 +1966,30 @@ TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TensixTestRandomizedProgram) {
             TRISC_MIDDLE_LOOP = rand() % (MAX_LOOP) + 1;
             TRISC_INNER_LOOP = rand() % (MAX_LOOP) + 1;
         }
+        // trisc
+        uint32_t TRISC_OUTER_LOOP, TRISC_MIDDLE_LOOP, TRISC_INNER_LOOP;
+        if (i == 0) {
+            TRISC_OUTER_LOOP = MAX_LOOP;
+            TRISC_MIDDLE_LOOP = MAX_LOOP;
+            TRISC_INNER_LOOP = MAX_LOOP;
+        } else {
+            TRISC_OUTER_LOOP = rand() % (MAX_LOOP) + 1;
+            TRISC_MIDDLE_LOOP = rand() % (MAX_LOOP) + 1;
+            TRISC_INNER_LOOP = rand() % (MAX_LOOP) + 1;
+        }
 
+        auto [trisc_unique_rtargs, trisc_common_rtargs] = create_runtime_args(USE_MAX_RT_ARGS);
+        uint32_t num_trisc_unique_rtargs = trisc_unique_rtargs.size();
+        uint32_t num_trisc_common_rtargs = trisc_common_rtargs.size();
+        vector<uint32_t> trisc_compile_args = {
+            TRISC_OUTER_LOOP,
+            TRISC_MIDDLE_LOOP,
+            TRISC_INNER_LOOP,
+            NUM_CBS,
+            NUM_SEMS,
+            num_trisc_unique_rtargs,
+            num_trisc_common_rtargs,
+            page_size};
         auto [trisc_unique_rtargs, trisc_common_rtargs] = create_runtime_args(USE_MAX_RT_ARGS);
         uint32_t num_trisc_unique_rtargs = trisc_unique_rtargs.size();
         uint32_t num_trisc_common_rtargs = trisc_common_rtargs.size();
@@ -2011,6 +2097,9 @@ TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TensixTestRandomizedProgram) {
         // This loops assumes already cached
         uint32_t NUM_ITERATIONS = 500;  // TODO(agrebenisan): Bump this to 5000, saw hangs for very large number of
                                         // iterations, need to come back to that
+        // This loops assumes already cached
+        uint32_t NUM_ITERATIONS = 500;  // TODO(agrebenisan): Bump this to 5000, saw hangs for very large number of
+                                        // iterations, need to come back to that
 
         log_info(
             tt::LogTest,
@@ -2056,10 +2145,15 @@ TEST_F(UnitMeshCQFixture, DISABLED_TensixTestFillDispatchCoreBuffer) {
 }
 
 TEST_F(UnitMeshCQProgramFixture, TensixTestRandomizedProgram) {
-    uint32_t NUM_PROGRAMS = 100;
+    uint32_t NUM_WORKLOADS = 100;
     uint32_t MAX_LOOP = 100;
     uint32_t page_size = 1024;
 
+    // Make random
+    auto random_seed = 0;  // (unsigned int)time(NULL);
+    uint32_t seed = tt::parse_env("TT_METAL_SEED", random_seed);
+    log_info(tt::LogTest, "Using Test Seed: {}", seed);
+    srand(seed);
     // Make random
     auto random_seed = 0;  // (unsigned int)time(NULL);
     uint32_t seed = tt::parse_env("TT_METAL_SEED", random_seed);
@@ -2091,11 +2185,31 @@ TEST_F(UnitMeshCQProgramFixture, TensixTestRandomizedProgram) {
         // brisc
         uint32_t BRISC_OUTER_LOOP, BRISC_MIDDLE_LOOP, BRISC_INNER_LOOP, NUM_CBS, NUM_SEMS;
         bool USE_MAX_RT_ARGS;
+        // brisc
+        uint32_t BRISC_OUTER_LOOP, BRISC_MIDDLE_LOOP, BRISC_INNER_LOOP, NUM_CBS, NUM_SEMS;
+        bool USE_MAX_RT_ARGS;
 
         if (i % 10 == 0) {
             log_info(tt::LogTest, "Compiling program {} of {}", i + 1, NUM_PROGRAMS);
         }
 
+        if (i == 0) {
+            // Ensures that we get at least one compilation with the max amount to
+            // ensure it compiles and runs
+            BRISC_OUTER_LOOP = MAX_LOOP;
+            BRISC_MIDDLE_LOOP = MAX_LOOP;
+            BRISC_INNER_LOOP = MAX_LOOP;
+            NUM_CBS = NUM_CIRCULAR_BUFFERS;
+            NUM_SEMS = NUM_SEMAPHORES;
+            USE_MAX_RT_ARGS = true;
+        } else {
+            BRISC_OUTER_LOOP = rand() % (MAX_LOOP) + 1;
+            BRISC_MIDDLE_LOOP = rand() % (MAX_LOOP) + 1;
+            BRISC_INNER_LOOP = rand() % (MAX_LOOP) + 1;
+            NUM_CBS = rand() % (NUM_CIRCULAR_BUFFERS) + 1;
+            NUM_SEMS = rand() % (NUM_SEMAPHORES) + 1;
+            USE_MAX_RT_ARGS = false;
+        }
         if (i == 0) {
             // Ensures that we get at least one compilation with the max amount to
             // ensure it compiles and runs
@@ -2149,7 +2263,30 @@ TEST_F(UnitMeshCQProgramFixture, TensixTestRandomizedProgram) {
             num_brisc_unique_rtargs,
             num_brisc_common_rtargs,
             page_size};
+        auto [brisc_unique_rtargs, brisc_common_rtargs] = create_runtime_args(USE_MAX_RT_ARGS);
+        uint32_t num_brisc_unique_rtargs = brisc_unique_rtargs.size();
+        uint32_t num_brisc_common_rtargs = brisc_common_rtargs.size();
+        vector<uint32_t> brisc_compile_args = {
+            BRISC_OUTER_LOOP,
+            BRISC_MIDDLE_LOOP,
+            BRISC_INNER_LOOP,
+            NUM_CBS,
+            NUM_SEMS,
+            num_brisc_unique_rtargs,
+            num_brisc_common_rtargs,
+            page_size};
 
+        // ncrisc
+        uint32_t NCRISC_OUTER_LOOP, NCRISC_MIDDLE_LOOP, NCRISC_INNER_LOOP;
+        if (i == 0) {
+            NCRISC_OUTER_LOOP = MAX_LOOP;
+            NCRISC_MIDDLE_LOOP = MAX_LOOP;
+            NCRISC_INNER_LOOP = MAX_LOOP;
+        } else {
+            NCRISC_OUTER_LOOP = rand() % (MAX_LOOP) + 1;
+            NCRISC_MIDDLE_LOOP = rand() % (MAX_LOOP) + 1;
+            NCRISC_INNER_LOOP = rand() % (MAX_LOOP) + 1;
+        }
         // ncrisc
         uint32_t NCRISC_OUTER_LOOP, NCRISC_MIDDLE_LOOP, NCRISC_INNER_LOOP;
         if (i == 0) {
@@ -2174,6 +2311,18 @@ TEST_F(UnitMeshCQProgramFixture, TensixTestRandomizedProgram) {
             num_ncrisc_unique_rtargs,
             num_ncrisc_common_rtargs,
             page_size};
+        auto [ncrisc_unique_rtargs, ncrisc_common_rtargs] = create_runtime_args(USE_MAX_RT_ARGS);
+        uint32_t num_ncrisc_unique_rtargs = ncrisc_unique_rtargs.size();
+        uint32_t num_ncrisc_common_rtargs = ncrisc_common_rtargs.size();
+        vector<uint32_t> ncrisc_compile_args = {
+            NCRISC_OUTER_LOOP,
+            NCRISC_MIDDLE_LOOP,
+            NCRISC_INNER_LOOP,
+            NUM_CBS,
+            NUM_SEMS,
+            num_ncrisc_unique_rtargs,
+            num_ncrisc_common_rtargs,
+            page_size};
 
         // trisc
         uint32_t TRISC_OUTER_LOOP, TRISC_MIDDLE_LOOP, TRISC_INNER_LOOP;
@@ -2186,7 +2335,30 @@ TEST_F(UnitMeshCQProgramFixture, TensixTestRandomizedProgram) {
             TRISC_MIDDLE_LOOP = rand() % (MAX_LOOP) + 1;
             TRISC_INNER_LOOP = rand() % (MAX_LOOP) + 1;
         }
+        // trisc
+        uint32_t TRISC_OUTER_LOOP, TRISC_MIDDLE_LOOP, TRISC_INNER_LOOP;
+        if (i == 0) {
+            TRISC_OUTER_LOOP = MAX_LOOP;
+            TRISC_MIDDLE_LOOP = MAX_LOOP;
+            TRISC_INNER_LOOP = MAX_LOOP;
+        } else {
+            TRISC_OUTER_LOOP = rand() % (MAX_LOOP) + 1;
+            TRISC_MIDDLE_LOOP = rand() % (MAX_LOOP) + 1;
+            TRISC_INNER_LOOP = rand() % (MAX_LOOP) + 1;
+        }
 
+        auto [trisc_unique_rtargs, trisc_common_rtargs] = create_runtime_args(USE_MAX_RT_ARGS);
+        uint32_t num_trisc_unique_rtargs = trisc_unique_rtargs.size();
+        uint32_t num_trisc_common_rtargs = trisc_common_rtargs.size();
+        vector<uint32_t> trisc_compile_args = {
+            TRISC_OUTER_LOOP,
+            TRISC_MIDDLE_LOOP,
+            TRISC_INNER_LOOP,
+            NUM_CBS,
+            NUM_SEMS,
+            num_trisc_unique_rtargs,
+            num_trisc_common_rtargs,
+            page_size};
         auto [trisc_unique_rtargs, trisc_common_rtargs] = create_runtime_args(USE_MAX_RT_ARGS);
         uint32_t num_trisc_unique_rtargs = trisc_unique_rtargs.size();
         uint32_t num_trisc_common_rtargs = trisc_common_rtargs.size();
@@ -2293,6 +2465,9 @@ TEST_F(UnitMeshCQProgramFixture, TensixTestRandomizedProgram) {
     // This loops assumes already cached
     uint32_t NUM_ITERATIONS = 500;  // TODO(agrebenisan): Bump this to 5000, saw hangs for very large number of
                                     // iterations, need to come back to that
+    // This loops assumes already cached
+    uint32_t NUM_ITERATIONS = 500;  // TODO(agrebenisan): Bump this to 5000, saw hangs for very large number of
+                                    // iterations, need to come back to that
 
     log_info(tt::LogTest, "Running {} programs for {} iterations now.", workloads.size(), NUM_ITERATIONS);
     for (uint32_t i = 0; i < NUM_ITERATIONS; i++) {
@@ -2329,7 +2504,7 @@ TEST_F(RandomProgramFixture, ActiveEthTestSimplePrograms) {
         GTEST_SKIP() << "Skipping test because device " << device_->id() << " does not have any active ethernet cores";
     }
 
-    for (uint32_t i = 0; i < NUM_PROGRAMS; i++) {
+    for (uint32_t i = 0; i < NUM_WORKLOADS; i++) {
         if (i % 10 == 0) {
             log_info(tt::LogTest, "Creating Program {}", i);
         }
@@ -2346,7 +2521,7 @@ TEST_F(RandomProgramFixture, TensixActiveEthTestSimplePrograms) {
         GTEST_SKIP() << "Skipping test because device " << device_->id() << " does not have any active ethernet cores";
     }
 
-    for (uint32_t i = 0; i < NUM_PROGRAMS; i++) {
+    for (uint32_t i = 0; i < NUM_WORKLOADS; i++) {
         if (i % 10 == 0) {
             log_info(tt::LogTest, "Creating Program {}", i);
         }
@@ -2385,7 +2560,7 @@ TEST_F(RandomProgramFixture, ActiveEthTestPrograms) {
         GTEST_SKIP() << "Skipping test because device " << device_->id() << " does not have any active ethernet cores";
     }
 
-    for (uint32_t i = 0; i < NUM_PROGRAMS; i++) {
+    for (uint32_t i = 0; i < NUM_WORKLOADS; i++) {
         if (i % 10 == 0) {
             log_info(tt::LogTest, "Creating Program {}", i);
         }
@@ -2407,7 +2582,7 @@ TEST_F(RandomProgramFixture, TensixActiveEthTestPrograms) {
         GTEST_SKIP() << "Skipping test because device " << device_->id() << " does not have any active ethernet cores";
     }
 
-    for (uint32_t i = 0; i < NUM_PROGRAMS; i++) {
+    for (uint32_t i = 0; i < NUM_WORKLOADS; i++) {
         if (i % 10 == 0) {
             log_info(tt::LogTest, "Creating Program {}", i);
         }

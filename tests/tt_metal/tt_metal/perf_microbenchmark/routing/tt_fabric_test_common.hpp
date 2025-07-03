@@ -1232,6 +1232,23 @@ public:
         return path;
     }
 
+    uint32_t get_max_routing_planes_for_device(const FabricNodeId& node_id) const override {
+        // Find the minimum number of routing planes across all directions for this device
+        uint32_t min_routing_planes = std::numeric_limits<uint32_t>::max();
+
+        // Check all possible directions
+        for (const auto& direction : FabricContext::routing_directions) {
+            size_t routing_planes =
+                control_plane_ptr_->get_num_available_routing_planes_in_direction(node_id, direction);
+            if (routing_planes > 0) {  // Only consider directions that have routing planes
+                min_routing_planes = std::min(min_routing_planes, static_cast<uint32_t>(routing_planes));
+            }
+        }
+
+        // If no valid directions found, return 0
+        return (min_routing_planes == std::numeric_limits<uint32_t>::max()) ? 0 : min_routing_planes;
+    }
+
 private:
     ControlPlane* control_plane_ptr_;
     Topology topology_;

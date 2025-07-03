@@ -57,6 +57,7 @@ Tests:
     sync: true
     fabric_setup:
       topology: Ring
+      num_links: 1
 
     defaults:
       ftype: mcast
@@ -70,6 +71,7 @@ Tests:
   - name: "HalfRingMulticast"
     fabric_setup:
       topology: Ring
+      num_links: 1
 
     defaults:
       ftype: mcast

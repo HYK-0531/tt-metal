@@ -515,6 +515,12 @@ inline TestFabricSetup YamlConfigParser::parse_fabric_setup(const YAML::Node& fa
         fabric_setup.routing_type = RoutingType::LowLatency;
     }
 
+    if (fabric_setup_yaml["num_links"]) {
+        fabric_setup.num_links = parse_scalar<uint32_t>(fabric_setup_yaml["num_links"]);
+    } else {
+        fabric_setup.num_links = 1;
+    }
+
     return fabric_setup;
 }
 
@@ -963,6 +969,12 @@ private:
                         pattern = merge_patterns(p_config.defaults.value(), pattern);
                     }
                 }
+            }
+
+            // After patterns are expanded, duplicate senders for different links if specified
+            if (!expand_link_duplicates(iteration_test)) {
+                // Test was skipped due to insufficient routing planes, continue to next iteration
+                continue;
             }
 
             // After patterns are expanded, resolve any missing params based on policy
@@ -1492,6 +1504,51 @@ private:
         }
     }
 
+    bool expand_link_duplicates(TestConfig& test) {
+        // If num_links is 1, no duplication needed
+        if (test.fabric_setup.num_links <= 1) {
+            return true;  // Success - no expansion needed
+        }
+
+        uint32_t num_links = test.fabric_setup.num_links;
+        log_info(LogTest, "Expanding link duplicates for test '{}' with {} links", test.name, num_links);
+
+        // Validate that num_links doesn't exceed available routing planes for any device
+        std::vector<FabricNodeId> devices = device_info_provider_.get_all_node_ids();
+        for (const auto& device : devices) {
+            uint32_t max_routing_planes = route_manager_.get_max_routing_planes_for_device(device);
+            if (num_links > max_routing_planes) {
+                log_warning(
+                    LogTest,
+                    "Skipping test '{}': Requested num_links ({}) exceeds maximum available routing planes ({}) for "
+                    "device {}. "
+                    "Please reduce num_links or check your fabric configuration.",
+                    test.name,
+                    num_links,
+                    max_routing_planes,
+                    device.chip_id);
+                return false;  // Indicate test should be skipped
+            }
+        }
+
+        std::vector<SenderConfig> new_senders;
+        new_senders.reserve(test.senders.size() * num_links);
+
+        for (const auto& sender : test.senders) {
+            for (uint32_t link_id = 0; link_id < num_links; ++link_id) {
+                SenderConfig duplicated_sender = sender;
+                new_senders.push_back(duplicated_sender);
+            }
+        }
+
+        test.senders = std::move(new_senders);
+
+        // Update the test name to reflect the link expansion
+        test.name += "_" + std::to_string(num_links) + "links";
+
+        return true;  // Success
+    }
+
     void resolve_missing_params(ParsedTestConfig& test) {
         if (test.on_missing_param_policy.has_value() && test.on_missing_param_policy.value() == "randomize") {
             for (auto& sender : test.senders) {
@@ -1810,6 +1867,10 @@ private:
         if (config.routing_type.has_value()) {
             out << YAML::Key << "routing_type";
             out << YAML::Value << to_string(config.routing_type.value());
+        }
+        if (config.num_links > 1) {  // Only serialize if not default value
+            out << YAML::Key << "num_links";
+            out << YAML::Value << config.num_links;
         }
         out << YAML::EndMap;
     }

@@ -200,7 +200,9 @@ def run_falcon_demo_kv(
     logger.info("Loading weights...")
     profiler.start(f"loading_weights")
 
-    model_name = model_location_generator(model_version, model_subdir="Falcon")
+    # TODO: (GR)
+    # model_name = model_location_generator(model_version, model_subdir="Falcon")
+    model_name = "/localdev/grechsteiner/Falcon/falcon-40b-instruct"
     hugging_face_reference_model = FalconForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)
     hugging_face_reference_model.eval()
     state_dict = hugging_face_reference_model.state_dict()

@@ -31,7 +31,9 @@ void in0_sender_receiver_run(
     in0_mcast_sender_semaphore_addr_ptr[0] = 0;
 
     /* Pre calculate receiver semaphore multicast address*/
-    const uint64_t in0_multicast_data_noc = get_noc_multicast_addr(start_x, start_y, end_x, start_y, 0);
+    const uint64_t in0_multicast_data_noc = noc_index == 0
+                                                ? get_noc_multicast_addr(start_x, phy_y_coord, end_x, phy_y_coord, 0)
+                                                : get_noc_multicast_addr(end_x, phy_y_coord, start_x, phy_y_coord, 0);
     uint64_t in0_mcast_receiver_semaphore_noc_addr =
         in0_multicast_data_noc | (uint64_t)in0_mcast_receiver_semaphore_addr;
     /* Semaphore setup end */
@@ -65,15 +67,13 @@ void in0_sender_receiver_run(
                 uint32_t in0_tensor_read_addr = in0_tensor_current_inner_dim_block_start_addr;
                 in0_tensor_current_inner_dim_block_start_addr += in0_block_size_bytes;
 
-                // while(*in0_mcast_sender_semaphore_addr_ptr!=num_of_dests_x){}
-
-                // noc_semaphore_wait(in0_mcast_sender_semaphore_addr_ptr, num_of_dests_x);
+                noc_semaphore_wait(in0_mcast_sender_semaphore_addr_ptr, num_of_dests_x - 1);
                 noc_semaphore_set(in0_mcast_sender_semaphore_addr_ptr, 0);
 
                 uint64_t in0_multicast_data_addr =
                     in0_multicast_data_noc | in0_tensor_local_l1_write_addr;  // This is address where we multicast data
                 noc_async_write_multicast(
-                    in0_tensor_read_addr, in0_multicast_data_addr, in0_block_size_bytes, num_of_dests_x - 1);
+                    in0_tensor_read_addr, in0_multicast_data_addr, in0_block_size_bytes, num_of_dests_x);
                 // This needs snoop bit enabled
                 noc_semaphore_set_multicast_loopback_src(
                     in0_mcast_sender_semaphore_valid_addr, in0_mcast_receiver_semaphore_noc_addr, num_of_dests_x);
@@ -84,7 +84,7 @@ void in0_sender_receiver_run(
                 // Snoop bit enabled
                 noc_semaphore_inc(in0_mcast_sender_semaphore_noc_addr, 1);
             }
-            // noc_semaphore_wait(in0_mcast_receiver_semaphore_addr_ptr, 1);
+            noc_semaphore_wait(in0_mcast_receiver_semaphore_addr_ptr, 1);
         }
     }
 }

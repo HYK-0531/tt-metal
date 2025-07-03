@@ -41,6 +41,10 @@ void in1_receiver_run(
     uint32_t sender_id = phy_y_coord - origin_y_coord;
     uint32_t in1_tensor_start_tile_id = sender_id * subblock_c_dim * num_subblocks_c_dim;
 
+    const uint32_t num_of_transactions = num_subblocks_k_dim / subblock_k_dim;
+    DeviceTimestampedData("Number of transactions", num_of_transactions);
+    DeviceTimestampedData("Transaction size in bytes", 4);
+
     {
         // DeviceZoneScopedN("RISCV1");
         for (uint32_t h = 0; h < num_subblocks_k_dim; h += subblock_k_dim) {
@@ -51,7 +55,7 @@ void in1_receiver_run(
             noc_semaphore_inc(in1_mcast_sender_semaphore_noc_addr, 1);
 
             // wait on in1 semaphore value to become VALID (set by mcast sender after it multicasts data)
-            // noc_semaphore_wait(in1_mcast_receiver_semaphore_addr_ptr, 1);
+            noc_semaphore_wait(in1_mcast_receiver_semaphore_addr_ptr, 1);
         }
     }
 }

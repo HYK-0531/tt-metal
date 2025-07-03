@@ -28,7 +28,9 @@ void in1_sender_run(
         1;  // Load const 1 to be used as semaphore valid value sent from sender to receivers
     in1_mcast_sender_semaphore_addr_ptr[0] = 0;
 
-    const uint64_t in1_multicast_data_noc = get_noc_multicast_addr(start_x, start_y, start_x, end_y, 0);
+    const uint64_t in1_multicast_data_noc = noc_index == 0
+                                                ? get_noc_multicast_addr(phy_x_coord, start_y, phy_x_coord, end_y, 0)
+                                                : get_noc_multicast_addr(phy_x_coord, end_y, phy_x_coord, start_y, 0);
     uint64_t in1_mcast_receiver_semaphore_noc_addr =
         in1_multicast_data_noc | (uint64_t)in1_mcast_receiver_semaphore_addr;
 
@@ -57,15 +59,15 @@ void in1_sender_run(
             }
             in1_tensor_start_tile_id += in1_tensor_stride_h_tiles;
 
-            // noc_semaphore_wait(in1_mcast_sender_semaphore_addr_ptr, num_of_receivers_y);
+            noc_semaphore_wait(in1_mcast_sender_semaphore_addr_ptr, num_of_dests_y - 1);
             noc_semaphore_set(in1_mcast_sender_semaphore_addr_ptr, 0);
 
             noc_async_write_multicast(
-                in1_start_address, in1_multicast_start_address, in1_block_size_bytes, num_of_receivers_y - 1);
+                in1_start_address, in1_multicast_start_address, in1_block_size_bytes, num_of_dests_y);
 
             // This needs snoop bit enabled
             noc_semaphore_set_multicast(
-                in1_mcast_sender_semaphore_valid_addr, in1_mcast_receiver_semaphore_noc_addr, num_of_receivers_y);
+                in1_mcast_sender_semaphore_valid_addr, in1_mcast_receiver_semaphore_noc_addr, num_of_dests_y);
         }
     }
 }

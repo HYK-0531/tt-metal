@@ -20,9 +20,6 @@ constexpr uint32_t tensix_sync_value = 1;
 // Worker parameters
 constexpr uint32_t num_of_dests_x = 4;
 constexpr uint32_t num_of_dests_y = 4;
-constexpr uint32_t num_of_receivers_y = num_of_dests_y - 1;  // Number of receivers in y direction
-constexpr uint32_t num_of_receivers_x = num_of_dests_x - 1;  // Number of receivers in x direction
-
 constexpr uint32_t num_of_dests = num_of_dests_x * num_of_dests_y;
 constexpr uint32_t num_of_workers = num_of_dests;
 constexpr uint32_t num_of_workers_in_neo = 4;

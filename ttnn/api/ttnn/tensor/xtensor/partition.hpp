@@ -56,7 +56,8 @@ XtensorAdapter<typename Expression::value_type> concat_ndim(
     const tt::stl::SmallVector<int>& dims);
 
 // Overload in terms of `Tensor`.
-[[deprecated("Use high-level APIs defined in distributed_tensor.hpp")]] tt::tt_metal::Tensor concat(
+// [[deprecated("Use high-level APIs defined in distributed_tensor.hpp")]]
+tt::tt_metal::Tensor concat(
     const std::vector<tt::tt_metal::Tensor>& tensors, int dim = 0);
 
 }  // namespace ttnn::experimental::xtensor

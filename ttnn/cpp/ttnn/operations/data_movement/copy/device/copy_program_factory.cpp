@@ -59,8 +59,7 @@ operation::ProgramWithCallbacks copy_multi_core(const Tensor& input, const Tenso
         tt::tt_metal::CircularBufferConfig(
             num_input_units * aligned_input_unit_size, {{src0_cb_index, input_cb_data_format}})
             .set_page_size(src0_cb_index, aligned_input_unit_size);
-    auto cb_src0 = tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_src0_config);
-
+    tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_src0_config);
     uint32_t output_cb_index = src0_cb_index;  // same as input cb
     if (convert_dtype) {
         output_cb_index = tt::CBIndex::c_16;
@@ -70,7 +69,7 @@ operation::ProgramWithCallbacks copy_multi_core(const Tensor& input, const Tenso
             tt::tt_metal::CircularBufferConfig(
                 num_output_units * aligned_output_unit_size, {{output_cb_index, output_cb_data_format}})
                 .set_page_size(output_cb_index, aligned_output_unit_size);
-        auto cb_output = tt::tt_metal::CreateCircularBuffer(program, all_cores, output_cb_config);
+        tt::tt_metal::CreateCircularBuffer(program, all_cores, output_cb_config);
     }
 
     auto src_buffer = input.buffer();

@@ -187,7 +187,7 @@ tt::tt_metal::operation::ProgramWithCallbacks all_gather_matmul_async_multi_core
                     program,
                     {input_tensors[0]}, /* input tensor */
                     optional_input_tensors,
-                    {output_tensors[1]} /* all gather output tensor */
+                    {output_tensors[0]} /* all gather output tensor */
                 );
             }
         };

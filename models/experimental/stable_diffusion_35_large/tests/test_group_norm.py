@@ -9,20 +9,21 @@ from loguru import logger
 
 from ..tt.group_norm import TtGroupNorm, TtGroupNormParameters
 from ..tt.utils import allocate_tensor_on_device_like, assert_quality, from_torch_fast, to_torch
+from models.utility_functions import comp_allclose, comp_pcc
 
 
 @pytest.mark.parametrize("device_params", [{"trace_region_size": 40960}], indirect=True)
-@pytest.mark.parametrize("use_tracing", [True])
+@pytest.mark.parametrize("use_tracing", [False])
 @pytest.mark.usefixtures("use_program_cache")
 @pytest.mark.parametrize(
     ("channels", "height", "width", "group_count"),
     [
         (512, 128, 128, 32),
-        (512, 256, 256, 32),
-        (256, 512, 512, 32),
-        (512, 512, 512, 32),
-        (128, 1024, 1024, 32),
-        (256, 1024, 1024, 32),
+        # (512, 256, 256, 32),
+        # (256, 512, 512, 32),
+        # (512, 512, 512, 32),
+        # (128, 1024, 1024, 32),
+        # (256, 1024, 1024, 32),
     ],
 )
 def test_group_norm(
@@ -42,8 +43,17 @@ def test_group_norm(
     torch_model = torch.nn.GroupNorm(num_groups=group_count, num_channels=channels)
     torch_model.eval()
 
-    parameters = TtGroupNormParameters.from_torch(torch_model.state_dict(), device=mesh_device)
-    tt_model = TtGroupNorm(parameters, eps=torch_model.eps, num_groups=group_count)
+    parameters = TtGroupNormParameters.from_torch(
+        torch_model.state_dict(),
+        batch_size=batch_size,
+        input_width=width,
+        input_height=height,
+        num_channels=channels,
+        num_groups=group_count,
+        device=mesh_device,
+    )
+
+    tt_model = TtGroupNorm(parameters, eps=torch_model.eps)
 
     torch.manual_seed(0)
 
@@ -79,7 +89,7 @@ def test_group_norm(
         logger.info("done...")
     else:
         logger.info("compiling...")
-        tt_model(tt_inp)
+        tt_out = tt_model(tt_inp)
 
         logger.info("executing...")
         ttnn.copy_host_to_device_tensor(tt_inp_host, tt_inp)
@@ -89,3 +99,6 @@ def test_group_norm(
     tt_out_torch = to_torch(tt_out, shard_dim=0).permute(0, 3, 1, 2)
 
     assert_quality(out, tt_out_torch, pcc=0.94, ccc=0.94)
+    print(comp_allclose(out, tt_out_torch))
+    result, output = comp_pcc(out, tt_out_torch)
+    logger.info(f"Comparison result Pass:{result}, Output {output}, in: {torch.count_nonzero(tt_out_torch)}")

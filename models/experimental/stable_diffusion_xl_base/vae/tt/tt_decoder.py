@@ -105,9 +105,14 @@ class TtDecoder(nn.Module):
         B, C, H, W = input_shape
         hidden_states = sample
 
+        print("Decoder initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print("Decoder initial sync end")
+
         if self.conv_in_slice_config is not None:
             hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
             hidden_states = ttnn.reshape(hidden_states, (B, H, W, C))
+        print(f"Starting vae decoder conv, shapes: {hidden_states.shape} x {self.tt_conv_in_weights.shape}")
         [hidden_states, [H, W], [self.tt_conv_in_weights, self.tt_conv_in_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_conv_in_weights,
@@ -130,6 +135,10 @@ class TtDecoder(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+        print(f"Decoder conv sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"Decoder conv sync end")
+
         C = self.conv_in_params["output_channels"]
 
         if self.conv_in_slice_config is not None:
@@ -165,6 +174,7 @@ class TtDecoder(nn.Module):
         if self.conv_out_slice_config is not None:
             hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
             hidden_states = ttnn.reshape(hidden_states, (B, H, W, C))
+        print(f"Executing vae decoder conv out, shapes: {hidden_states.shape} x {self.tt_conv_out_weights.shape}")
         [hidden_states, [H, W], [self.tt_conv_out_weights, self.tt_conv_out_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_conv_out_weights,
@@ -187,6 +197,10 @@ class TtDecoder(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+        print(f"Decoder conv out sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"Decoder conv out sync end")
+
         C = self.conv_out_params["output_channels"]
 
         # Convert to torch

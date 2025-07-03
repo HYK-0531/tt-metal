@@ -97,24 +97,43 @@ class TtAttention(nn.Module):
         if encoder_hidden_states is None:
             encoder_hidden_states = hidden_states
 
+        print(f"VAE attention initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"VAE attention initial sync end")
+
+        print(f"VAE query begin, shapes: {hidden_states.shape} x {self.tt_q_weights.shape}")
         query = ttnn.linear(
             hidden_states,
             self.tt_q_weights,
             bias=self.tt_q_bias,
             compute_kernel_config=self.compute_kernel_config,
         )
+        print(f"VAE query sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"VAE query sync end")
+
+        print(f"VAE key begin, shapes: {encoder_hidden_states.shape} x {self.tt_k_weights.shape}")
         key = ttnn.linear(
             encoder_hidden_states,
             self.tt_k_weights,
             bias=self.tt_k_bias,
             compute_kernel_config=self.compute_kernel_config,
         )
+        print(f"VAE key sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"VAE key sync end")
+
+        print(f"VAE value begin, shapes: {encoder_hidden_states.shape} x {self.tt_v_weights.shape}")
         value = ttnn.linear(
             encoder_hidden_states,
             self.tt_v_weights,
             bias=self.tt_v_bias,
             compute_kernel_config=self.compute_kernel_config,
         )
+        print(f"VAE value sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"VAE value sync end")
+
         inner_dim = list(key.shape)[-1]
         head_dim = inner_dim // self.heads
 
@@ -139,12 +158,16 @@ class TtAttention(nn.Module):
         hidden_states = ttnn.transpose(hidden_states, 1, 2)
         hidden_states = ttnn.reshape(hidden_states, [B, -1, self.heads * head_dim])
 
+        print(f"VAE attention output begin, shapes: {hidden_states.shape} x {self.tt_out_weights.shape}")
         hidden_states = ttnn.linear(
             hidden_states,
             self.tt_out_weights,
             bias=self.tt_out_bias,
             compute_kernel_config=self.compute_kernel_config,
         )
+        print(f"VAE attention output sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"VAE attention output sync end")
         hidden_states = ttnn.add(hidden_states, input_tensor)
 
         return hidden_states

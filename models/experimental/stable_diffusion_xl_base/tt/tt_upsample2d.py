@@ -4,6 +4,7 @@
 
 import torch.nn as nn
 import ttnn
+import os
 
 from models.experimental.stable_diffusion_xl_base.tt.sdxl_utility import (
     prepare_conv_params,
@@ -69,6 +70,18 @@ class TtUpsample2D(nn.Module):
         B, C, H, W = input_shape
 
         print(f"Upsample2D conv begin, shapes: {hidden_states.shape} x {self.tt_weights.shape}")
+        # Upsample2D conv begin, shapes: Shape([1, 64, 64, 1280]) x Shape([1280, 1280, 3, 3])
+
+        if hidden_states.shape[-3] == 64 and hidden_states.shape[-2] == 64 and hidden_states.shape[-1] == 1280:
+            if (
+                self.tt_weights.shape[0] == 1280
+                and self.tt_weights.shape[1] == 1280
+                and self.tt_weights.shape[2] == 3
+                and self.tt_weights.shape[3] == 3
+            ):
+                print("Setting env variable upsample2d")
+                os.environ["TT_MM_THROTTLE_PERF"] = "5"
+
         [hidden_states, [H, W], [self.tt_weights, self.tt_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_weights,
@@ -93,6 +106,9 @@ class TtUpsample2D(nn.Module):
         print("Upsample2D conv sync begin")
         ttnn.synchronize_device(self.device)
         print("Upsample2D conv sync end")
+        if "TT_MM_THROTTLE_PERF" in os.environ:
+            print("Deleting env variable upsample2d")
+            del os.environ["TT_MM_THROTTLE_PERF"]
         C = self.conv_params["output_channels"]
 
         hidden_states = ttnn.sharded_to_interleaved(hidden_states, ttnn.DRAM_MEMORY_CONFIG)

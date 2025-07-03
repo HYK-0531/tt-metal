@@ -44,6 +44,11 @@ class TtAutoencoderKL(nn.Module):
         B, C, H, W = input_shape
 
         pre_conv_hidden_states = hidden_states
+        print("VAE initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print("VAE initial sync end")
+
+        print(f"VAE post quant conv begin, shapes: {hidden_states.shape} x {self.tt_post_quant_conv_weights.shape}")
         [hidden_states, [H, W], [self.tt_post_quant_conv_weights, self.tt_post_quant_conv_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_post_quant_conv_weights,
@@ -65,6 +70,10 @@ class TtAutoencoderKL(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+        print(f"VAE post quant conv sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"VAE post quant conv sync end")
+
         C = self.conv_params["output_channels"]
         ttnn.deallocate(pre_conv_hidden_states)
 

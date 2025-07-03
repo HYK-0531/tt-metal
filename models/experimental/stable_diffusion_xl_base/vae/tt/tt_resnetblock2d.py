@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import ttnn
+import os
 
 from models.experimental.stable_diffusion_xl_base.tt.sdxl_utility import (
     prepare_conv_params,
@@ -122,6 +123,9 @@ class TtResnetBlock2D(nn.Module):
 
     def forward(self, input_tensor, input_shape):
         B, C, H, W = input_shape
+        print("VAE resnet initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print("VAE resnet initial sync end")
         # input_tensor = ttnn.reshape(input_tensor, (B, H, W, C))
 
         # HOST FALLBACK: GroupNorm
@@ -168,6 +172,28 @@ class TtResnetBlock2D(nn.Module):
         if self.conv1_slice_config is not None:
             hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
             hidden_states = ttnn.reshape(hidden_states, (B, H, W, C))
+        # Executing vae resnet conv1, shapes: Shape([1, 512, 512, 256]) x Shape([256, 256, 3, 3])
+        # Executing vae resnet conv1, shapes: Shape([1, 512, 512, 512]) x Shape([256, 512, 3, 3])
+        if hidden_states.shape[-3] == 512 and hidden_states.shape[-2] == 512 and hidden_states.shape[-1] == 256:
+            if (
+                self.tt_conv1_weights.shape[0] == 256
+                and self.tt_conv1_weights.shape[1] == 256
+                and self.tt_conv1_weights.shape[2] == 3
+                and self.tt_conv1_weights.shape[3] == 3
+            ):
+                print("Setting env variable vae resnet1")
+                os.environ["TT_MM_THROTTLE_PERF"] = "5"
+        elif hidden_states.shape[-3] == 512 and hidden_states.shape[-2] == 512 and hidden_states.shape[-1] == 512:
+            if (
+                self.tt_conv1_weights.shape[0] == 256
+                and self.tt_conv1_weights.shape[1] == 512
+                and self.tt_conv1_weights.shape[2] == 3
+                and self.tt_conv1_weights.shape[3] == 3
+            ):
+                print("Setting env variable vae resnet2")
+                os.environ["TT_MM_THROTTLE_PERF"] = "5"
+
+        print(f"Executing vae resnet conv1, shapes: {hidden_states.shape} x {self.tt_conv1_weights.shape}")
         [hidden_states, [H, W], [self.tt_conv1_weights, self.tt_conv1_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_conv1_weights,
@@ -190,6 +216,13 @@ class TtResnetBlock2D(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+
+        if "TT_MM_THROTTLE_PERF" in os.environ:
+            print("Deleting env variable vae resnet")
+            del os.environ["TT_MM_THROTTLE_PERF"]
+        print(f"VAE Resnet conv1 sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"VAE Resnet conv1 sync end")
         C = self.conv1_params["output_channels"]
 
         if self.conv1_slice_config is not None:

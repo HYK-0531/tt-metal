@@ -4,6 +4,7 @@
 
 import torch.nn as nn
 import ttnn
+import os
 
 from models.experimental.stable_diffusion_xl_base.tt.sdxl_utility import (
     prepare_conv_params,
@@ -53,14 +54,14 @@ class TtUpsample2D(nn.Module):
         return hidden_states, [B, C, H, W]
 
     def forward(self, input_tensor):
-        print("Upsample2D initial sync begin")
+        print("VAE Upsample2D initial sync begin")
         ttnn.synchronize_device(self.device)
-        print("Upsample2D initial sync end")
+        print("VAE Upsample2D initial sync end")
 
-        print("Upsamle2D interpolate begin")
+        print("VAE Upsamle2D interpolate begin")
         hidden_state_l1, input_shape = self.interpolate(input_tensor)
         ttnn.synchronize_device(self.device)
-        print("Upsample2D interpolate end")
+        print("VAE Upsample2D interpolate end")
         B, C, H, W = input_shape
         if input_tensor.memory_config() != ttnn.DRAM_MEMORY_CONFIG:
             ttnn.deallocate(input_tensor)
@@ -70,7 +71,39 @@ class TtUpsample2D(nn.Module):
         else:
             hidden_states = hidden_state_l1
 
-        print(f"Upsample2D conv begin, shapes: {hidden_states.shape} x {self.tt_weights.shape}")
+        print(f"VAE Upsample2D conv begin, shapes: {hidden_states.shape} x {self.tt_weights.shape}")
+
+        # VAE Upsample2D conv begin, shapes: Shape([1, 256, 256, 512]) x Shape([512, 512, 3, 3])
+        # VAE Upsample2D conv begin, shapes: Shape([1, 1024, 1024, 256]) x Shape([256, 256, 3, 3])
+        # VAE Upsample2D conv begin, shapes: Shape([1, 512, 512, 512]) x Shape([512, 512, 3, 3])
+        if hidden_states.shape[-3] == 256 and hidden_states.shape[-2] == 256 and hidden_states.shape[-1] == 512:
+            if (
+                self.tt_weights.shape[0] == 512
+                and self.tt_weights.shape[1] == 512
+                and self.tt_weights.shape[2] == 3
+                and self.tt_weights.shape[3] == 3
+            ):
+                print("Setting env variable vae upsample2d_1")
+                os.environ["TT_MM_THROTTLE_PERF"] = "5"
+        if hidden_states.shape[-3] == 1024 and hidden_states.shape[-2] == 1024 and hidden_states.shape[-1] == 256:
+            if (
+                self.tt_weights.shape[0] == 256
+                and self.tt_weights.shape[1] == 256
+                and self.tt_weights.shape[2] == 3
+                and self.tt_weights.shape[3] == 3
+            ):
+                print("Setting env variable vae upsample2d_2")
+                os.environ["TT_MM_THROTTLE_PERF"] = "5"
+        if hidden_states.shape[-3] == 512 and hidden_states.shape[-2] == 512 and hidden_states.shape[-1] == 512:
+            if (
+                self.tt_weights.shape[0] == 512
+                and self.tt_weights.shape[1] == 512
+                and self.tt_weights.shape[2] == 3
+                and self.tt_weights.shape[3] == 3
+            ):
+                print("Setting env variable vae upsample2d_3")
+                os.environ["TT_MM_THROTTLE_PERF"] = "5"
+
         [hidden_states, [H, W], [self.tt_weights, self.tt_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_weights,
@@ -93,9 +126,14 @@ class TtUpsample2D(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+
+        if "TT_MM_THROTTLE_PERF" in os.environ:
+            print("Deleting env variable vae upsample2d")
+            del os.environ["TT_MM_THROTTLE_PERF"]
+
         C = self.conv_params["output_channels"]
-        print("Upsample2D conv begin sync")
+        print("VAE Upsample2D conv begin sync")
         ttnn.synchronize_device(self.device)
-        print("Upsample2D conv end sync")
+        print("VAE Upsample2D conv end sync")
 
         return hidden_states, [C, H, W]

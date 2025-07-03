@@ -5,7 +5,7 @@
 import torch.nn as nn
 import torch
 import ttnn
-
+import os
 from models.experimental.stable_diffusion_xl_base.tt.sdxl_utility import prepare_linear_params
 
 
@@ -139,6 +139,16 @@ class TtAttention(nn.Module):
             ttnn.deallocate(qkv_fused)
         else:
             print(f"Attention begin q matmul, shapes: {hidden_states.shape} x {self.tt_q_weights.shape}")
+            # Attention begin q matmul, shapes: Shape([1, 1, 1024, 1280]) x Shape([1, 1, 1280, 1280])
+            if hidden_states.shape[-2] == 1024 and hidden_states.shape[-1] == 1280:
+                if (
+                    self.tt_q_weights.shape[0] == 1
+                    and self.tt_q_weights.shape[1] == 1
+                    and self.tt_q_weights.shape[2] == 1280
+                    and self.tt_q_weights.shape[3] == 1280
+                ):
+                    print("Setting env variable attention_q")
+                    os.environ["TT_MM_THROTTLE_PERF"] = "5"
             q_heads = ttnn.matmul(
                 hidden_states,
                 self.tt_q_weights,
@@ -146,6 +156,10 @@ class TtAttention(nn.Module):
                 compute_kernel_config=self.q_compute_kernel_config,
                 memory_config=ttnn.L1_MEMORY_CONFIG,
             )
+
+            if "TT_MM_THROTTLE_PERF" in os.environ:
+                print("Deleting env variable attention_q")
+                del os.environ["TT_MM_THROTTLE_PERF"]
             print(f"Attention q matmul sync begin")
             ttnn.synchronize_device(self.device)
             print(f"Attention q matmul sync end")
@@ -217,6 +231,18 @@ class TtAttention(nn.Module):
         print("Pre DO sync end")
 
         print(f"Attention begin dense out, shapes: {hidden_states.shape} x {self.tt_out_weights.shape}")
+
+        # Attention begin dense out, shapes: Shape([1, 1, 1024, 1280]) x Shape([1, 1, 1280, 1280])
+        if hidden_states.shape[-2] == 1024 and hidden_states.shape[-1] == 1280:
+            if (
+                self.tt_out_weights.shape[0] == 1
+                and self.tt_out_weights.shape[1] == 1
+                and self.tt_out_weights.shape[2] == 1280
+                and self.tt_out_weights.shape[3] == 1280
+            ):
+                print("Setting env variable attention_dense_out")
+                os.environ["TT_MM_THROTTLE_PERF"] = "5"
+
         hidden_states = ttnn.linear(
             hidden_states,
             self.tt_out_weights,
@@ -228,5 +254,9 @@ class TtAttention(nn.Module):
         print(f"Attention dense out sync begin")
         ttnn.synchronize_device(self.device)
         print(f"Attention dense out sync end")
+
+        if "TT_MM_THROTTLE_PERF" in os.environ:
+            print("Deleting env variable attention_do")
+            del os.environ["TT_MM_THROTTLE_PERF"]
 
         return hidden_states

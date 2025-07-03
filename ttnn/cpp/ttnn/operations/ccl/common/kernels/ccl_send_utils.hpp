@@ -112,7 +112,7 @@ void mcast_contig_pages_to_noc_address(
     if (has_forward_fabric_connection) {
         static_assert(
             is_power_of_2(sizeof(PACKET_HEADER_TYPE)),
-            "sizeof(tt::tt_fabric::PacketHeader) is not a power of two which violates the below assertion");
+            "sizeof(PACKET_HEADER_TYPE) is not a power of two which violates the below assertion");
 
         auto& pkt_hdr = *reinterpret_cast<PACKET_HEADER_TYPE*>(l1_read_addr);
         pkt_hdr
@@ -287,7 +287,7 @@ void mcast_sync_signal_to_addr(
                                size_t directional_num_hops) {
         static_assert(
             is_power_of_2(sizeof(PACKET_HEADER_TYPE)),
-            "sizeof(tt::tt_fabric::PacketHeader) is not a power of two which violates the below assertion");
+            "sizeof(PACKET_HEADER_TYPE) is not a power of two which violates the below assertion");
         ASSERT((pkt_addr & (sizeof(PACKET_HEADER_TYPE) - 1)) == 0);
 
         auto& pkt_hdr = *reinterpret_cast<PACKET_HEADER_TYPE*>(pkt_addr);

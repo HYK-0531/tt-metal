@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <tt-metalium/control_plane.hpp>
 #include <tt-metalium/device_pool.hpp>
-#include <tt-metalium/erisc_datamover_builder.hpp>
+#include <tt_metal/fabric/erisc_datamover_builder.hpp>
 #include <tt-metalium/fabric_host_interface.h>
 #include <array>
 #include <cstddef>

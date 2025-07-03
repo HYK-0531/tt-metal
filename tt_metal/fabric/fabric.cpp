@@ -4,7 +4,7 @@
 
 #include <stdint.h>
 #include <tt-metalium/core_coord.hpp>
-#include <tt-metalium/erisc_datamover_builder.hpp>
+#include "erisc_datamover_builder.hpp"
 #include <tt-metalium/program.hpp>
 #include <tt-metalium/fabric.hpp>
 #include <tt-metalium/mesh_graph.hpp>

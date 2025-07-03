@@ -11,7 +11,7 @@
 #include <tt-metalium/fabric.hpp>
 #include "tt-metalium/kernel_types.hpp"
 #include "ttnn/operations/ccl/ccl_common.hpp"
-#include <tt-metalium/erisc_datamover_builder.hpp>
+#include <tt_metal/fabric/erisc_datamover_builder.hpp>
 
 #include "ttnn/operations/ccl/common/host/ccl_worker_builder.hpp"
 #include <tt-metalium/host_api.hpp>
@@ -836,7 +836,7 @@ tt::tt_metal::KernelHandle generate_multi_command_stream_kernel_ct_args(
     const auto reserved_packet_header_CB_index =
         datamovement_kernel_config.processor == tt::tt_metal::DataMovementProcessor::RISCV_0 ? tt::CB::c_in6 : tt::CB::c_in7;
     static constexpr auto num_packet_headers_storable = 8;
-    static constexpr auto packet_header_size_bytes = sizeof(tt::tt_fabric::PacketHeader);
+    static constexpr auto packet_header_size_bytes = tt::tt_fabric::get_tt_fabric_packet_header_size_bytes();
     tt::tt_metal::CircularBufferConfig cb_config =
         tt::tt_metal::CircularBufferConfig(
             num_packet_headers_storable * packet_header_size_bytes * 2,

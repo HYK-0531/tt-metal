@@ -6,7 +6,7 @@
 #include <tt-metalium/assert.hpp>
 #include <tt-metalium/control_plane.hpp>
 #include <tt-metalium/device.hpp>
-#include <tt-metalium/erisc_datamover_builder.hpp>
+#include "erisc_datamover_builder.hpp"
 #include "tt_metal/fabric/fabric_edm_packet_header.hpp"
 #include <tt-metalium/hal.hpp>
 #include <tt-metalium/host_api.hpp>

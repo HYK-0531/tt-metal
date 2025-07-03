@@ -7,7 +7,7 @@ from models.experimental.yolov6l.tt.common import Yolov6l_Conv2D
 
 
 class TtBottleRep:
-    def __init__(self, device, parameters, model_params):
+    def __init__(self, device, parameters, model_params, shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED):
         self.parameters = parameters
         self.model_params = model_params
         self.cv1 = Yolov6l_Conv2D(
@@ -15,7 +15,7 @@ class TtBottleRep:
             conv=model_params.conv1.block.conv,
             conv_pth=parameters.conv1.block.conv,
             # shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
-            shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
+            shard_layout=shard_layout,
             act_block_h=True,
             act_blocks=32,
             # shard_layout=None,
@@ -36,7 +36,7 @@ class TtBottleRep:
             # shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             # shard_layout=None,
             # auto_shard=True,
-            shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
+            shard_layout=shard_layout,
             act_block_h=True,
             act_blocks=32,
             activation="silu",

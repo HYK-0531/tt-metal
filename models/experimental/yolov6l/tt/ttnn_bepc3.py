@@ -8,7 +8,15 @@ from models.experimental.yolov6l.tt.common import Yolov6l_Conv2D
 
 
 class TtBepC3:
-    def __init__(self, device, parameters, model_params, n=6):
+    def __init__(
+        self,
+        device,
+        parameters,
+        model_params,
+        n=6,
+        shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
+        shard_layout_rep_block_greater_1=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
+    ):
         self.parameters = parameters
         self.model_params = model_params
         self.cv1 = Yolov6l_Conv2D(
@@ -44,7 +52,14 @@ class TtBepC3:
             is_nhwc=True,
             reshape=True,
         )
-        self.repblock = TtRepBlock(device, parameters.m, model_params.m, n=n)
+        self.repblock = TtRepBlock(
+            device,
+            parameters.m,
+            model_params.m,
+            n=n,
+            shard_layout=shard_layout,
+            shard_layout_rep_block_greater_1=shard_layout_rep_block_greater_1,
+        )
 
     def __call__(self, x):
         conv1 = self.cv1(x)

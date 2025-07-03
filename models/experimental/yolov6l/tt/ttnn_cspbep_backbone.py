@@ -9,7 +9,7 @@ from models.experimental.yolov6l.tt.common import Yolov6l_Conv2D
 
 
 class TtCSPBepBackbone:
-    def __init__(self, device, parameters, model_params):
+    def __init__(self, device, parameters, model_params, shard_layout_bepc3=ttnn.TensorMemoryLayout.BLOCK_SHARDED):
         self.parameters = parameters
         self.model_params = model_params
         self.stem = Yolov6l_Conv2D(
@@ -46,7 +46,13 @@ class TtCSPBepBackbone:
             is_nhwc=True,
             reshape=True,
         )
-        self.erblock3_1 = TtBepC3(device, parameters.ERBlock_3[1], model_params.ERBlock_3[1], n=12)
+        self.erblock3_1 = TtBepC3(
+            device,
+            parameters.ERBlock_3[1],
+            model_params.ERBlock_3[1],
+            n=12,
+            shard_layout_rep_block_greater_1=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
+        )
 
         self.erblock4_0 = Yolov6l_Conv2D(
             device=device,
@@ -71,7 +77,9 @@ class TtCSPBepBackbone:
             is_nhwc=True,
             reshape=True,
         )
-        self.erblock5_1 = TtBepC3(device, parameters.ERBlock_5[1], model_params.ERBlock_5[1], n=6)
+        self.erblock5_1 = TtBepC3(
+            device, parameters.ERBlock_5[1], model_params.ERBlock_5[1], n=6, shard_layout=shard_layout_bepc3
+        )
         self.erblock5_2 = TtSppf(device, parameters.ERBlock_5[2].sppf, model_params.ERBlock_5[2].sppf)
 
     def __call__(self, x):

@@ -148,7 +148,7 @@ Fold::MultiCoreDRAMFold::cached_program_t fold_multi_core_tiled_interleaved(
     log_debug(tt::LogOp, "compute_kernel_name: {}", compute_kernel_name);
 
     // Create main compute kernel
-    tt::tt_metal::KernelHandle compute_kernel_id = tt::tt_metal::CreateKernel(
+    tt::tt_metal::CreateKernel(
         program,
         compute_kernel_name,
         core_range,
@@ -159,7 +159,7 @@ Fold::MultiCoreDRAMFold::cached_program_t fold_multi_core_tiled_interleaved(
 
     // Create cliff compute kernel if needed (for handling edge cases)
     if (core_range_cliff.ranges().size() > 0) {
-        tt::tt_metal::KernelHandle compute_kernel_id_cliff = tt::tt_metal::CreateKernel(
+        tt::tt_metal::CreateKernel(
             program,
             compute_kernel_name,
             core_range_cliff,

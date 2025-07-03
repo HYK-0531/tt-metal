@@ -122,7 +122,7 @@ operation::ProgramWithCallbacks tilize_single_core(const Tensor& a, Tensor& outp
         num_tiles_per_block               // per_core_block_tile_cnt
     };
 
-    auto tilize_kernel_id = tt::tt_metal::CreateKernel(
+    tt::tt_metal::CreateKernel(
         program,
         "ttnn/cpp/ttnn/deprecated/tt_dnn/kernels/compute/tilize.cpp",
         core,
@@ -312,21 +312,21 @@ operation::ProgramWithCallbacks tilize_multi_core_block(const Tensor& a, Tensor&
     // compute
 
     if (core_range.size() > 0) {
-        auto tilize_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/operations/data_movement/tilize/device/kernels/compute/tilize_wh.cpp",
             core_range,
             ComputeConfig{.compile_args = {single_block_size, single_block_size, third_dim}});
     }
     if (has_cliff_col && has_cliff_row) {
-        auto tilize_col_row_cliff_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/operations/data_movement/tilize/device/kernels/compute/tilize_wh.cpp",
             cliff_col_row_core_range,
             ComputeConfig{.compile_args = {single_block_size_cliff_col, single_block_size_cliff_row, third_dim}});
     }
     if (has_cliff_row) {
-        auto tilize_row_cliff_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/operations/data_movement/tilize/device/kernels/compute/tilize_wh.cpp",
             cliff_row_core_range,
@@ -334,7 +334,7 @@ operation::ProgramWithCallbacks tilize_multi_core_block(const Tensor& a, Tensor&
     }
 
     if (has_cliff_col) {
-        auto tilize_col_cliff_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/operations/data_movement/tilize/device/kernels/compute/tilize_wh.cpp",
             cliff_col_core_range,
@@ -521,14 +521,14 @@ operation::ProgramWithCallbacks tilize_multi_core_interleaved(const Tensor& a, T
     std::vector<uint32_t> compute_args_cliff = {nblocks_per_core_cliff, ntiles_per_block};
 
     if (core_range.ranges().size() > 0) {
-        auto tilize_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/deprecated/tt_dnn/kernels/compute/tilize.cpp",
             core_range,
             ComputeConfig{.compile_args = compute_args});
     }
     if (core_range_cliff.size() > 0) {
-        auto tilize_cliff_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/deprecated/tt_dnn/kernels/compute/tilize.cpp",
             core_range_cliff,
@@ -686,7 +686,7 @@ operation::ProgramWithCallbacks tilize_multi_core_sharded(const Tensor& input, T
     std::vector<uint32_t> compute_args = {
         uint32_t(num_tiles_per_shard / num_tiles_per_row), uint32_t(num_tiles_per_row)};
 
-    auto untilize_kernel_id = tt::tt_metal::CreateKernel(
+    tt::tt_metal::CreateKernel(
         program,
         "ttnn/cpp/ttnn/deprecated/tt_dnn/kernels/compute/tilize.cpp",
         all_cores,

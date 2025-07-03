@@ -196,7 +196,7 @@ operation::ProgramWithCallbacks tilize_with_val_padding_single_core(
     std::vector<uint32_t> compute_kernel_args = {
         uint32_t(num_tiles / num_tiles_per_block), uint32_t(num_tiles_per_block)};
 
-    auto tilize_kernel_id = tt::tt_metal::CreateKernel(
+    tt::tt_metal::CreateKernel(
         program,
         "ttnn/cpp/ttnn/deprecated/tt_dnn/kernels/compute/tilize.cpp",
         core,
@@ -392,14 +392,14 @@ operation::ProgramWithCallbacks tilize_with_val_padding_multi_core_block_interle
     // compute
 
     if (core_range.size() > 0) {
-        auto tilize_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/operations/data_movement/tilize/device/kernels/compute/tilize_wh.cpp",
             core_range,
             ComputeConfig{.compile_args = {single_block_size, single_block_size, third_dim}});
     }
     if (has_cliff_col && has_cliff_row) {
-        auto tilize_col_row_cliff_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/operations/data_movement/tilize/device/kernels/compute/tilize_wh.cpp",
             cliff_col_row_core_range,
@@ -414,7 +414,7 @@ operation::ProgramWithCallbacks tilize_with_val_padding_multi_core_block_interle
     }
 
     if (has_cliff_col) {
-        auto tilize_col_cliff_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/operations/data_movement/tilize/device/kernels/compute/tilize_wh.cpp",
             cliff_col_core_range,
@@ -606,14 +606,14 @@ operation::ProgramWithCallbacks tilize_with_val_padding_multi_core_interleaved(
     /** compute
      */
     if (core_range.size() > 0) {
-        auto tilize_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/deprecated/tt_dnn/kernels/compute/tilize.cpp",
             core_range,
             ComputeConfig{.compile_args = {nblocks_per_core, num_tiles_per_row}});
     }
     if (has_cliff) {
-        auto tilize_cliff_kernel_id = CreateKernel(
+        CreateKernel(
             program,
             "ttnn/cpp/ttnn/deprecated/tt_dnn/kernels/compute/tilize.cpp",
             core_range_cliff,
@@ -809,7 +809,7 @@ operation::ProgramWithCallbacks tilize_with_val_padding_multi_core_sharded(
         (uint32_t)ntiles_per_block,  // per_block_ntiles
     };
 
-    auto tilize_kernel_id = CreateKernel(
+    CreateKernel(
         program,
         "ttnn/cpp/ttnn/deprecated/tt_dnn/kernels/compute/tilize.cpp",
         all_cores,

@@ -50,6 +50,28 @@ class TtFalconModelShared:
             "attn_layernorm": dict(),
         }
 
+        self.compute_grid_size = self.mesh_device.compute_with_storage_grid_size()
+        self.ccl_sub_device_crs = ttnn.CoreRangeSet(
+            {
+                ttnn.CoreRange(
+                    ttnn.CoreCoord(0, 0), ttnn.CoreCoord(self.compute_grid_size.x - 1, self.compute_grid_size.y - 1)
+                )
+            }
+        )
+
+        # The used CCLs use up to 3 global semaphores
+        self.multi_device_global_semaphore_handles = [
+            ttnn.create_global_semaphore(mesh_device, self.ccl_sub_device_crs, 0) for _ in range(3)
+        ]
+
+        self.worker_sub_device_id = ttnn.SubDeviceId(0)
+
+        self.worker_sub_device = ttnn.SubDevice([self.ccl_sub_device_crs])
+        self.sub_device_stall_group = [self.worker_sub_device_id]
+        self.sub_device_manager = mesh_device.create_sub_device_manager([self.worker_sub_device], 0)
+        self.mesh_device.load_sub_device_manager(self.sub_device_manager)
+        self.mesh_device.set_sub_device_stall_group(self.sub_device_stall_group)
+
         # Word Embeddings
         self.embeddings = TtFalconEmbeddings(
             mesh_device=mesh_device,
@@ -83,6 +105,8 @@ class TtFalconModelShared:
                 tt_cache_path=tt_cache_path,
                 global_cos_sin_cache=global_cos_sin_cache,
                 ln_output_tensors_dict=self.ln_output_tensors_dict,
+                multi_device_global_semaphore_handles=self.multi_device_global_semaphore_handles,
+                worker_sub_device_id=self.worker_sub_device_id,
             )
             for layer_num in tqdm(range(num_layers), desc="Loading decoder layers")
         ]
@@ -308,12 +332,22 @@ class TtFalconModelShared:
                 layer_output, self.model_config["BFP8_DTYPE"], memory_config=ttnn.DRAM_MEMORY_CONFIG
             )
 
-        layer_output = ttnn.all_gather(
+        print("starting falcon_model 335")
+        # layer_output = ttnn.all_gather(
+        #     layer_output,
+        #     dim=3,
+        #     num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
+        #     memory_config=self.model_config["DEFAULT_MEMCFG"],
+        # )
+        layer_output = ttnn.experimental.all_gather_async(
             layer_output,
             dim=3,
+            multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
             memory_config=self.model_config["DEFAULT_MEMCFG"],
+            subdevice_id=self.worker_sub_device_id,
         )
+        print("ending falcon_model 335")
 
         if self.model_config["LN_INPUT_DTYPE"] != self.model_config["BFP8_DTYPE"]:
             layer_output = ttnn.experimental.typecast(
@@ -365,12 +399,25 @@ class TtFalconModelShared:
             layer_output,
             memory_config=self.model_config["DEFAULT_MEMCFG"],
         )
-        layer_output = ttnn.all_gather(
+
+        print("starting falcon_model 403")
+        # layer_output = ttnn.all_gather(
+        #     layer_output,
+        #     dim=3,
+        #     num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
+        #     memory_config=self.model_config["DEFAULT_MEMCFG"],
+        # )
+        layer_output = ttnn.experimental.all_gather_async(
             layer_output,
             dim=3,
+            multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
             memory_config=self.model_config["DEFAULT_MEMCFG"],
+            subdevice_id=self.worker_sub_device_id,
         )
+        print("ending falcon_model 403")
+
+        # TODO: (GR) May not need this (can do conversion in AG, test perf of internal vs external conversion)
         layer_output = ttnn.interleaved_to_sharded(
             layer_output,
             self.model_config["FINAL_ALL_GATHER_OUTPUT_MEMCFG"],

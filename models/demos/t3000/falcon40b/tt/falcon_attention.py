@@ -124,6 +124,8 @@ class TtFalconAttention:
         model_config=None,
         tt_cache_path=None,
         global_cos_sin_cache=None,
+        multi_device_global_semaphore_handles=None,
+        worker_sub_device_id=None,
     ):
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -138,6 +140,8 @@ class TtFalconAttention:
         self.num_heads_per_device = self.num_heads // mesh_device.get_num_devices()
         self.tt_cache_path = tt_cache_path
         self.max_batch_size = 32
+        self.multi_device_global_semaphore_handles = multi_device_global_semaphore_handles
+        self.worker_sub_device_id = worker_sub_device_id
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
             raise ValueError(
@@ -363,12 +367,24 @@ class TtFalconAttention:
             attn_output,
             memory_config=self.model_config["CONCAT_HEADS_OUTPUT_MEMCFG"],
         )
-        attn_output = ttnn.all_gather(
+
+        print("starting falcon_attention 367")
+        # attn_output = ttnn.all_gather(
+        #     attn_output,
+        #     dim=3,
+        #     num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
+        #     memory_config=self.model_config["DEFAULT_MEMCFG"],
+        # )
+        attn_output = ttnn.experimental.all_gather_async(
             attn_output,
             dim=3,
+            multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
             memory_config=self.model_config["DEFAULT_MEMCFG"],
+            subdevice_id=self.worker_sub_device_id,
         )
+        print("ending falcon_attention 367")
+
         attn_output = falcon_prefill_matmul(
             attn_output,
             self.dense_weights,
@@ -584,12 +600,24 @@ class TtFalconAttention:
             attn_output,
             memory_config=self.model_config["DEFAULT_MEMCFG"],
         )
-        attn_output = ttnn.all_gather(
+
+        print("starting falcon_attention 600")
+        # attn_output = ttnn.all_gather(
+        #     attn_output,
+        #     dim=3,
+        #     num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
+        #     memory_config=self.model_config["DEFAULT_MEMCFG"],
+        # )
+        attn_output = ttnn.experimental.all_gather_async(
             attn_output,
             dim=3,
+            multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:2],
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
             memory_config=self.model_config["DEFAULT_MEMCFG"],
+            subdevice_id=self.worker_sub_device_id,
         )
+        print("ending falcon_attention 600")
+
         attn_output = ttnn.interleaved_to_sharded(
             attn_output,
             self.model_config["ATTN_ALL_GATHER_OUTPUT_MEMCFG"],

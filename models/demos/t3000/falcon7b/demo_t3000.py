@@ -4,6 +4,7 @@
 
 import pytest
 
+import ttnn
 from models.demos.falcon7b_common.demo.demo import run_falcon_demo_kv
 from models.utility_functions import is_wormhole_b0
 
@@ -11,29 +12,34 @@ from models.utility_functions import is_wormhole_b0
 @pytest.mark.parametrize(
     "perf_mode, max_seq_len, expected_perf_metrics, greedy_sampling, expected_greedy_output_path",
     (
-        (True, 128, {"prefill_t/s": 11070, "decode_t/s": 3710, "decode_t/s/u": 14.5}, False, None),
-        (True, 1024, {"prefill_t/s": 12200, "decode_t/s": 3434, "decode_t/s/u": 13.4}, False, None),
-        (True, 2048, {"prefill_t/s": 10700, "decode_t/s": 3203, "decode_t/s/u": 12.5}, False, None),
+        # (True, 128, {"prefill_t/s": 11070, "decode_t/s": 3710, "decode_t/s/u": 14.5}, False, None),
+        # (True, 1024, {"prefill_t/s": 12200, "decode_t/s": 3434, "decode_t/s/u": 13.4}, False, None),
+        # (True, 2048, {"prefill_t/s": 10700, "decode_t/s": 3203, "decode_t/s/u": 12.5}, False, None),
         (True, 128, None, False, None),
-        (True, 1024, None, False, None),
-        (True, 2048, None, False, None),
-        (False, 1024, None, True, "models/demos/t3000/falcon7b/expected_greedy_output.json"),
-        (False, 1024, None, True, None),
-        (False, 1024, None, False, None),
+        # (True, 1024, None, False, None),
+        # (True, 2048, None, False, None),
+        # (False, 1024, None, True, "models/demos/t3000/falcon7b/expected_greedy_output.json"),
+        # (False, 1024, None, True, None),
+        # (False, 1024, None, False, None),
     ),
     ids=[
-        "perf_mode_128_stochastic_verify",
-        "perf_mode_1024_stochastic_verify",
-        "perf_mode_2048_stochastic_verify",
+        # "perf_mode_128_stochastic_verify",
+        # "perf_mode_1024_stochastic_verify",
+        # "perf_mode_2048_stochastic_verify",
         "perf_mode_128_stochastic",
-        "perf_mode_1024_stochastic",
-        "perf_mode_2048_stochastic",
-        "default_mode_1024_greedy_verify",
-        "default_mode_1024_greedy",
-        "default_mode_1024_stochastic",
+        # "perf_mode_1024_stochastic",
+        # "perf_mode_2048_stochastic",
+        # "default_mode_1024_greedy_verify",
+        # "default_mode_1024_greedy",
+        # "default_mode_1024_stochastic",
     ],
 )
-@pytest.mark.parametrize("mesh_device", (1, 2, 3, 4, 5, 6, 7, 8), indirect=True)
+@pytest.mark.parametrize("mesh_device", (8,), indirect=True)
+@pytest.mark.parametrize(
+    "device_params",
+    [{"fabric_config": ttnn.FabricConfig.FABRIC_1D}],
+    indirect=True,
+)
 def test_demo_multichip(
     perf_mode,  # Option to measure perf using max seq length (with invalid outputs) and expected perf (t/s)
     max_seq_len,

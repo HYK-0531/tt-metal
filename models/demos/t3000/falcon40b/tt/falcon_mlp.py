@@ -21,6 +21,8 @@ class TtFalconMLP:
         hidden_size: int,
         model_config,
         tt_cache_path,
+        multi_device_global_semaphore_handles=None,
+        worker_sub_device_id=None,
     ):
         super().__init__()
 
@@ -28,6 +30,8 @@ class TtFalconMLP:
         self.mesh_device = mesh_device
         self.hidden_size = hidden_size
         self.model_config = model_config
+        self.multi_device_global_semaphore_handles = multi_device_global_semaphore_handles
+        self.worker_sub_device_id = worker_sub_device_id
 
         layer_name = f"{base_url}.{layer_num}"
 
@@ -115,15 +119,42 @@ class TtFalconMLP:
             compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
         )
 
+        # TODO: (GR) May not need
         hidden_states = ttnn.sharded_to_interleaved(hidden_states, memory_config=self.model_config["DEFAULT_MEMCFG"])
 
-        hidden_states = ttnn.reduce_scatter(
+        print("starting falcon_mlp 121")
+        print(hidden_states.shape)
+        print(hidden_states.dtype)
+        print(hidden_states.memory_config())
+        # hidden_states = ttnn.reduce_scatter(
+        #     hidden_states,
+        #     dim=3,
+        #     math_op=ttnn.ReduceType.Sum,
+        #     num_links=1,  # only unidirectional supported for now
+        #     memory_config=self.model_config["DEFAULT_MEMCFG"],
+        # )
+
+        hidden_states = ttnn.experimental.reduce_scatter_minimal_async(
             hidden_states,
             dim=3,
-            math_op=ttnn.ReduceType.Sum,
+            multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:3],
             num_links=1,  # only unidirectional supported for now
             memory_config=self.model_config["DEFAULT_MEMCFG"],
+            subdevice_id=self.worker_sub_device_id,
         )
+
+        # hidden_states = ttnn.experimental.reduce_scatter_async(
+        #     hidden_states,
+        #     dim=3,
+        #     from_remote_multi_device_global_semaphore=self.multi_device_global_semaphore_handles[0],
+        #     to_remote_multi_device_global_semaphore=self.multi_device_global_semaphore_handles[1],
+        #     math_op=ttnn.ReduceType.Sum,
+        #     num_links=1,
+        #     memory_config=self.model_config["DEFAULT_MEMCFG"],
+        #     subdevice_id=self.worker_sub_device_id,
+        # )
+
+        print("ending falcon_mlp 121")
 
         hidden_states = ttnn.interleaved_to_sharded(
             hidden_states, self.model_config["MLP_REDUCE_SCATTER_OUTPUT_MEMCFG"]
@@ -185,10 +216,22 @@ class TtFalconMLP:
         if should_deallocate_ln_tensors:
             x.deallocate(True)
 
-        return ttnn.reduce_scatter(
+        print("starting falcon_mlp 205")
+        # return ttnn.reduce_scatter(
+        #     self.output,
+        #     dim=3,
+        #     math_op=ttnn.ReduceType.Sum,
+        #     num_links=1,  # only one link supported for now
+        #     memory_config=self.model_config["DEFAULT_MEMCFG"],
+        # )
+
+        return ttnn.experimental.reduce_scatter_minimal_async(
             self.output,
             dim=3,
-            math_op=ttnn.ReduceType.Sum,
-            num_links=1,  # only one link supported for now
+            multi_device_global_semaphore=self.multi_device_global_semaphore_handles[:3],
+            num_links=1,
             memory_config=self.model_config["DEFAULT_MEMCFG"],
+            subdevice_id=self.worker_sub_device_id,
         )
+
+        print("ending falcon_mlp 205")

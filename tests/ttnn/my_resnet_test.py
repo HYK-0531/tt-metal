@@ -3,11 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import ttnn
+
+# import ttnn.database
 import time
 import math
 from loguru import logger
 
-from models.demos.ttnn_resnet.tests.resnet50_test_infra import create_test_infra
+# from models.demos.ttnn_resnet.tests.resnet50_test_infra import create_test_infra
 
 DTYPE = ttnn.bfloat16
 
@@ -46,30 +48,45 @@ class MaxPool2dArgs:
 
 
 class Downsample:
-    def __init__(self, device, in_channels, out_channels, kernel_size, stride):
+    def __init__(self, device, batch_size, in_channels, out_channels, kernel_size, stride):
         self.device = device
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = (kernel_size, kernel_size)
-        self.stride = (stride, stride)
 
-    def forward(self, x):
-        x = ttnn.conv2d(
+        self.conv1 = Conv2dArgs(
+            batch_size=batch_size,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=0,
+            bias=False,
+        )
+
+    def __call__(self, x):
+        y = ttnn.conv2d(
             input_tensor=x,
-            weight_tensor=self.conv1_weight_tensor,
+            weight_tensor=ttnn.ones(
+                shape=[
+                    self.conv1.out_channels,
+                    self.conv1.in_channels,
+                    self.conv1.kernel_size[0],
+                    self.conv1.kernel_size[1],
+                ],
+                dtype=DTYPE,
+            ),
             device=self.device,
             in_channels=self.conv1.in_channels,
             out_channels=self.conv1.out_channels,
             batch_size=self.conv1.batch_size,
-            input_height=self.conv1.input_height,
-            input_width=self.conv1.input_width,
+            input_height=get_input_height(x, self.conv1.batch_size),
+            input_width=get_input_width(x, self.conv1.batch_size),
             kernel_size=self.conv1.kernel_size,
             stride=self.conv1.stride,
             padding=self.conv1.padding,
-            bias_tensor=self.conv1_bias_tensor,
+            bias_tensor=ttnn.ones(shape=[self.conv1.out_channels], dtype=DTYPE) if self.conv1.bias else None,
         )
-        x = ttnn.batch_norm(x)
-        return x
+        ttnn.deallocate(x)
+        # x = ttnn.batch_norm(x)
+        return y
 
 
 class Bottleneck:
@@ -117,7 +134,7 @@ class Bottleneck:
         self.stride = stride
 
     def __call__(self, x: ttnn.Tensor):
-        identity = x  # copy input
+        identity = ttnn.to_memory_config(x, ttnn.DRAM_MEMORY_CONFIG)  # copy input
 
         # First block
         x = ttnn.conv2d(
@@ -142,7 +159,7 @@ class Bottleneck:
             padding=self.conv1.padding,
             bias_tensor=ttnn.ones(shape=[self.conv1.out_channels], dtype=DTYPE) if self.conv1.bias else None,
         )
-        x = ttnn.batch_norm(x)
+        # x = ttnn.batch_norm(x)
         x = ttnn.relu(x)
 
         # Second block
@@ -168,7 +185,7 @@ class Bottleneck:
             padding=self.conv2.padding,
             bias_tensor=ttnn.ones(shape=[self.conv2.out_channels], dtype=DTYPE) if self.conv2.bias else None,
         )
-        x = ttnn.batch_norm(x)
+        # x = ttnn.batch_norm(x)
         x = ttnn.relu(x)
 
         # Third block
@@ -194,13 +211,14 @@ class Bottleneck:
             padding=self.conv3.padding,
             bias_tensor=ttnn.ones(shape=[self.conv3.out_channels], dtype=DTYPE) if self.conv3.bias else None,
         )
-        x = ttnn.batch_norm(x)
+        # x = ttnn.batch_norm(x)
 
         # Downsample if needed
         if self.downsample_layer is not None:
-            identity = self.downsample_layer(x)
+            identity = self.downsample_layer(identity)
 
         # Add identity
+        identity = ttnn.to_memory_config(identity, x.memory_config())
         x += identity
         x = ttnn.relu(x)
 
@@ -283,6 +301,7 @@ class Resnet50:
             padding=self.max_pool_args.padding,
             dilation=self.max_pool_args.dilation,
             ceil_mode=self.max_pool_args.ceil_mode,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
 
         for layer in self.layer1:
@@ -306,6 +325,7 @@ class Resnet50:
         if stride != 1 or self.in_channels != planes * Bottleneck.expansion:
             downsample_layer = Downsample(
                 device=self.device,
+                batch_size=self.batch_size,
                 in_channels=self.in_channels,
                 out_channels=planes * Bottleneck.expansion,
                 kernel_size=1,
@@ -372,10 +392,13 @@ def run_resnet_50(
     return out
 
 
-if __name__ == "__main__":
+def test_resnet_50():
     logger.remove()
 
-    device = ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(1, 1), l1_small_size=24576)
+    # device = ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(1, 1), l1_small_size=36000)
+    # device = ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(1, 1), l1_small_size=24576)
+    # device = ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(1, 1), l1_small_size=12544)
+    device = ttnn.open_device(device_id=0, l1_small_size=12544)
 
     out = run_resnet_50(
         device,
@@ -383,3 +406,7 @@ if __name__ == "__main__":
     )
 
     print(f"Output shape: {out.shape}")
+
+
+if __name__ == "__main__":
+    test_resnet_50()

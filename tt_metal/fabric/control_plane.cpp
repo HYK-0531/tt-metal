@@ -294,7 +294,11 @@ LocalMeshBinding ControlPlane::initialize_local_mesh_binding() {
         .mesh_ids = {MeshId{std::stoi(mesh_id_str)}},
         .host_rank = HostRankId{std::stoi(host_rank_str)}};
 
-    log_debug(tt::LogDistributed, "Local mesh binding: mesh_id: {}, host_rank: {}", local_mesh_binding.mesh_id, local_mesh_binding.host_rank);
+    log_debug(
+        tt::LogDistributed,
+        "Local mesh binding: mesh_id: {}, host_rank: {}",
+        local_mesh_binding.mesh_ids[0],
+        local_mesh_binding.host_rank);
 
     // Validate the local mesh binding exists in the mesh graph descriptor
     auto mesh_ids = this->routing_table_generator_->mesh_graph->get_mesh_ids();

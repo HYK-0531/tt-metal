@@ -49,7 +49,6 @@ std::unordered_map<CoreCoord, std::vector<PageStride>> get_core_page_ranges(
 
     auto device = input_buffer->device();
     auto full_grid = device->compute_with_storage_grid_size();
-    CoreCoord end_core = (*output_buffer->shard_spec().grid().ranges().rbegin()).end_coord;
     uint32_t output_core_id = 0;
     for (auto output_core : output_cores) {
         ret_map.try_emplace(output_core, std::vector<PageStride>{});
@@ -207,7 +206,6 @@ std::unordered_map<CoreCoord, std::vector<PageStride>> get_core_page_ranges(
                         }
                         auto next_input_page = *(stride_it);
                         auto curr_input_page = *(last_it_stride);
-                        bool core_stride = ((stride.core.x != 0) or (stride.core.y != 0));
                         // TT_ASSERT(curr_input_page.has_value());
                         if (!curr_input_page.has_value() or !next_input_page.has_value() or
                             (next_input_page.value().first.x - curr_input_page.value().first.x != stride.core.x) or
@@ -513,7 +511,6 @@ operation::ProgramWithCallbacks reshard_multi_core_generic(const Tensor& input, 
 
     for (const auto& core : cores) {
         auto page_stride_vector = output_core_to_page_range_pair.at(core);
-        uint32_t num_ranges = page_stride_vector.size();
         auto runtime_args_0 = get_runtime_args_for_given_ranges(
             physical_core_coords,
             page_stride_vector,
@@ -584,7 +581,6 @@ operation::ProgramWithCallbacks reshard_multi_core_same_height(const Tensor& inp
 
     TT_FATAL(local_tensor.layout() == Layout::ROW_MAJOR, "Expected row major tensor");
     const uint32_t unit_size = local_shard_spec.shape[1] * local_tensor.element_size();  // width * element size
-    const uint32_t local_units_per_shard = local_shard_spec.shape[0];                    // height
     const uint32_t remote_units_per_shard = remote_shard_spec.shape[0];                  // height
     const uint32_t total_size = remote_units_per_shard * unit_size;
 

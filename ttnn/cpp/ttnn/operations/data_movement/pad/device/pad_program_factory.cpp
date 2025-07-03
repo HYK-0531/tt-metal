@@ -718,11 +718,9 @@ std::vector<std::pair<std::vector<uint32_t>, std::vector<uint32_t>>> get_runtime
     auto output_shape = output_tensor.padded_shape();
 
     uint32_t W = input_shape[3], H = input_shape[2], C = input_shape[1], N = input_shape[0];
-    uint32_t W_bytes = W * input_tensor.element_size();
 
     uint32_t W_padded = output_shape[3], H_padded = output_shape[2], C_padded = output_shape[1],
              N_padded = output_shape[0];
-    uint32_t W_padded_bytes = W_padded * input_tensor.element_size();
 
     std::uint32_t num_dims = static_cast<std::uint32_t>(input_shape.rank());
     std::vector<uint32_t> start_dim_offset(num_dims, 0);
@@ -731,7 +729,6 @@ std::vector<std::pair<std::vector<uint32_t>, std::vector<uint32_t>>> get_runtime
 
     auto& front_pad = input_tensor_start;
     uint32_t curr_c = 0, curr_h = 0, curr_n = 0;
-    uint32_t num_stick_per_barrier = get_num_stick_per_barrier(input_tensor);
     for (uint32_t i = 0, curr_sticks_read = 0, curr_sticks_write = 0; i < num_cores_total; i++) {
         CoreCoord core = {i / num_cores_y, i % num_cores_y};
 
@@ -800,7 +797,6 @@ operation::ProgramWithCallbacks pad_rm_reader_writer_multi_core_v2(
 
     const auto& a_shape = a.logical_shape();
     uint32_t W = a_shape[3], H = a_shape[2], C = a_shape[1], N = a_shape[0];
-    uint32_t NCH = H * C * N;
     uint32_t W_padded = output_padded_shape[3], H_padded = output_padded_shape[2], C_padded = output_padded_shape[1],
              N_padded = output_padded_shape[0];
     uint32_t NCH_padded = H_padded * C_padded * N_padded;
@@ -1039,11 +1035,9 @@ inline std::vector<std::pair<std::vector<uint32_t>, std::vector<uint32_t>>> get_
     auto output_shape = output_tensor.padded_shape();
 
     uint32_t W = input_shape[3], H = input_shape[2], C = input_shape[1], N = input_shape[0];
-    uint32_t W_bytes = W * input_tensor.element_size();
 
     uint32_t W_padded = output_shape[3], H_padded = output_shape[2], C_padded = output_shape[1],
              N_padded = output_shape[0];
-    uint32_t W_padded_bytes = W_padded * input_tensor.element_size();
 
     std::uint32_t num_dims = static_cast<std::uint32_t>(input_shape.rank());
     std::vector<uint32_t> start_dim_offset(num_dims, 0);
@@ -1187,7 +1181,6 @@ operation::ProgramWithCallbacks pad_rm_sharded_height_only(
     uint32_t num_unpadded_sticks = H * C * N;
     uint32_t W_padded = output_padded_shape[3], H_padded = output_padded_shape[2], C_padded = output_padded_shape[1],
              N_padded = output_padded_shape[0];
-    uint32_t num_padded_sticks = H_padded * C_padded * N_padded;
 
     auto& front_pad = input_tensor_start;
 
@@ -1219,7 +1212,6 @@ operation::ProgramWithCallbacks pad_rm_sharded_height_only(
     // input shard spec
     auto shard_spec_unpadded = a.shard_spec().value();
     uint32_t shard_height_unpadded = shard_spec_unpadded.shape[0];
-    uint32_t shard_width_unpadded = shard_spec_unpadded.shape[1];
     bool row_major = shard_spec_unpadded.orientation == ShardOrientation::ROW_MAJOR;
 
     auto& all_cores_unpadded = shard_spec_unpadded.grid;
@@ -1237,7 +1229,6 @@ operation::ProgramWithCallbacks pad_rm_sharded_height_only(
     // output shard spec
     auto shard_spec_padded = output.shard_spec().value();
     uint32_t shard_height_padded = shard_spec_padded.shape[0];
-    uint32_t shard_width_padded = shard_spec_padded.shape[1];
 
     auto& all_cores_padded = shard_spec_padded.grid;
     uint32_t num_cores_padded = shard_spec_padded.num_cores();

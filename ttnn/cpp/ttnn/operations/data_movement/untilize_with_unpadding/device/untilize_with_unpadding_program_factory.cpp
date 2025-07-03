@@ -57,7 +57,6 @@ operation::ProgramWithCallbacks untilize_with_unpadding_single_core(
     auto output_x = output_shape[-1];
 
     uint32_t num_padded_sticks = input_w * input_z * input_y;
-    uint32_t num_unpadded_sticks = input_w * input_z * output_y;
     uint32_t padded_stick_size = input_x * output.element_size();  // Assuming bfloat16 dataformat
     uint32_t unpadded_stick_size = output_x * output.element_size();
 
@@ -1049,7 +1048,6 @@ operation::ProgramWithCallbacks untilize_with_unpadding_multi_core_sharded(
         tt::tt_metal::SetRuntimeArgs(program, unary_writer_kernel_id, all_cores, writer_rt_args);
     } else {
         uint32_t tile_start_id = 0;
-        uint32_t row_start_id = 0;
         cores = grid_to_cores(ncores, ncores_x, ncores_y, row_major);
         for (uint32_t i = 0; i < cores.size(); ++i) {
             CoreCoord& core = cores[i];

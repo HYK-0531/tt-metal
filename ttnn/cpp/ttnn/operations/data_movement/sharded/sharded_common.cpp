@@ -37,7 +37,6 @@ compute_width_sharding_reshard_segments(
     tt::tt_metal::IDevice* device,
     uint32_t element_size) {
     const uint32_t num_local_shards = local_cores.size();
-    const uint32_t num_remote_shards = remote_cores.size();
 
     const uint32_t local_shard_height = local_shard_shape[0];
     const uint32_t local_shard_width = local_shard_shape[1];

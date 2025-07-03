@@ -13,4 +13,5 @@ echo "Hostname: $(hostname)"
 echo "Date: $(date)"
 echo "============================================="
 tt-smi -r
-$TT_METAL_HOME/build/test/tt_metal/multi_host_fabric_tests |& tee $TT_METAL_HOME/log.txt
+# $TT_METAL_HOME/build/test/tt_metal/multi_host_fabric_tests |& tee $TT_METAL_HOME/log.txt
+$TT_METAL_HOME/build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceDual2x4SendRecvFixture* |& tee $TT_METAL_HOME/log.txt

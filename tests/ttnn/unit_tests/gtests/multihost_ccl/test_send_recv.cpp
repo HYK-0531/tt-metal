@@ -35,13 +35,21 @@ std::array<TensorSpec, 2> tensor_specs = {
 class MeshDeviceDual2x4SendRecvFixture : public tt::tt_fabric::fabric_router_tests::MeshDeviceDual2x4Fixture,
                                          public testing::WithParamInterface<TensorSpec> {};
 
-TEST_P(MeshDeviceDual2x4SendRecvFixture, SendRecvAsync) {
-    auto tensor_spec = GetParam();
+INSTANTIATE_TEST_SUITE_P(
+    MeshDeviceDual2x4SendRecvTests, MeshDeviceDual2x4SendRecvFixture, ::testing::ValuesIn(tensor_specs));
 
+class MeshDeviceDual2x2SendRecvFixture : public tt::tt_fabric::fabric_router_tests::MeshDeviceDual2x2Fixture,
+                                         public testing::WithParamInterface<TensorSpec> {};
+
+INSTANTIATE_TEST_SUITE_P(
+    MeshDeviceDual2x2SendRecvTests, MeshDeviceDual2x2SendRecvFixture, ::testing::ValuesIn(tensor_specs));
+
+void test_send_recv_async(
+    const std::shared_ptr<tt::tt_metal::distributed::MeshDevice>& mesh_device, const TensorSpec& tensor_spec) {
     auto sender_logical_coord = CoreCoord(0, 0);
     auto recv_logical_coord = CoreCoord(0, 1);
     uint32_t socket_fifo_size = 10 * 1024;
-    auto mesh_shape = mesh_device_->shape();
+    auto mesh_shape = mesh_device->shape();
     std::vector<distributed::SocketConnection> forward_socket_connections;
     forward_socket_connections.reserve(mesh_shape.mesh_size());
     std::vector<distributed::SocketConnection> backward_socket_connections;
@@ -72,8 +80,8 @@ TEST_P(MeshDeviceDual2x4SendRecvFixture, SendRecvAsync) {
         .socket_mem_config = socket_mem_config,
         .sender_rank = distributed::multihost::Rank{1},
         .receiver_rank = distributed::multihost::Rank{0}};
-    auto forward_socket = distributed::MeshSocket(mesh_device_, forward_socket_config);
-    auto backward_socket = distributed::MeshSocket(mesh_device_, backward_socket_config);
+    auto forward_socket = distributed::MeshSocket(mesh_device, forward_socket_config);
+    auto backward_socket = distributed::MeshSocket(mesh_device, backward_socket_config);
 
     auto distributed_context = tt_metal::distributed::multihost::DistributedContext::get_current_world();
 
@@ -86,12 +94,12 @@ TEST_P(MeshDeviceDual2x4SendRecvFixture, SendRecvAsync) {
         const Tensor input_tensor =
             ttnn::distributed::distribute_tensor(
                 ttnn::experimental::view(ttnn::arange(0, num_elems, 1, dtype), input_shape).to_layout(layout),
-                *ttnn::distributed::replicate_tensor_to_mesh_mapper(*mesh_device_),
-                *mesh_device_)
-                .to_device(mesh_device_.get(), memory_config);
+                *ttnn::distributed::replicate_tensor_to_mesh_mapper(*mesh_device),
+                *mesh_device)
+                .to_device(mesh_device.get(), memory_config);
         ttnn::experimental::send_async(input_tensor, forward_socket);
-        distributed::Synchronize(mesh_device_.get(), std::nullopt);
-        auto composer = ttnn::distributed::concat_mesh_to_tensor_composer(*mesh_device_, /*dim=*/0);
+        distributed::Synchronize(mesh_device.get(), std::nullopt);
+        auto composer = ttnn::distributed::concat_mesh_to_tensor_composer(*mesh_device, /*dim=*/0);
         auto input_data = ttnn::distributed::aggregate_tensor(input_tensor, *composer).to_vector<uint32_t>();
         // Send test results to the receiver host
         distributed_context->send(
@@ -102,9 +110,9 @@ TEST_P(MeshDeviceDual2x4SendRecvFixture, SendRecvAsync) {
         );
         auto output_tensor = tt::tt_metal::allocate_tensor_on_mesh(
             TensorSpec(input_shape, tt::tt_metal::TensorLayout(dtype, tt::tt_metal::PageConfig(layout), memory_config)),
-            mesh_device_.get());
+            mesh_device.get());
         ttnn::experimental::recv_async(output_tensor, backward_socket);
-        distributed::Synchronize(mesh_device_.get(), std::nullopt);
+        distributed::Synchronize(mesh_device.get(), std::nullopt);
         auto output_data = ttnn::distributed::aggregate_tensor(output_tensor, *composer).to_vector<uint32_t>();
         std::vector<uint32_t> inc_output_data(output_data.size());
         distributed_context->recv(
@@ -117,10 +125,10 @@ TEST_P(MeshDeviceDual2x4SendRecvFixture, SendRecvAsync) {
     } else {
         auto output_tensor = tt::tt_metal::allocate_tensor_on_mesh(
             TensorSpec(input_shape, tt::tt_metal::TensorLayout(dtype, tt::tt_metal::PageConfig(layout), memory_config)),
-            mesh_device_.get());
+            mesh_device.get());
         ttnn::experimental::recv_async(output_tensor, forward_socket);
-        distributed::Synchronize(mesh_device_.get(), std::nullopt);
-        auto composer = ttnn::distributed::concat_mesh_to_tensor_composer(*mesh_device_, /*dim=*/0);
+        distributed::Synchronize(mesh_device.get(), std::nullopt);
+        auto composer = ttnn::distributed::concat_mesh_to_tensor_composer(*mesh_device, /*dim=*/0);
         auto output_data = ttnn::distributed::aggregate_tensor(output_tensor, *composer).to_vector<uint32_t>();
         std::vector<uint32_t> input_data(output_data.size());
         distributed_context->recv(
@@ -132,7 +140,7 @@ TEST_P(MeshDeviceDual2x4SendRecvFixture, SendRecvAsync) {
         EXPECT_EQ(input_data, output_data);
         auto inc_output_tensor = ttnn::add(output_tensor, 1);
         ttnn::experimental::send_async(inc_output_tensor, backward_socket);
-        distributed::Synchronize(mesh_device_.get(), std::nullopt);
+        distributed::Synchronize(mesh_device.get(), std::nullopt);
         auto inc_output_data = ttnn::distributed::aggregate_tensor(inc_output_tensor, *composer).to_vector<uint32_t>();
         distributed_context->send(
             tt::stl::Span<std::byte>(
@@ -143,7 +151,14 @@ TEST_P(MeshDeviceDual2x4SendRecvFixture, SendRecvAsync) {
     }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    MeshDeviceDual2x4SendRecvTests, MeshDeviceDual2x4SendRecvFixture, ::testing::ValuesIn(tensor_specs));
+TEST_P(MeshDeviceDual2x4SendRecvFixture, SendRecvAsync) {
+    auto tensor_spec = GetParam();
+    test_send_recv_async(mesh_device_, tensor_spec);
+}
+
+TEST_P(MeshDeviceDual2x2SendRecvFixture, SendRecvAsync) {
+    auto tensor_spec = GetParam();
+    test_send_recv_async(mesh_device_, tensor_spec);
+}
 
 }  // namespace tt::tt_metal

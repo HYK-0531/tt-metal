@@ -108,13 +108,12 @@ class InterMeshDual2x4Fabric2DFixture : public InterMeshRoutingFabric2DFixture {
     }
 };
 
-class MultiMeshDevice2DFabricFixture : public tt::tt_metal::T3000MeshDevice2DFabricFixture {
+class MultiMeshDevice2DFabricFixture : public tt::tt_metal::GenericMeshDevice2DFabricFixture {
 public:
     void SetUp() override {
         if (not system_supported()) {
             GTEST_SKIP() << "Skipping since this is not a supported system.";
         }
-        
         const char* mesh_id_str = std::getenv("TT_MESH_ID");
         const char* host_rank_str = std::getenv("TT_HOST_RANK");
         auto local_mesh_id = std::string(mesh_id_str);
@@ -135,12 +134,12 @@ public:
         TT_FATAL(
             *(tt::tt_metal::MetalContext::instance().get_distributed_context().size()) > 1,
             "Multi-Host Routing tests require multiple hosts in the system");
-        tt::tt_metal::T3000MeshDevice2DFabricFixture::SetUp();
+        tt::tt_metal::GenericMeshDevice2DFabricFixture::SetUp();
     }
 
     void TearDown() override {
         if (system_supported()) {
-            tt::tt_metal::T3000MeshDevice2DFabricFixture::TearDown();
+            tt::tt_metal::GenericMeshDevice2DFabricFixture::TearDown();
         }
     }
 
@@ -179,6 +178,24 @@ class MeshDeviceDual2x4Fixture : public MultiMeshDevice2DFabricFixture {
     bool system_supported() override {
         const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
         return cluster.user_exposed_chip_ids().size() == 8;
+    }
+};
+
+class MeshDeviceDual2x2Fixture : public MultiMeshDevice2DFabricFixture {
+    std::string get_path_to_mesh_graph_desc() override {
+        return "tests/tt_metal/tt_fabric/custom_mesh_descriptors/t3k_2x2_mesh_graph_descriptor.yaml";
+    }
+
+    std::vector<std::vector<eth_coord_t>> get_eth_coord_mapping() override {
+        return {
+            {{0, 0, 0, 0, 0}, {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 1, 1, 0, 0}},
+
+            {{0, 2, 0, 0, 0}, {0, 3, 0, 0, 0}, {0, 2, 1, 0, 0}, {0, 3, 1, 0, 0}}};
+    }
+
+    bool system_supported() override {
+        const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
+        return cluster.user_exposed_chip_ids().size() == 4;
     }
 };
 

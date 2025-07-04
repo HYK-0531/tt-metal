@@ -927,6 +927,8 @@ class ModelOptimisations:
             return True
         if H == 512 and W == 512 and in_channels == 256 and out_channels == 256:
             return True
+        if H == 128 and W == 128 and in_channels == 512 and out_channels == 512:
+            return True
 
         # Vae upsample
         if H == 256 and W == 256 and in_channels == 512 and out_channels == 512:

@@ -206,7 +206,7 @@ class TtResnetBlock2D(nn.Module):
         )
 
         if "TT_MM_THROTTLE_PERF" in os.environ:
-            print("Deleting env variable vae resnet")
+            print("Deleting env variable vae resnet conv 1")
             del os.environ["TT_MM_THROTTLE_PERF"]
         print(f"VAE Resnet conv1 sync begin")
         ttnn.synchronize_device(self.device)
@@ -267,6 +267,13 @@ class TtResnetBlock2D(nn.Module):
             hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
             hidden_states = ttnn.reshape(hidden_states, (B, H, W, C))
 
+        # Executing vae resnet conv2, shapes: Shape([1, 1, 16384, 512]) x Shape([1, 1, 4608, 512])
+        if self.model_config.should_throttle_conv(
+            H, W, self.conv2_params["input_channels"], self.conv2_params["output_channels"]
+        ):
+            print("Setting env variable vae resnet conv2")
+            os.environ["TT_MM_THROTTLE_PERF"] = "5"
+
         print(f"Executing vae resnet conv2, shapes: {hidden_states.shape} x {self.tt_conv2_weights.shape}")
         [hidden_states, [H, W], [self.tt_conv2_weights, self.tt_conv2_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
@@ -290,6 +297,10 @@ class TtResnetBlock2D(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+
+        if "TT_MM_THROTTLE_PERF" in os.environ:
+            print("Deleting env variable vae resnet conv 2")
+            del os.environ["TT_MM_THROTTLE_PERF"]
 
         print(f"VAE Resnet conv2 sync begin")
         ttnn.synchronize_device(self.device)

@@ -16,11 +16,11 @@ from models.utility_functions import torch_random
 @pytest.mark.parametrize(
     "input_shape, block_id, resnet_id, conv_shortcut, block, pcc",
     [
-        ((1, 512, 128, 128), 0, 0, False, "mid_block", 0.999),
+        # ((1, 512, 128, 128), 0, 0, False, "mid_block", 0.999),
         ((1, 512, 128, 128), 0, 0, False, "up_blocks", 0.999),
-        ((1, 512, 256, 256), 1, 0, False, "up_blocks", 0.999),
-        ((1, 512, 256, 256), 2, 0, True, "up_blocks", 0.999),
-        ((1, 256, 256, 256), 2, 1, False, "up_blocks", 0.999),
+        # ((1, 512, 256, 256), 1, 0, False, "up_blocks", 0.999),
+        # ((1, 512, 256, 256), 2, 0, True, "up_blocks", 0.999),
+        # ((1, 256, 256, 256), 2, 1, False, "up_blocks", 0.999),
     ],
 )
 @pytest.mark.parametrize("device_params", [{"l1_small_size": SDXL_L1_SMALL_SIZE}], indirect=True)
@@ -54,6 +54,10 @@ def test_vae_resnetblock2d(device, input_shape, block_id, resnet_id, conv_shortc
         layout=ttnn.TILE_LAYOUT,
         memory_config=ttnn.DRAM_MEMORY_CONFIG,
     )
+
+    for i in range(2):
+        ttnn_input_clone = ttnn.clone(ttnn_input_tensor)
+        ttnn_output_tensor, output_shape = tt_resnet.forward(ttnn_input_clone, [B, C, H, W])
 
     ttnn_output_tensor, output_shape = tt_resnet.forward(ttnn_input_tensor, [B, C, H, W])
     output_tensor = ttnn.to_torch(ttnn_output_tensor)

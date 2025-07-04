@@ -417,7 +417,8 @@ void MAIN {
             reconfig_data_format(cb_out_accumulate_im, cb_prev_sum);  // DEBUG
             pack_reconfig_data_format(cb_out_accumulate_im);
 
-            mul_block_bcast_cols_inplace(cb_out_accumulate_im, cb_prev_sum, Sq_chunk_t, DHt);
+            mul_block_bcast_cols(cb_out_accumulate_im, cb_prev_sum, cb_out_accumulate_im, Sq_chunk_t, DHt);
+            // mul_block_bcast_cols_inplace(cb_out_accumulate_im, cb_prev_sum, Sq_chunk_t, DHt);
             pack_reconfig_data_format(cb_out_final);
 
             if constexpr (untilize_output) {

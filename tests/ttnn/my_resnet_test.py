@@ -83,6 +83,7 @@ class Downsample:
             stride=self.conv1.stride,
             padding=self.conv1.padding,
             bias_tensor=ttnn.ones(shape=[self.conv1.out_channels], dtype=DTYPE) if self.conv1.bias else None,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
         ttnn.deallocate(x)
         # x = ttnn.batch_norm(x)
@@ -158,6 +159,7 @@ class Bottleneck:
             stride=self.conv1.stride,
             padding=self.conv1.padding,
             bias_tensor=ttnn.ones(shape=[self.conv1.out_channels], dtype=DTYPE) if self.conv1.bias else None,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
         # x = ttnn.batch_norm(x)
         x = ttnn.relu(x)
@@ -184,6 +186,7 @@ class Bottleneck:
             stride=self.conv2.stride,
             padding=self.conv2.padding,
             bias_tensor=ttnn.ones(shape=[self.conv2.out_channels], dtype=DTYPE) if self.conv2.bias else None,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
         # x = ttnn.batch_norm(x)
         x = ttnn.relu(x)
@@ -210,6 +213,7 @@ class Bottleneck:
             stride=self.conv3.stride,
             padding=self.conv3.padding,
             bias_tensor=ttnn.ones(shape=[self.conv3.out_channels], dtype=DTYPE) if self.conv3.bias else None,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
         # x = ttnn.batch_norm(x)
 
@@ -287,6 +291,7 @@ class Resnet50:
             stride=self.conv1.stride,
             padding=self.conv1.padding,
             bias_tensor=ttnn.ones(shape=[self.conv1.out_channels], dtype=DTYPE) if self.conv1.bias else None,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
         # x = ttnn.batch_norm(x)  # TODO
         x = ttnn.relu(x)

@@ -154,6 +154,7 @@ class TtResnetBlock2D(nn.Module):
         self.linear_program_config = model_config.get_matmul_config(matmul_path=f"{module_path}.linear")
         assert self.linear_program_config is not None, "linear_program_config should not be None"
         self.default_compute_config = model_config.get_mm_compute_config(mm_path)
+        self.model_config = model_config
 
     def forward(self, input_tensor, temb, input_shape):
         B, C, H, W = input_shape
@@ -229,47 +230,20 @@ class TtResnetBlock2D(nn.Module):
             ttnn.synchronize_device(self.device)
             print("ResnetBlock2D split_conv_1 sync end")
         else:
+            print("ResnetBlock2D sync just in case begin")
+            ttnn.synchronize_device(self.device)
+            print("ResnetBlock2D sync just in case end")
             print(f"ResnetBlock2D conv_1 begin, shapes: {hidden_states.shape} x {self.tt_conv1_weights.shape}")
             # ResnetBlock2D conv_1 begin, shapes: Shape([1, 1, 1024, 2560]) x Shape([1280, 2560, 3, 3])
             # ResnetBlock2D conv_1 begin, shapes: Shape([1, 1, 1024, 2560]) x Shape([1, 1, 23040, 1280])
             # ResnetBlock2D conv_1 begin, shapes: Shape([1, 1, 1024, 1280]) x Shape([1, 1, 11520, 1280])
             # ResnetBlock2D conv_1 begin, shapes: Shape([1, 1, 1024, 1920]) x Shape([1, 1, 17280, 1280])
 
-            if hidden_states.shape[-2] == 1024 and hidden_states.shape[-1] == 2560:
-                if (
-                    self.tt_conv1_weights.shape[0] == 1280
-                    and self.tt_conv1_weights.shape[1] == 2560
-                    and self.tt_conv1_weights.shape[2] == 3
-                    and self.tt_conv1_weights.shape[3] == 3
-                ):
-                    print("Setting env variable resnet1")
-                    os.environ["TT_MM_THROTTLE_PERF"] = "5"
-                if (
-                    self.tt_conv1_weights.shape[0] == 1
-                    and self.tt_conv1_weights.shape[1] == 1
-                    and self.tt_conv1_weights.shape[2] == 23040
-                    and self.tt_conv1_weights.shape[3] == 1280
-                ):
-                    print("Setting env variable resnet2")
-                    os.environ["TT_MM_THROTTLE_PERF"] = "5"
-            if hidden_states.shape[-2] == 1024 and hidden_states.shape[-1] == 1280:
-                if (
-                    self.tt_conv1_weights.shape[0] == 1
-                    and self.tt_conv1_weights.shape[1] == 1
-                    and self.tt_conv1_weights.shape[2] == 11520
-                    and self.tt_conv1_weights.shape[3] == 1280
-                ):
-                    print("Setting env variable resnet3")
-                    os.environ["TT_MM_THROTTLE_PERF"] = "5"
-            if hidden_states.shape[-2] == 1024 and hidden_states.shape[-1] == 1920:
-                if (
-                    self.tt_conv1_weights.shape[0] == 1
-                    and self.tt_conv1_weights.shape[1] == 1
-                    and self.tt_conv1_weights.shape[2] == 17280
-                    and self.tt_conv1_weights.shape[3] == 1280
-                ):
-                    print("Setting env variable resnet4")
-                    os.environ["TT_MM_THROTTLE_PERF"] = "5"
+            if self.model_config.should_throttle_conv(
+                H, W, self.conv1_params["input_channels"], self.conv1_params["output_channels"]
+            ):
+                print("Setting env variable resnet conv1")
+                os.environ["TT_MM_THROTTLE_PERF"] = "5"
 
             [hidden_states, [H, W], [self.tt_conv1_weights, self.tt_conv1_bias]] = ttnn.conv2d(
                 input_tensor=hidden_states,
@@ -344,6 +318,13 @@ class TtResnetBlock2D(nn.Module):
         hidden_states = ttnn.silu(hidden_states)
 
         print(f"ResnetBlock2D conv_2 begin, shapes: {hidden_states.shape} x {self.tt_conv2_weights.shape}")
+
+        if self.model_config.should_throttle_conv(
+            H, W, self.conv2_params["input_channels"], self.conv2_params["output_channels"]
+        ):
+            print("Setting env variable resnet conv2")
+            os.environ["TT_MM_THROTTLE_PERF"] = "5"
+
         [hidden_states, [H, W], [self.tt_conv2_weights, self.tt_conv2_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_conv2_weights,
@@ -368,6 +349,11 @@ class TtResnetBlock2D(nn.Module):
         print("ResnetBlock2D conv_2 sync begin")
         ttnn.synchronize_device(self.device)
         print("ResnetBlock2D conv_2 sync end")
+
+        if "TT_MM_THROTTLE_PERF" in os.environ:
+            print("Deleting env variable resnet conv2")
+            del os.environ["TT_MM_THROTTLE_PERF"]
+
         C = self.conv2_params["output_channels"]
 
         if self.tt_conv3_weights is not None:

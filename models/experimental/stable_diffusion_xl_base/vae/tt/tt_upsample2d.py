@@ -27,6 +27,7 @@ class TtUpsample2D(nn.Module):
         super().__init__()
 
         self.device = device
+        self.model_config = model_config
 
         self.stride = stride
         self.padding = padding
@@ -76,33 +77,11 @@ class TtUpsample2D(nn.Module):
         # VAE Upsample2D conv begin, shapes: Shape([1, 256, 256, 512]) x Shape([512, 512, 3, 3])
         # VAE Upsample2D conv begin, shapes: Shape([1, 1024, 1024, 256]) x Shape([256, 256, 3, 3])
         # VAE Upsample2D conv begin, shapes: Shape([1, 512, 512, 512]) x Shape([512, 512, 3, 3])
-        if hidden_states.shape[-3] == 256 and hidden_states.shape[-2] == 256 and hidden_states.shape[-1] == 512:
-            if (
-                self.tt_weights.shape[0] == 512
-                and self.tt_weights.shape[1] == 512
-                and self.tt_weights.shape[2] == 3
-                and self.tt_weights.shape[3] == 3
-            ):
-                print("Setting env variable vae upsample2d_1")
-                os.environ["TT_MM_THROTTLE_PERF"] = "5"
-        if hidden_states.shape[-3] == 1024 and hidden_states.shape[-2] == 1024 and hidden_states.shape[-1] == 256:
-            if (
-                self.tt_weights.shape[0] == 256
-                and self.tt_weights.shape[1] == 256
-                and self.tt_weights.shape[2] == 3
-                and self.tt_weights.shape[3] == 3
-            ):
-                print("Setting env variable vae upsample2d_2")
-                os.environ["TT_MM_THROTTLE_PERF"] = "5"
-        if hidden_states.shape[-3] == 512 and hidden_states.shape[-2] == 512 and hidden_states.shape[-1] == 512:
-            if (
-                self.tt_weights.shape[0] == 512
-                and self.tt_weights.shape[1] == 512
-                and self.tt_weights.shape[2] == 3
-                and self.tt_weights.shape[3] == 3
-            ):
-                print("Setting env variable vae upsample2d_3")
-                os.environ["TT_MM_THROTTLE_PERF"] = "5"
+        if self.model_config.should_throttle_conv(
+            H, W, self.conv_params["input_channels"], self.conv_params["output_channels"]
+        ):
+            print("Setting env variable vae upsample2d_1")
+            os.environ["TT_MM_THROTTLE_PERF"] = "5"
 
         [hidden_states, [H, W], [self.tt_weights, self.tt_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,

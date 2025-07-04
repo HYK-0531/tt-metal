@@ -184,6 +184,11 @@ class TtUNet2DConditionModel(nn.Module):
         temb = ttnn.add(temb, temb_add)
         ttnn.deallocate(temb_add)
 
+        print(f"Unet initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"Unet initial sync end")
+
+        print(f"Executing unet first conv2d shapes: {sample.shape} x {self.tt_conv1_weights.shape}")
         [sample, [H, W], [self.tt_conv1_weights, self.tt_conv1_bias]] = ttnn.conv2d(
             input_tensor=sample,
             weight_tensor=self.tt_conv1_weights,
@@ -205,6 +210,9 @@ class TtUNet2DConditionModel(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+        print(f"Unet first conv2d sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"Unet first conv2d sync end")
         C = self.conv1_params["output_channels"]
 
         sample = ttnn.to_memory_config(sample, ttnn.DRAM_MEMORY_CONFIG)
@@ -278,6 +286,11 @@ class TtUNet2DConditionModel(nn.Module):
 
         sample = ttnn.sharded_to_interleaved(sample, ttnn.L1_MEMORY_CONFIG)
 
+        print("Unet conv_out initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print("Unet conv_out initial sync end")
+
+        print(f"Executing unet second conv2d shapes: {sample.shape} x {self.tt_conv2_weights.shape}")
         [sample, [H, W], [self.tt_conv2_weights, self.tt_conv2_bias]] = ttnn.conv2d(
             input_tensor=sample,
             weight_tensor=self.tt_conv2_weights,
@@ -299,6 +312,9 @@ class TtUNet2DConditionModel(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+        print(f"Unet conv_out sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"Unet conv_out sync end")
         C = self.conv2_params["output_channels"]
 
         return sample, [C, H, W]

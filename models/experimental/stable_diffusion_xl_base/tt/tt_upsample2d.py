@@ -45,6 +45,7 @@ class TtUpsample2D(nn.Module):
             fp32_dest_acc_en=(self.conv_config.weights_dtype == ttnn.bfloat8_b)
             and (self.conv_config.shard_layout != ttnn.TensorMemoryLayout.HEIGHT_SHARDED),
         )
+        self.model_config = model_config
 
     def interpolate(self, hidden_states):
         memory_config = ttnn.create_sharded_memory_config(
@@ -72,15 +73,11 @@ class TtUpsample2D(nn.Module):
         print(f"Upsample2D conv begin, shapes: {hidden_states.shape} x {self.tt_weights.shape}")
         # Upsample2D conv begin, shapes: Shape([1, 64, 64, 1280]) x Shape([1280, 1280, 3, 3])
 
-        if hidden_states.shape[-3] == 64 and hidden_states.shape[-2] == 64 and hidden_states.shape[-1] == 1280:
-            if (
-                self.tt_weights.shape[0] == 1280
-                and self.tt_weights.shape[1] == 1280
-                and self.tt_weights.shape[2] == 3
-                and self.tt_weights.shape[3] == 3
-            ):
-                print("Setting env variable upsample2d")
-                os.environ["TT_MM_THROTTLE_PERF"] = "5"
+        if self.model_config.should_throttle_conv(
+            H, W, self.conv_params["input_channels"], self.conv_params["output_channels"]
+        ):
+            print("Setting env variable upsample2d")
+            os.environ["TT_MM_THROTTLE_PERF"] = "5"
 
         [hidden_states, [H, W], [self.tt_weights, self.tt_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,

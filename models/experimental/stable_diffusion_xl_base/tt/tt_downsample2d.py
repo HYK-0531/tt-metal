@@ -34,6 +34,11 @@ class TtDownsample2D(nn.Module):
     def forward(self, hidden_states, input_shape):
         B, C, H, W = input_shape
 
+        print(f"Downsample initial sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"Downsample initial sync end")
+
+        print(f"Downsample conv2d begin, shapes: {hidden_states.shape} x {self.tt_weights.shape}")
         [hidden_states, [H, W], [self.tt_weights, self.tt_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_weights,
@@ -55,6 +60,9 @@ class TtDownsample2D(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+        print(f"Downsample conv2d begin sync")
+        ttnn.synchronize_device(self.device)
+        print(f"Downsample conv2d end sync")
         C = self.conv_params["output_channels"]
 
         hidden_states = ttnn.sharded_to_interleaved(hidden_states, ttnn.L1_MEMORY_CONFIG)

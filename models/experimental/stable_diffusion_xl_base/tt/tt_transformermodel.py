@@ -5,6 +5,7 @@
 import torch.nn as nn
 import ttnn
 import re
+import os
 
 from models.experimental.stable_diffusion_xl_base.tt.tt_transformerblock import TtBasicTransformerBlock
 from models.experimental.stable_diffusion_xl_base.tt.sdxl_utility import (
@@ -96,6 +97,17 @@ class TtTransformer2DModel(nn.Module):
         print("Transformer2DModel initial sync end")
 
         print(f"Transformer2DModel begin linear 1, shapes: {hidden_states.shape} x {self.tt_weights_in.shape}")
+
+        # Transformer2DModel begin linear 1, shapes: Shape([1, 1, 1024, 1280]) x Shape([1, 1, 1280, 1280])
+        if (
+            hidden_states.shape[2] == 1024
+            and hidden_states.shape[3] == 1280
+            and self.tt_weights_in.shape[2] == 1280
+            and self.tt_weights_in.shape[3] == 1280
+        ):
+            print("Setting env variable for transformer model 2d linear 1")
+            os.environ["TT_MM_THROTTLE_PERF"] = "5"
+
         hidden_states = ttnn.linear(
             hidden_states,
             self.tt_weights_in,
@@ -106,6 +118,10 @@ class TtTransformer2DModel(nn.Module):
         print("Transformer2DModel linear 1 sync begin")
         ttnn.synchronize_device(self.device)
         print("Transformer2DModel linear 1 sync end")
+
+        if "TT_MM_THROTTLE_PERF" in os.environ:
+            print("Deleting env variable resnet")
+            del os.environ["TT_MM_THROTTLE_PERF"]
 
         for i, transformer_block in enumerate(self.transformer_blocks):
             hidden_states = transformer_block(hidden_states, attention_mask, encoder_hidden_states)

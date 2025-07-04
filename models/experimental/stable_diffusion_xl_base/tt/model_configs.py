@@ -906,6 +906,38 @@ class ModelOptimisations:
                 return self.matmul_configs["1D_RESNET_LINEAR"]
         return None
 
+    def should_throttle_conv(self, H, W, in_channels, out_channels):
+        print(
+            f"Checking if should throttle conv for H={H}, W={W}, in_channels={in_channels}, out_channels={out_channels}"
+        )
+        # Unet resnet
+        if H == 32 and W == 32 and in_channels == 1920 and out_channels == 1280:
+            return True
+        if H == 32 and W == 32 and in_channels == 1280 and out_channels == 1280:
+            return True
+        if H == 32 and W == 32 and in_channels == 2560 and out_channels == 1280:
+            return True
+
+        # Unet upsample
+        if H == 64 and W == 64 and in_channels == 1280 and out_channels == 1280:
+            return True
+
+        # Vae resnet
+        if H == 512 and W == 512 and in_channels == 512 and out_channels == 256:
+            return True
+        if H == 512 and W == 512 and in_channels == 256 and out_channels == 256:
+            return True
+
+        # Vae upsample
+        if H == 256 and W == 256 and in_channels == 512 and out_channels == 512:
+            return True
+        if H == 1024 and W == 1024 and in_channels == 256 and out_channels == 256:
+            return True
+        if H == 512 and W == 512 and in_channels == 512 and out_channels == 512:
+            return True
+
+        return False
+
     def get_mm_compute_config(self, module_path):
         # for now, return default config
         if ".to_q" in module_path:

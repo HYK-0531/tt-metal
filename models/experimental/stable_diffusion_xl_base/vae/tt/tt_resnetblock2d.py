@@ -21,6 +21,7 @@ class TtResnetBlock2D(nn.Module):
         super().__init__()
 
         self.device = device
+        self.model_config = model_config
         self.gn_fallback = gn_fallback
 
         # fixed for ResnetBlock
@@ -174,24 +175,11 @@ class TtResnetBlock2D(nn.Module):
             hidden_states = ttnn.reshape(hidden_states, (B, H, W, C))
         # Executing vae resnet conv1, shapes: Shape([1, 512, 512, 256]) x Shape([256, 256, 3, 3])
         # Executing vae resnet conv1, shapes: Shape([1, 512, 512, 512]) x Shape([256, 512, 3, 3])
-        if hidden_states.shape[-3] == 512 and hidden_states.shape[-2] == 512 and hidden_states.shape[-1] == 256:
-            if (
-                self.tt_conv1_weights.shape[0] == 256
-                and self.tt_conv1_weights.shape[1] == 256
-                and self.tt_conv1_weights.shape[2] == 3
-                and self.tt_conv1_weights.shape[3] == 3
-            ):
-                print("Setting env variable vae resnet1")
-                os.environ["TT_MM_THROTTLE_PERF"] = "5"
-        elif hidden_states.shape[-3] == 512 and hidden_states.shape[-2] == 512 and hidden_states.shape[-1] == 512:
-            if (
-                self.tt_conv1_weights.shape[0] == 256
-                and self.tt_conv1_weights.shape[1] == 512
-                and self.tt_conv1_weights.shape[2] == 3
-                and self.tt_conv1_weights.shape[3] == 3
-            ):
-                print("Setting env variable vae resnet2")
-                os.environ["TT_MM_THROTTLE_PERF"] = "5"
+        if self.model_config.should_throttle_conv(
+            H, W, self.conv1_params["input_channels"], self.conv1_params["output_channels"]
+        ):
+            print("Setting env variable vae resnet conv1")
+            os.environ["TT_MM_THROTTLE_PERF"] = "5"
 
         print(f"Executing vae resnet conv1, shapes: {hidden_states.shape} x {self.tt_conv1_weights.shape}")
         [hidden_states, [H, W], [self.tt_conv1_weights, self.tt_conv1_bias]] = ttnn.conv2d(
@@ -271,9 +259,15 @@ class TtResnetBlock2D(nn.Module):
         hidden_states = ttnn.to_layout(hidden_states, ttnn.TILE_LAYOUT)
         hidden_states = ttnn.silu(hidden_states)  # note: silu hangs if not tile
 
+        print(f"Pre conv2 vae sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"Pre conv2 vae sync end")
+
         if self.conv2_slice_config is not None:
             hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
             hidden_states = ttnn.reshape(hidden_states, (B, H, W, C))
+
+        print(f"Executing vae resnet conv2, shapes: {hidden_states.shape} x {self.tt_conv2_weights.shape}")
         [hidden_states, [H, W], [self.tt_conv2_weights, self.tt_conv2_bias]] = ttnn.conv2d(
             input_tensor=hidden_states,
             weight_tensor=self.tt_conv2_weights,
@@ -296,6 +290,10 @@ class TtResnetBlock2D(nn.Module):
             return_output_dim=True,
             return_weights_and_bias=True,
         )
+
+        print(f"VAE Resnet conv2 sync begin")
+        ttnn.synchronize_device(self.device)
+        print(f"VAE Resnet conv2 sync end")
         C = self.conv2_params["output_channels"]
 
         if self.conv2_slice_config is not None:
@@ -305,6 +303,8 @@ class TtResnetBlock2D(nn.Module):
             if input_tensor.shape[3] >= 1920:
                 input_tensor = ttnn.to_layout(input_tensor, ttnn.ROW_MAJOR_LAYOUT)
                 input_tensor = ttnn.sharded_to_interleaved(input_tensor, ttnn.L1_MEMORY_CONFIG)
+
+            print(f"Executing vae resnet conv3, shapes: {input_tensor.shape} x {self.tt_conv3_weights.shape}")
             [input_tensor, [H, W], [self.tt_conv3_weights, self.tt_conv3_bias]] = ttnn.conv2d(
                 input_tensor=input_tensor,
                 weight_tensor=self.tt_conv3_weights,
@@ -326,6 +326,9 @@ class TtResnetBlock2D(nn.Module):
                 return_output_dim=True,
                 return_weights_and_bias=True,
             )
+            print(f"VAE Resnet conv3 sync begin")
+            ttnn.synchronize_device(self.device)
+            print(f"VAE Resnet conv3 sync end")
             C = self.conv3_params["output_channels"]
 
         if input_tensor.is_sharded():

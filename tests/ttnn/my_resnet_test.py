@@ -3,6 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import ttnn
+from models.utility_functions import (
+    disable_persistent_kernel_cache,
+    enable_persistent_kernel_cache,
+)
 
 # import ttnn.database
 import time
@@ -399,6 +403,7 @@ def run_resnet_50(
 
 def test_resnet_50():
     logger.remove()
+    enable_persistent_kernel_cache()
 
     # device = ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(1, 1), l1_small_size=36000)
     # device = ttnn.open_mesh_device(mesh_shape=ttnn.MeshShape(1, 1), l1_small_size=24576)

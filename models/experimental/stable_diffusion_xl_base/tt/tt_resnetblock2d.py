@@ -363,6 +363,12 @@ class TtResnetBlock2D(nn.Module):
                 if self.tt_conv3_weights.shape[0] == 640 and self.tt_conv3_weights.shape[1] == 1280:
                     print("Setting env variable resnet_linear_3")
                     os.environ["TT_MM_THROTTLE_PERF"] = "5"
+            # ResnetBlock2D linear_3 begin, shapes: Shape([1, 1, 1024, 2560]) x Shape([2560, 1280])
+            if input_tensor.shape[-2] == 1024 and input_tensor.shape[-1] == 2560:
+                if self.tt_conv3_weights.shape[0] == 2560 and self.tt_conv3_weights.shape[1] == 1280:
+                    print("Setting env variable resnet_linear_3_1")
+                    os.environ["TT_MM_THROTTLE_PERF"] = "5"
+
             input_tensor = ttnn.linear(
                 input_tensor,
                 self.tt_conv3_weights,

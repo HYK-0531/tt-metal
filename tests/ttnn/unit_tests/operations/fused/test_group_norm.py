@@ -12,6 +12,11 @@ import ttnn
 
 from tests.ttnn.utils_for_testing import assert_with_pcc, check_with_pcc
 from models.utility_functions import skip_for_wormhole_b0
+from models.utility_functions import comp_allclose, comp_pcc
+
+
+def print_stats(label, data: torch.Tensor):
+    return f"{label}: mean:{data.mean()} , std:{data.std()} , range:[{data.max()}, {data.min()}]"
 
 
 # for debug purpose
@@ -115,6 +120,11 @@ def test_group_norm_with_height_sharded(device, N, C, H, W, num_groups):
     output_tensor = ttnn.to_torch(output_tensor)
 
     assert_with_pcc(torch_output_tensor, output_tensor, 0.9998)
+    print(comp_allclose(torch_output_tensor, output_tensor))
+    result, output = comp_pcc(torch_output_tensor, output_tensor)
+    logger.info(f"Comparison result Pass:{result}, Output {output}, in: {torch.count_nonzero(output_tensor)}")
+    logger.info(print_stats("torch", torch_output_tensor))
+    logger.info(print_stats("tt", output_tensor))
 
 
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 0}], indirect=True)

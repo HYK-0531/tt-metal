@@ -370,19 +370,19 @@ class TtLlamaAttention(LightweightModule):
         # attn_output_gathered_sharded = ttnn.to_memory_config(
         #     attn_output_gathered, self.model_config["GATHER_USERS_MEMCFG"](list(self.mesh_device.shape)[1])
         # )
-        # ttnn.deallocate(attn_output_gathered)
-        attn_output_1G4D_sharded_rm = ttnn.untilize(
-            attn_output_1G4D_sharded,
-        )
-        ttnn.deallocate(attn_output_1G4D_sharded)
+        # attn_output_1G4D_sharded_rm = ttnn.untilize(
+        #     attn_output_1G4D_sharded,
+        # )
+        # ttnn.deallocate(attn_output_1G4D_sharded)
         attn_output_cat = self.tt_ccl.all_gather_concat(
-            attn_output_1G4D_sharded_rm,
+            attn_output_1G4D_sharded,
             dim=1,
             cluster_axis=1,
             num_links=4 if is_RING_6U else 3,
             memory_config=self.model_config["SHARDED_ATTN_WO_INPUT_RING_MEMCFG"],
             num_heads=self.n_local_heads,
         )
+        ttnn.deallocate(attn_output_1G4D_sharded)
         # print("done concat heads")
 
         # Original matmul on each device [1, 1, 32, 1024] @ [1, 1, 1024, 2048]

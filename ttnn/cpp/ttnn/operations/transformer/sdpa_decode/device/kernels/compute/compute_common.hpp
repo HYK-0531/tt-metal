@@ -185,6 +185,30 @@ void mul_block_bcast_cols(uint32_t in0_cb, uint32_t in1_cb, uint32_t out_cb, uin
     cb_pop_front(in1_cb, rows);
 }
 
+void mul_block_bcast_cols_inplace(uint32_t in0_cb, uint32_t in1_cb, uint32_t rows, uint32_t cols) {
+    // Precondition: in0_cb has rows*cols produced
+    // Precondition: in1_cb has rows produced
+    // Postcondition: in0_cb has rows*cols produced
+    // Postcondition: in1_cb has rows consumed
+
+    uint32_t num_tiles = rows * cols;
+    mul_bcast_cols_init_short(in0_cb, in1_cb);
+    cb_wait_front(in0_cb, num_tiles);
+    cb_wait_front(in1_cb, rows);
+    for (uint32_t i = 0; i < rows; ++i) {
+        for (uint32_t j = 0; j < cols; ++j) {
+            acquire_dst();
+            mul_tiles_bcast_cols(in0_cb, in1_cb, 0, i, 0);
+            cb_pop_front(in0_cb, 1);
+            cb_reserve_back(in0_cb, 1);
+            pack_tile(0, in0_cb);
+            cb_push_back(in0_cb, 1);
+            release_dst();
+        }
+    }
+    cb_pop_front(in1_cb, rows);
+}
+
 void mul_block_bcast_scalar_inplace(uint32_t in0_cb, uint32_t in1_scalar_cb, uint32_t num_tiles) {
     // Precondition: in0_cb has num_tiles produced
     // Precondition: in1_scalar_cb has 1 produced

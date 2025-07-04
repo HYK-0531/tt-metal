@@ -13,10 +13,14 @@ constexpr uint32_t fabric_packet_header_cb_id = get_compile_time_arg_val(0);
 constexpr uint32_t num_pages = get_compile_time_arg_val(1);
 constexpr uint32_t page_size = get_compile_time_arg_val(2);  // This is assumed to be aligned
 constexpr uint32_t num_pages_per_packet = get_compile_time_arg_val(3);
-constexpr uint32_t num_whole_packets_per_page = get_compile_time_arg_val(4);
-constexpr uint32_t partial_packet_size = get_compile_time_arg_val(5);
-constexpr uint32_t whole_packet_size = get_compile_time_arg_val(6);
-constexpr uint32_t output_args_cta_idx = 7;
+// Used when there are multiple pages per packet
+constexpr uint32_t num_whole_packets = get_compile_time_arg_val(4);
+constexpr uint32_t num_pages_remainder = get_compile_time_arg_val(5);
+// Used when there are multiple packets per page
+constexpr uint32_t num_whole_packets_per_page = get_compile_time_arg_val(6);
+constexpr uint32_t partial_packet_size = get_compile_time_arg_val(7);
+constexpr uint32_t whole_packet_size = get_compile_time_arg_val(8);
+constexpr uint32_t output_args_cta_idx = 9;
 constexpr uint32_t output_args_crta_idx = 0;
 
 /*
@@ -53,14 +57,11 @@ void kernel_main() {
     // Small pages. We write multiple pages from a single packet.
     uint32_t page_index = 0;
     if constexpr (num_pages_per_packet > 0) {
-        const uint32_t num_iterations = num_pages / num_pages_per_packet;
-        const uint32_t num_pages_remainder = num_pages % num_pages_per_packet;
-
-        for (uint32_t i = 0; i < num_iterations; ++i) {
+        for (uint32_t i = 0; i < num_whole_packets; ++i) {
             socket_wait_for_pages(receiver_socket, num_pages_per_packet);
             for (uint32_t j = 0; j < num_pages_per_packet; ++j) {
-                auto noc_write_addr = get_noc_addr(page_index, output_addr_gen);
-                noc_async_write(receiver_socket.read_ptr, noc_write_addr, page_size);
+                auto noc_write_addr = output_addr_gen.get_noc_addr(page_index);
+                noc_async_write<page_size>(receiver_socket.read_ptr, noc_write_addr, page_size);
                 page_index++;
                 socket_pop_pages(receiver_socket, 1);
             }
@@ -71,8 +72,8 @@ void kernel_main() {
         if (num_pages_remainder > 0) {
             socket_wait_for_pages(receiver_socket, num_pages_remainder);
             for (uint32_t j = 0; j < num_pages_remainder; ++j) {
-                auto noc_write_addr = get_noc_addr(page_index, output_addr_gen);
-                noc_async_write(receiver_socket.read_ptr, noc_write_addr, page_size);
+                auto noc_write_addr = output_addr_gen.get_noc_addr(page_index);
+                noc_async_write<page_size>(receiver_socket.read_ptr, noc_write_addr, page_size);
                 page_index++;
                 socket_pop_pages(receiver_socket, 1);
             }
@@ -84,9 +85,9 @@ void kernel_main() {
     // Large pages. We write page chunks from multiple packets.
     else {
         for (uint32_t i = 0; i < num_pages; ++i) {
-            auto noc_write_addr = get_noc_addr(page_index, output_addr_gen);
+            auto noc_write_addr = output_addr_gen.get_noc_addr(page_index);
             socket_wait_for_pages(receiver_socket, 1);
-            noc_async_write(receiver_socket.read_ptr, noc_write_addr, page_size);
+            noc_async_write<page_size>(receiver_socket.read_ptr, noc_write_addr, page_size);
             page_index++;
             socket_pop_pages(receiver_socket, 1);
             fabric_socket_notify_sender(receiver_socket, fabric_connection, socket_packet_header_addr);

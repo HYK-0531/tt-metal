@@ -40,8 +40,15 @@ tt::tt_metal::operation::ProgramWithCallbacks send_async_multicore(
     auto fabric_max_payload_size =
         tt::round_down(tt::tt_fabric::get_tt_fabric_max_payload_size_bytes(), input_tensor.buffer()->alignment());
     auto num_pages_per_packet = fabric_max_payload_size / aligned_page_size;
-    auto num_whole_packets_per_page = aligned_page_size / fabric_max_payload_size;
-    auto partial_packet_size = aligned_page_size % fabric_max_payload_size;
+    uint32_t num_whole_packets = 0, num_pages_remainder = 0, num_whole_packets_per_page = 0, partial_packet_size = 0;
+    if (num_pages_per_packet > 0) {
+        num_whole_packets = num_pages / num_pages_per_packet;
+        num_pages_remainder = num_pages % num_pages_per_packet;
+    }
+    if (aligned_page_size > fabric_max_payload_size) {
+        num_whole_packets_per_page = aligned_page_size / fabric_max_payload_size;
+        partial_packet_size = aligned_page_size % fabric_max_payload_size;
+    }
 
     uint32_t cb_num_pages = 2;
     uint32_t cb_page_size = fabric_max_payload_size;
@@ -76,6 +83,8 @@ tt::tt_metal::operation::ProgramWithCallbacks send_async_multicore(
         num_pages,                   // num_pages
         aligned_page_size,           // page_size
         num_pages_per_packet,        // num_pages_per_packet
+        num_whole_packets,           // num_whole_packets
+        num_pages_remainder,         // num_pages_remainder
         num_whole_packets_per_page,  // num_whole_packets_per_page
         partial_packet_size,         // partial_packet_size
         fabric_max_payload_size,     // fabric_max_payload_size
@@ -97,6 +106,8 @@ tt::tt_metal::operation::ProgramWithCallbacks send_async_multicore(
         num_pages,                   // num_pages
         aligned_page_size,           // page_size
         num_pages_per_packet,        // num_pages_per_packet
+        num_whole_packets,           // num_whole_packets
+        num_pages_remainder,         // num_pages_remainder
         num_whole_packets_per_page,  // num_whole_packets_per_page
         partial_packet_size,         // partial_packet_size
         fabric_max_payload_size,     // fabric_max_payload_size

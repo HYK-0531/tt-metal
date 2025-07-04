@@ -12,10 +12,14 @@ constexpr uint32_t cb0_id = get_compile_time_arg_val(0);
 constexpr uint32_t num_pages = get_compile_time_arg_val(1);
 constexpr uint32_t page_size = get_compile_time_arg_val(2);  // This is assumed to be aligned
 constexpr uint32_t num_pages_per_packet = get_compile_time_arg_val(3);
-constexpr uint32_t num_whole_packets_per_page = get_compile_time_arg_val(4);
-constexpr uint32_t partial_packet_size = get_compile_time_arg_val(5);
-constexpr uint32_t whole_packet_size = get_compile_time_arg_val(6);
-constexpr uint32_t input_args_cta_idx = 7;
+// Used when there are multiple pages per packet
+constexpr uint32_t num_whole_packets = get_compile_time_arg_val(4);
+constexpr uint32_t num_pages_remainder = get_compile_time_arg_val(5);
+// Used when there are multiple packets per page
+constexpr uint32_t num_whole_packets_per_page = get_compile_time_arg_val(6);
+constexpr uint32_t partial_packet_size = get_compile_time_arg_val(7);
+constexpr uint32_t whole_packet_size = get_compile_time_arg_val(8);
+constexpr uint32_t input_args_cta_idx = 9;
 constexpr uint32_t input_args_crta_idx = 0;
 
 /*
@@ -37,15 +41,12 @@ void kernel_main() {
     // Small pages. We pack multiple pages into a single packet.
     uint32_t page_index = 0;
     if constexpr (num_pages_per_packet > 0) {
-        uint32_t num_iterations = num_pages / num_pages_per_packet;
-        uint32_t num_pages_remainder = num_pages % num_pages_per_packet;
-
-        for (uint32_t i = 0; i < num_iterations; ++i) {
+        for (uint32_t i = 0; i < num_whole_packets; ++i) {
             cb_reserve_back(cb0_id, 1);
             auto l1_write_addr = get_write_ptr(cb0_id);
             for (uint32_t j = 0; j < num_pages_per_packet; ++j) {
-                auto noc_read_addr = get_noc_addr(page_index, input_addr_gen);
-                noc_async_read(noc_read_addr, l1_write_addr, page_size);
+                auto noc_read_addr = input_addr_gen.get_noc_addr(page_index);
+                noc_async_read<page_size>(noc_read_addr, l1_write_addr, page_size);
                 page_index++;
                 l1_write_addr += page_size;
             }
@@ -53,12 +54,12 @@ void kernel_main() {
             cb_push_back(cb0_id, 1);
         }
 
-        if (num_pages_remainder > 0) {
+        if constexpr (num_pages_remainder > 0) {
             cb_reserve_back(cb0_id, 1);
             auto l1_write_addr = get_write_ptr(cb0_id);
             for (uint32_t j = 0; j < num_pages_remainder; ++j) {
-                auto noc_read_addr = get_noc_addr(page_index, input_addr_gen);
-                noc_async_read(noc_read_addr, l1_write_addr, page_size);
+                auto noc_read_addr = input_addr_gen.get_noc_addr(page_index);
+                noc_async_read<page_size>(noc_read_addr, l1_write_addr, page_size);
                 page_index++;
                 l1_write_addr += page_size;
             }
@@ -71,11 +72,11 @@ void kernel_main() {
     else {
         // TODO: Could read whole page into scratch, then copy locally
         for (uint32_t i = 0; i < num_pages; ++i) {
-            auto noc_read_addr = get_noc_addr(page_index, input_addr_gen);
+            auto noc_read_addr = input_addr_gen.get_noc_addr(page_index);
             for (uint32_t j = 0; j < num_whole_packets_per_page; ++j) {
                 cb_reserve_back(cb0_id, 1);
                 auto l1_write_addr = get_write_ptr(cb0_id);
-                noc_async_read(noc_read_addr, l1_write_addr, whole_packet_size);
+                noc_async_read<whole_packet_size>(noc_read_addr, l1_write_addr, whole_packet_size);
                 noc_read_addr += whole_packet_size;
                 noc_async_read_barrier();
                 cb_push_back(cb0_id, 1);
@@ -83,7 +84,7 @@ void kernel_main() {
             if constexpr (partial_packet_size > 0) {
                 cb_reserve_back(cb0_id, 1);
                 auto l1_write_addr = get_write_ptr(cb0_id);
-                noc_async_read(noc_read_addr, l1_write_addr, partial_packet_size);
+                noc_async_read<partial_packet_size>(noc_read_addr, l1_write_addr, partial_packet_size);
                 noc_async_read_barrier();
                 cb_push_back(cb0_id, 1);
             }

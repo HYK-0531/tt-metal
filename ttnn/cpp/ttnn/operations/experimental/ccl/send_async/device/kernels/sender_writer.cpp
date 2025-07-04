@@ -13,9 +13,13 @@ constexpr uint32_t fabric_packet_header_cb_id = get_compile_time_arg_val(1);
 constexpr uint32_t num_pages = get_compile_time_arg_val(2);
 constexpr uint32_t page_size = get_compile_time_arg_val(3);  // This is assumed to be aligned
 constexpr uint32_t num_pages_per_packet = get_compile_time_arg_val(4);
-constexpr uint32_t num_whole_packets_per_page = get_compile_time_arg_val(5);
-constexpr uint32_t partial_packet_size = get_compile_time_arg_val(6);
-constexpr uint32_t whole_packet_size = get_compile_time_arg_val(7);
+// Used when there are multiple pages per packet
+constexpr uint32_t num_whole_packets = get_compile_time_arg_val(5);
+constexpr uint32_t num_pages_remainder = get_compile_time_arg_val(6);
+// Used when there are multiple packets per page
+constexpr uint32_t num_whole_packets_per_page = get_compile_time_arg_val(7);
+constexpr uint32_t partial_packet_size = get_compile_time_arg_val(8);
+constexpr uint32_t whole_packet_size = get_compile_time_arg_val(9);
 
 /*
  * CCL Send will present various operating modes. Although there is only a single send kernel, it may (compile time)
@@ -52,12 +56,10 @@ void kernel_main() {
     uint64_t receiver_noc_coord_addr = get_noc_addr(sender_socket.downstream_noc_x, sender_socket.downstream_noc_y, 0);
     constexpr uint32_t aligned_page_size = align(page_size, L1_ALIGNMENT);
     if constexpr (num_pages_per_packet > 0) {
-        const uint32_t num_iterations = num_pages / num_pages_per_packet;
-        const uint32_t num_pages_remainder = num_pages % num_pages_per_packet;
-        const uint32_t full_packet_size = num_pages_per_packet * page_size;
-        const uint32_t remainder_packet_size = num_pages_remainder * page_size;
+        constexpr uint32_t full_packet_size = num_pages_per_packet * page_size;
+        constexpr uint32_t remainder_packet_size = num_pages_remainder * page_size;
 
-        for (uint32_t i = 0; i < num_iterations; ++i) {
+        for (uint32_t i = 0; i < num_whole_packets; ++i) {
             cb_wait_front(data_cb_id, 1);
             auto l1_read_addr = get_read_ptr(data_cb_id);
             socket_reserve_pages(sender_socket, num_pages_per_packet);
@@ -72,7 +74,7 @@ void kernel_main() {
             fabric_socket_notify_receiver(sender_socket, fabric_connection, socket_packet_header_addr);
         }
 
-        if (num_pages_remainder > 0) {
+        if constexpr (num_pages_remainder > 0) {
             cb_wait_front(data_cb_id, 1);
             auto l1_read_addr = get_read_ptr(data_cb_id);
             socket_reserve_pages(sender_socket, num_pages_remainder);

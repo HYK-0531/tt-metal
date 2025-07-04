@@ -412,8 +412,8 @@ void generate_multi_input_test_worker_reader_kernel(
     const ttnn::ccl::v2::TensorSlice& in1_command_tensor_slice,
     ttnn::ccl::cmd::CclCommandCode command_type,
     const DataMovementConfig& datamovement_kernel_config,
-    const std::optional<tt::tt_fabric::SenderWorkerAdapterSpec>& chip0_worker_forward_fabric_connection,
-    const std::optional<tt::tt_fabric::SenderWorkerAdapterSpec>& chip0_worker_backward_fabric_connection,
+    const std::optional<size_t>& chip0_worker_forward_fabric_connection_link,
+    const std::optional<size_t>& chip0_worker_backward_fabric_connection_link,
     const std::optional<ttnn::ccl::cmd::CclHostLowLevelCommandSequence>& optional_teardown_sequence,
     const ttnn::ccl::cmd::CclCommandDestArgs& dest_args) {
     bool fabric_enabled = std::holds_alternative<ttnn::ccl::cmd::UnicastCommandDestArgs>(dest_args) ||
@@ -512,8 +512,8 @@ void generate_multi_input_test_worker_reader_kernel(
         worker_core_range,
         ccl_command_stream0,
         ccl_command_stream1,
-        chip0_worker_forward_fabric_connection,
-        chip0_worker_backward_fabric_connection);
+        chip0_worker_forward_fabric_connection_link,
+        chip0_worker_backward_fabric_connection_link);
 }
 
 void generate_multi_input_test_worker_kernels_for_local_tensor_write(
@@ -533,8 +533,8 @@ void generate_multi_input_test_worker_kernels_for_local_tensor_write(
     const ttnn::ccl::v2::TensorSlice& out0_tensor_slice,
     const ttnn::ccl::v2::TensorSlice& out1_tensor_slice,
     const std::optional<ttnn::ccl::cmd::CclHostLowLevelCommandSequence>& optional_teardown_sequence,
-    std::optional<tt::tt_fabric::SenderWorkerAdapterSpec>& chip0_worker_forward_fabric_connection,
-    std::optional<tt::tt_fabric::SenderWorkerAdapterSpec>& chip0_worker_backward_fabric_connection,
+    const std::optional<size_t>& chip0_worker_forward_fabric_connection_link,
+    const std::optional<size_t>& chip0_worker_backward_fabric_connection_link,
     const ttnn::ccl::cmd::CclCommandDestArgs& dest_args) {
     // Just want a dummy DF
     tt::DataFormat df = page_size == 1024   ? tt::DataFormat::Bfp8
@@ -583,8 +583,8 @@ void generate_multi_input_test_worker_kernels_for_local_tensor_write(
         out1_tensor_slice,
         ttnn::ccl::cmd::CclCommandCode::STREAM_CB_TO_TENSOR,
         tt_metal::WriterDataMovementConfig{},
-        chip0_worker_forward_fabric_connection,
-        chip0_worker_backward_fabric_connection,
+        chip0_worker_forward_fabric_connection_link,
+        chip0_worker_backward_fabric_connection_link,
         optional_teardown_sequence,
         dest_args);
 }
@@ -681,12 +681,12 @@ bool RunLocalTestWithMultiInputReaders(
 
     const size_t num_pages_per_edm_buffer = 2;
 
-    std::optional<tt::tt_fabric::SenderWorkerAdapterSpec> chip0_worker_forward_fabric_connection =
+    std::optional<size_t> chip0_worker_forward_fabric_connection_link =
         fabric_enabled
-            ? line_fabric->uniquely_connect_worker(devices[0], tt::tt_fabric::EdmLineFabricOpInterface::FORWARD)
-            : std::optional<tt::tt_fabric::SenderWorkerAdapterSpec>{std::nullopt};
+            ? std::optional<size_t>{0}
+            : std::nullopt;
 
-    std::optional<tt::tt_fabric::SenderWorkerAdapterSpec> chip0_worker_backward_fabric_connection = std::nullopt;
+    std::optional<size_t> chip0_worker_backward_fabric_connection_link = std::nullopt;
 
     generate_multi_input_test_worker_kernels_for_local_tensor_write(
         programs.at(0),
@@ -705,8 +705,8 @@ bool RunLocalTestWithMultiInputReaders(
         out0_tensor_slice,
         out1_tensor_slice,
         std::nullopt,
-        chip0_worker_forward_fabric_connection,
-        chip0_worker_backward_fabric_connection,
+        chip0_worker_forward_fabric_connection_link,
+        chip0_worker_backward_fabric_connection_link,
         dest_args);
 
     log_info(tt::LogTest, "subdevice_managers.has_value(): {}", subdevice_managers.has_value());

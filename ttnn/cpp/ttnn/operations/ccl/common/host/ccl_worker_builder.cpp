@@ -1032,7 +1032,7 @@ static void log_command_stream(ttnn::ccl::cmd::CclHostLowLevelCommandSequence co
 }
 
 std::vector<uint32_t> generate_edm_connection_rt_args(
-    tt::tt_fabric::SenderWorkerAdapterSpec const& connection_info,
+    const size_t connection_link,
     Program &program,
     CoreRangeSet worker_cores) {
     std::vector<uint32_t> new_rt_args;
@@ -1040,7 +1040,7 @@ std::vector<uint32_t> generate_edm_connection_rt_args(
     auto worker_teardown_semaphore_id = CreateSemaphore(program, worker_cores, 0);
     auto worker_buffer_index_semaphore_id = CreateSemaphore(program, worker_cores, 0);
     append_worker_to_fabric_edm_sender_rt_args(
-        connection_info,
+        connection_link,
         worker_flow_control_semaphore_id,
         worker_teardown_semaphore_id,
         worker_buffer_index_semaphore_id,
@@ -1059,8 +1059,8 @@ void generate_multi_input_command_stream_kernel_rt_args(
     CoreRangeSet const& worker_core_range,
     ttnn::ccl::cmd::CclHostLowLevelCommandSequence const& ccl_command_stream0,
     std::optional<ttnn::ccl::cmd::CclHostLowLevelCommandSequence> const& ccl_command_stream1,
-    std::optional<tt::tt_fabric::SenderWorkerAdapterSpec> const& forward_fabric_connections,
-    std::optional<tt::tt_fabric::SenderWorkerAdapterSpec> const& backward_fabric_connections,
+    std::optional<size_t> const& forward_fabric_connection_link,
+    std::optional<size_t> const& backward_fabric_connection_link,
     std::optional<std::unordered_map<const Tensor*, IDevice*>> const& tensor_device_override,
     std::optional<std::vector<size_t>> const& tensor_indices,
     ttnn::ccl::tensor_address_runtime_args_overrider *rt_args_overrider) {
@@ -1156,16 +1156,14 @@ void generate_multi_input_command_stream_kernel_rt_args(
         // else: Interleaved addrgen passes no additional args - we specify interleaved addrgen as the default
     }
 
-    rt_args.push_back(forward_fabric_connections.has_value());
-    if (forward_fabric_connections.has_value()) {
-        const auto new_rt_args =
-            generate_edm_connection_rt_args(*forward_fabric_connections, program, worker_core_range);
+    rt_args.push_back(forward_fabric_connection_link.has_value());
+    if (forward_fabric_connection_link.has_value()) {
+        auto const new_rt_args = tt::tt_fabric::append_fabric_connection_rt_args(forward_fabric_connection_link.value(), program, worker_core_range, rt_args);
         std::copy(new_rt_args.begin(), new_rt_args.end(), std::back_inserter(rt_args));
     }
-    rt_args.push_back(backward_fabric_connections.has_value());
-    if (backward_fabric_connections.has_value()) {
-        const auto new_rt_args =
-            generate_edm_connection_rt_args(*backward_fabric_connections, program, worker_core_range);
+    rt_args.push_back(backward_fabric_connection_link.has_value());
+    if (backward_fabric_connection_link.has_value()) {
+        auto const new_rt_args = tt::tt_fabric::append_fabric_connection_rt_args(backward_fabric_connection_link.value(), program, worker_core_range, rt_args);
         std::copy(new_rt_args.begin(), new_rt_args.end(), std::back_inserter(rt_args));
     }
 
@@ -1503,166 +1501,6 @@ std::vector<uint32_t> CCLWorkerArgBuilder::generate_sender_reader_kernel_rt_args
     return args;
 }
 
-std::vector<uint32_t> CCLWorkerArgBuilder::generate_sender_writer_kernel_rt_args(
-    std::optional<tt::tt_fabric::SenderWorkerAdapterSpec> const& forward_fabric_connection,
-    const size_t sender_worker_forward_flow_control_semaphore_id,
-    const size_t sender_worker_forward_teardown_semaphore_id,
-    const size_t sender_worker_forward_buffer_index_semaphore_id,
-    std::optional<tt::tt_fabric::SenderWorkerAdapterSpec> const& backward_fabric_connection,
-    const size_t sender_worker_backward_flow_control_semaphore_id,
-    const size_t sender_worker_backward_teardown_semaphore_id,
-    const size_t sender_worker_backward_buffer_index_semaphore_id,
-    const size_t forward_direction_distance_to_end_of_line,
-    const size_t backward_direction_distance_to_end_of_line,
-    ttnn::ccl::InterleavedTensorWorkerSlice worker_slice,
-    std::size_t operating_dim,
-    uint32_t num_pages_per_packet,
-    uint32_t worker_slice_index,
-    std::optional<ttnn::ccl::SyncModeSpec> sync_details) const {
-    const std::size_t num_commands_expected = this->output_tensor_partition.partition_size - 1;
-
-    auto const& tensor_shape = worker_slice.tensor_shape;
-    auto const& tensor_slice_shape = worker_slice.tensor_slice_shape;
-
-    auto num_slices = output_tensor_partition.partition_size;
-    auto start_slice_index = output_tensor_partition.partition_index;
-    std::int64_t end_slice_index_exclusive = output_tensor_partition.partition_index + 1;
-
-    log_trace(tt::LogOp, "ccl_send_writer start_slice_index = {}", start_slice_index);
-    log_trace(tt::LogOp, "ccl_send_writer end_slice_index_exclusive = {}", end_slice_index_exclusive);
-
-    // Add the command args
-    auto const& slices = generate_slice_sequence_on_dim_v2(
-        tensor_shape,
-        worker_slice.worker_slice_shape,
-        worker_slice.worker_slice_offset,
-        operating_dim,
-        num_slices,
-        start_slice_index,
-        end_slice_index_exclusive,
-        worker_slice_index);
-    TT_ASSERT(num_commands_expected == slices.size());
-
-    // If we are on device zero, we send n-1 chunks in ascending order
-    auto& output_tensor = this->op_config.get_output_tensor(0);
-    TT_ASSERT(output_tensor.padded_shape().size() == 4, "Only 4D tensors are supported for ccl");
-    ttnn::ccl::Shape4D<uint32_t> output_tensor_shape = {
-        output_tensor.padded_shape()[0],
-        output_tensor.padded_shape()[1],
-        output_tensor.padded_shape()[2],
-        output_tensor.padded_shape()[3]};
-
-    std::vector<uint32_t> args = {
-        static_cast<uint32_t>(output_tensor.buffer()->address()),
-        static_cast<uint32_t>(slices.size()),
-        num_pages_per_packet,
-        this->op_config.get_page_size(),
-        forward_direction_distance_to_end_of_line,
-        backward_direction_distance_to_end_of_line};
-    std::size_t logged_arg_idx = 0;
-    log_trace(tt::LogOp, "ccl_send_writer arg[{}]: buffer_address = {}", logged_arg_idx, args[logged_arg_idx]);
-    logged_arg_idx++;
-    log_trace(tt::LogOp, "ccl_send_writer arg[{}]: num_commands = {}", logged_arg_idx, args[logged_arg_idx]);
-    logged_arg_idx++;
-    log_trace(tt::LogOp, "ccl_send_writer arg[{}]: pages_per_packet {}", logged_arg_idx, args[logged_arg_idx]);
-    logged_arg_idx++;
-    log_trace(tt::LogOp, "ccl_send_writer arg[{}]: page_size {}", logged_arg_idx, args[logged_arg_idx]);
-    logged_arg_idx++;
-    args.push_back(forward_fabric_connection.has_value() ? 1 : 0);
-    if (forward_fabric_connection.has_value()) {
-        TT_FATAL(
-            forward_direction_distance_to_end_of_line > 0,
-            "Forward direction distance to end of line must be greater than 0");
-        log_trace(tt::LogOp, "ccl_send_writer has forward fabric connection");
-        log_trace(tt::LogOp, "\tedm_noc_x: {}", forward_fabric_connection.value().edm_noc_x);
-        log_trace(tt::LogOp, "\tedm_noc_y: {}", forward_fabric_connection.value().edm_noc_y);
-        log_trace(tt::LogOp, "\tedm_buffer_base_addr: {}", forward_fabric_connection.value().edm_buffer_base_addr);
-        log_trace(tt::LogOp, "\tnum_buffers_per_channel: {}", forward_fabric_connection.value().num_buffers_per_channel);
-        log_trace(tt::LogOp, "\tedm_l1_sem_addr: {}", forward_fabric_connection.value().edm_l1_sem_addr);
-        log_trace(
-            tt::LogOp,
-            "\tedm_connection_handshake_addr: {}",
-            forward_fabric_connection.value().edm_connection_handshake_addr);
-        log_trace(
-            tt::LogOp,
-            "\tedm_worker_location_info_addr: {}",
-            forward_fabric_connection.value().edm_worker_location_info_addr);
-        log_trace(tt::LogOp, "\tbuffer_size_bytes: {}", forward_fabric_connection.value().buffer_size_bytes);
-        log_trace(
-            tt::LogOp, "\tbuffer_index_semaphore_id: {}", forward_fabric_connection.value().buffer_index_semaphore_id);
-        tt::tt_fabric::append_worker_to_fabric_edm_sender_rt_args(
-            forward_fabric_connection.value(),
-            sender_worker_forward_flow_control_semaphore_id,
-            sender_worker_forward_teardown_semaphore_id,
-            sender_worker_forward_buffer_index_semaphore_id,
-            args);
-        logged_arg_idx = tt::tt_fabric::log_worker_to_fabric_edm_sender_rt_args(args, logged_arg_idx);
-    }
-    args.push_back(backward_fabric_connection.has_value() ? 1 : 0);
-    if (backward_fabric_connection.has_value()) {
-        TT_FATAL(
-            backward_direction_distance_to_end_of_line > 0,
-            "Backward direction distance to end of line must be greater than 0");
-        log_trace(tt::LogOp, "ccl_send_writer has backward fabric connection");
-        log_trace(tt::LogOp, "\tedm_noc_x: {}", backward_fabric_connection.value().edm_noc_x);
-        log_trace(tt::LogOp, "\tedm_noc_y: {}", backward_fabric_connection.value().edm_noc_y);
-        log_trace(tt::LogOp, "\tedm_buffer_base_addr: {}", backward_fabric_connection.value().edm_buffer_base_addr);
-        log_trace(
-            tt::LogOp, "\tnum_buffers_per_channel: {}", backward_fabric_connection.value().num_buffers_per_channel);
-        log_trace(tt::LogOp, "\tedm_l1_sem_addr: {}", backward_fabric_connection.value().edm_l1_sem_addr);
-        log_trace(
-            tt::LogOp,
-            "\tedm_connection_handshake_addr: {}",
-            backward_fabric_connection.value().edm_connection_handshake_addr);
-        log_trace(
-            tt::LogOp,
-            "\tedm_worker_location_info_addr: {}",
-            backward_fabric_connection.value().edm_worker_location_info_addr);
-        log_trace(tt::LogOp, "\tbuffer_size_bytes: {}", backward_fabric_connection.value().buffer_size_bytes);
-        log_trace(
-            tt::LogOp, "\tbuffer_index_semaphore_id: {}", backward_fabric_connection.value().buffer_index_semaphore_id);
-        tt::tt_fabric::append_worker_to_fabric_edm_sender_rt_args(
-            backward_fabric_connection.value(),
-            sender_worker_backward_flow_control_semaphore_id,
-            sender_worker_backward_teardown_semaphore_id,
-            sender_worker_backward_buffer_index_semaphore_id,
-            args);
-        logged_arg_idx = tt::tt_fabric::log_worker_to_fabric_edm_sender_rt_args(args, logged_arg_idx);
-    }
-
-    args.push_back(sync_details.has_value() ? 1 : 0);
-    if (sync_details.has_value()) {
-        args.push_back(sync_details.value().num_signals);
-        for (size_t i = 0; i < sync_details.value().num_signals; ++i) {
-            auto const noc_coord =
-                this->device->virtual_core_from_logical_core(sync_details.value().core, CoreType::WORKER);
-            log_trace(
-                tt::LogOp,
-                "ccl_send_writer on device {} adding sync signal dest to (y={},x={},id={})",
-                this->device->id(),
-                noc_coord.y,
-                noc_coord.x,
-                sync_details.value().sem_ids[i]);
-            args.push_back(sync_details.value().sem_ids[i]);
-            args.push_back(noc_coord.x);
-            args.push_back(noc_coord.y);
-        }
-    }
-
-    auto const& addr_gen_rt_args = ttnn::ccl::legacy_emit_address_generator_runtime_args(this->device, output_tensor);
-    std::ranges::copy(addr_gen_rt_args, std::back_inserter(args));
-    for (auto const& arg : addr_gen_rt_args) {
-        log_trace(tt::LogOp, "ccl_send_writer arg[{}]: addr_gen_rt_args[] {}", logged_arg_idx, args[logged_arg_idx]);
-        logged_arg_idx++;
-    }
-
-    log_trace(tt::LogOp, "ccl_send_writer Generating {} ccl send commands", slices.size());
-    emit_ccl_send_slice_sequence_commands(slices, args);
-
-    log_trace(tt::LogOp, "ccl_send_writer Sender Worker has {} RT Args: {}", args.size(), args);
-
-    return args;
-}
 
 std::vector<uint32_t> CCLWorkerArgBuilder::generate_sender_reader_kernel_ct_args() const {
     auto const& input_tensor = this->op_config.get_input_tensor(0);

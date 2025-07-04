@@ -17,6 +17,7 @@ from models.demos.mobilenetv2.tt.model_preprocessing import (
 )
 from models.utility_functions import run_for_wormhole_b0
 from tests.ttnn.utils_for_testing import assert_with_pcc
+from models.utility_functions import disable_persistent_kernel_cache, profiler
 
 
 @run_for_wormhole_b0()
@@ -36,6 +37,8 @@ def test_run_mobilenetv2_trace_2cqs_inference(
     batch_size,
     model_location_generator,
 ):
+    profiler.clear()
+    disable_persistent_kernel_cache()
     torch_input_tensor, host_input_tensor = create_mobilenetv2_input_tensors(
         batch=batch_size, input_height=224, input_width=224, pad_channels=16
     )

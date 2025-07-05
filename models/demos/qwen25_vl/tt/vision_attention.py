@@ -16,15 +16,16 @@ class VisionAttention(LightweightModule):
         kwargs["causal_mask"] = False
         self.__init(*args, **kwargs)
 
-    def forward(self, x, cu_seqlens, rot_mats, user_id=0, page_table=None, chunk_page_table=None, chunk_start_idx=None):
-        seq_len = x.shape[-2]
-        attention_mask = torch.full([1, 1, seq_len, seq_len], -1e9, dtype=torch.float32)
-        for i in range(1, len(cu_seqlens)):
-            attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
-        tt_mask = ttnn.from_torch(
-            attention_mask, dtype=ttnn.bfloat4_b, layout=ttnn.TILE_LAYOUT, device=self.mesh_device
-        )
-
+    def forward(
+        self,
+        x,
+        rot_mats,
+        tt_mask,
+        user_id=0,
+        page_table=None,
+        chunk_page_table=None,
+        chunk_start_idx=None,
+    ):
         return self.forward_prefill(
             x,
             rot_mats=rot_mats,
@@ -263,9 +264,6 @@ class VisionAttention(LightweightModule):
                 weight_cache_path=None if configuration.dummy_weights else weight_cache_path,
                 weight_dtype=ttnn.bfloat16,
                 weight_key=q_norm_str,
-                is_distributed=False,
-                sharded_program_config=None,  # FIXME: add height-sharded support. self.model_config["SHARDED_NORM_ATTN_PRGM_CFG"],
-                sharded_output_config=None,  # FIXME: add height-sharded support. self.model_config["CREATE_QKV_DECODE_SHARD"]
             )
             self.q_norm = lambda x, mode: norm_reshard(x, fn_q_norm, mode)
         else:
@@ -281,9 +279,6 @@ class VisionAttention(LightweightModule):
                 weight_cache_path=None if configuration.dummy_weights else weight_cache_path,
                 weight_dtype=ttnn.bfloat16,
                 weight_key=k_norm_str,
-                is_distributed=False,
-                sharded_program_config=None,  # FIXME: add height-sharded support. self.model_config["SHARDED_NORM_ATTN_PRGM_CFG"],
-                sharded_output_config=None,  # FIXME: add height-sharded support. self.model_config["CREATE_QKV_DECODE_SHARD"],
             )
             self.k_norm = lambda x, mode: norm_reshard(x, fn_k_norm, mode)
         else:
@@ -432,7 +427,6 @@ class VisionAttention(LightweightModule):
             )
             # pad with cos = 1, sin = 0
             rot_mats = [pad_head_dim(rot_mats[0], 1.0), pad_head_dim(rot_mats[1], 0.0)]
-            # print(f'{rot_mats[0].shape=}')
 
         q_heads_1QSD = ttnn.experimental.rotary_embedding_llama(
             q_heads_1QSD_pre_rot,

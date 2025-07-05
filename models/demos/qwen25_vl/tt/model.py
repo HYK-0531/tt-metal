@@ -4,6 +4,7 @@
 
 import torch
 from loguru import logger
+from tracy import signpost
 from typing_extensions import override
 
 import ttnn
@@ -22,6 +23,34 @@ from models.tt_transformers.tt.load_checkpoints import (
 )
 from models.tt_transformers.tt.model import Transformer as TTTransformer
 from models.utility_functions import comp_pcc
+
+
+def _create_attention_mask(cu_seqlens_now, seq_len, mesh_device):
+    """
+    Creates a windowed attention mask.
+    """
+    num_sequences = len(cu_seqlens_now) - 1
+    assert num_sequences > 0, f"num_sequences is {num_sequences} for {cu_seqlens_now}"
+    # Create a matrix where each row is a one-hot vector indicating sequence membership
+    sequence_indicators = torch.zeros(seq_len, num_sequences, dtype=torch.bfloat16)
+    for j in range(num_sequences):
+        start, end = cu_seqlens_now[j], cu_seqlens_now[j + 1]
+        sequence_indicators[start:end, j] = 1.0
+    # Create a block-diagonal mask via matrix multiplication
+    # (A @ A.T) is 1 if two tokens are in the same sequence, 0 otherwise
+    tt_sequence_indicators = ttnn.from_torch(
+        sequence_indicators, dtype=ttnn.bfloat8_b, layout=ttnn.TILE_LAYOUT, device=mesh_device
+    )
+    tt_binary_mask = ttnn.matmul(
+        tt_sequence_indicators, ttnn.transpose(tt_sequence_indicators, 0, 1), dtype=ttnn.bfloat4_b
+    )
+    # Convert binary mask to the required attention mask format
+    tt_attention_mask_windowed_att = (ttnn.ones_like(tt_binary_mask) - tt_binary_mask) * -1e9
+    ttnn.deallocate(tt_sequence_indicators)
+    ttnn.deallocate(tt_binary_mask)
+
+    tt_attention_mask_windowed_att = ttnn.unsqueeze_to_4D(tt_attention_mask_windowed_att)
+    return tt_attention_mask_windowed_att
 
 
 class VisionTransformer(LightweightModule):
@@ -117,9 +146,10 @@ class VisionTransformer(LightweightModule):
         self,
         x,
         unpadded_seq_len,
-        cu_seqlens,
-        cu_window_seqlens,
         rot_mats,
+        tt_attention_mask_full_att,
+        tt_attention_mask_windowed_att,
+        profiler=None,
     ):
         """
         Forward pass through the Vision Transformer blocks.
@@ -137,20 +167,21 @@ class VisionTransformer(LightweightModule):
         for i, block in enumerate(self.blocks):
             # Determine which attention type to use (full or windowed)
             if i in self.fullatt_block_indexes:
-                cu_seqlens_now = cu_seqlens
+                tt_mask = tt_attention_mask_full_att
             else:
-                cu_seqlens_now = cu_window_seqlens
+                tt_mask = tt_attention_mask_windowed_att
 
             # Forward through block
             x = block(
                 x,
-                cu_seqlens=cu_seqlens_now,
                 rot_mats=rot_mats,
+                tt_mask=tt_mask,
             )
 
         # Merge patches - first remove any sequence length padding
         x = x[:, :, :unpadded_seq_len, :]
         x = self.patch_merger(x)
+
         return x
 
 
@@ -199,7 +230,7 @@ class DropInVisionTransformer(torch.nn.Module):
     def dtype(self):
         return self.reference_model.dtype
 
-    def forward(self, pixel_values: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
+    def forward(self, pixel_values: torch.Tensor, grid_thw: torch.Tensor, profiler=None) -> torch.Tensor:
         """
         Forward pass mimicking the Qwen2_5_VisionTransformerPretrainedModel interface.
 
@@ -217,7 +248,26 @@ class DropInVisionTransformer(torch.nn.Module):
         all_grid_thw = grid_thw
         final_outputs = []
         # todo)) refactor this code to leverage tt-mesh's ttnn.ShardTensorToMesh(mesh_device, dim=batch_size_dim) for data parallelism
+        # two main ideas for perf opt:
+        # - [x] hoist the attention mask creation out of the loop using 43008 (2048*21) as seq_len --> does saved dynamic graph compilation time
+        # - [ ] understand the cu_window_seqlens deeper --> maybe every image has the same cu_window_seqlens now with 300 DPI target image
+        # - [x] understand the attention mask usage deeper
+        # - [ ] make a sdpa kernel for qwen2.5 vl --> pass in cu_window_seqlens/cu_seqlens instead of attention_mask --> 300 DPI takes too long to copy attention_mask to device
+        # - [ ] tensor parallel the vision model (seq_len dimension) --> >10 seconds to run tt_model.forward() for 300 DPI
+
+        # [INFO] 300 DPI scanned doc with Letter paper (8.5x11 inches) has resolution around 2550x3300
+        # Calculate padded sequence length (divisible by 2048) required by models/tt_transformers/tt/attention.py::forward_prefill
+        target_seq_len = (
+            (2550 // self.model_args.hf_config.vision_config.patch_size)
+            * (3300 // self.model_args.hf_config.vision_config.patch_size)
+            // 2048
+            + 1
+        ) * 2048
+        num_iters = 0
+        signpost("dropin_vision_transformer_forward", "start")
         for grid_thw in all_grid_thw:
+            if profiler is not None:
+                profiler.start(f"vision_model_loop_preprocess", iteration=num_iters)
             # --- pick out the pixel_values for this users' images (grid_thw.prod() pixels) ---
             pixel_values = all_pixel_values[: grid_thw.prod(), :]
             all_pixel_values = all_pixel_values[grid_thw.prod() :, :]
@@ -225,8 +275,9 @@ class DropInVisionTransformer(torch.nn.Module):
             # 1. Calculate total unpadded sequence length
             grid_thw = grid_thw.unsqueeze(0)
             unpadded_seq_len = (grid_thw[:, 1] * grid_thw[:, 2]).sum().item()
-            # Calculate padded sequence length (divisible by 2048) required by models/tt_transformers/tt/attention.py::forward_prefill
-            seq_len = ((unpadded_seq_len // 2048) + 1) * 2048
+            assert (
+                unpadded_seq_len <= target_seq_len
+            ), f"Not supported: unpadded_seq_len {unpadded_seq_len} is greater than target_seq_len {target_seq_len}"
 
             # 2. Use preprocessing function from reference/functional to get indices and embeddings
             cu_seqlens, cu_window_seqlens, position_embeddings, window_index = qwen2_5_vision_transformer_preprocess(
@@ -250,12 +301,12 @@ class DropInVisionTransformer(torch.nn.Module):
             cos_orig, sin_orig = convert_rope_style_hf_to_meta(cos_orig, sin_orig)
             # pad sequence length with cos = 1, sin = 0 (identity rotation)
             cos_padded = (
-                torch.nn.functional.pad(cos_orig, (0, 0, 0, seq_len - unpadded_seq_len), value=1)
+                torch.nn.functional.pad(cos_orig, (0, 0, 0, target_seq_len - unpadded_seq_len), value=1)
                 .unsqueeze(0)
                 .unsqueeze(0)
             )
             sin_padded = (
-                torch.nn.functional.pad(sin_orig, (0, 0, 0, seq_len - unpadded_seq_len), value=0)
+                torch.nn.functional.pad(sin_orig, (0, 0, 0, target_seq_len - unpadded_seq_len), value=0)
                 .unsqueeze(0)
                 .unsqueeze(0)
             )
@@ -281,16 +332,48 @@ class DropInVisionTransformer(torch.nn.Module):
             rot_mats = [cos, sin]
 
             # 5. Prepare input tensor for the TT model using window_index
-            tt_input = self.tt_model.prepare_input(patch_input, window_index, seq_len)
+            tt_input = self.tt_model.prepare_input(patch_input, window_index, target_seq_len)
+            # create tt_mask
+            if profiler is not None:
+                profiler.start(f"vision_model_loop_create_tt_mask", iteration=num_iters)
+            seq_len = tt_input.shape[-2]
+            attention_mask = torch.full([1, 1, seq_len, seq_len], -1e9, dtype=torch.bfloat16)
+            for i in range(1, len(cu_window_seqlens)):
+                attention_mask[
+                    ...,
+                    cu_window_seqlens[i - 1] : cu_window_seqlens[i],
+                    cu_window_seqlens[i - 1] : cu_window_seqlens[i],
+                ] = 0
+            tt_attention_mask_windowed_att = ttnn.from_torch(
+                attention_mask, dtype=ttnn.bfloat4_b, layout=ttnn.TILE_LAYOUT, device=self.model_args.mesh_device
+            )
+
+            tt_attention_mask_full_att = None
+            if self.tt_model.fullatt_block_indexes is not None:
+                attention_mask = torch.full([1, 1, seq_len, seq_len], -1e9, dtype=torch.bfloat16)
+                for i in range(1, len(cu_seqlens)):
+                    attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
+                tt_attention_mask_full_att = ttnn.from_torch(
+                    attention_mask, dtype=ttnn.bfloat4_b, layout=ttnn.TILE_LAYOUT, device=self.model_args.mesh_device
+                )
+            if profiler is not None:
+                profiler.end(f"vision_model_loop_create_tt_mask", iteration=num_iters)
 
             # --- TT Model Execution ---
+            if profiler is not None:
+                profiler.end(f"vision_model_loop_preprocess", iteration=num_iters)
+                profiler.start(f"vision_model_loop_tt_model", iteration=num_iters)
             tt_out = self.tt_model(
                 tt_input,
                 unpadded_seq_len=unpadded_seq_len,
-                cu_seqlens=cu_seqlens,
-                cu_window_seqlens=cu_window_seqlens,
                 rot_mats=rot_mats,  # Use rot_mats generated in this forward pass
+                tt_attention_mask_full_att=tt_attention_mask_full_att,
+                tt_attention_mask_windowed_att=tt_attention_mask_windowed_att,
+                profiler=profiler,
             )
+            if profiler is not None:
+                profiler.end(f"vision_model_loop_tt_model", iteration=num_iters)
+                profiler.start(f"vision_model_loop_postprocess", iteration=num_iters)
 
             # deallocate device tensors that are not needed by decode
             ttnn.deallocate(tt_input)
@@ -298,6 +381,8 @@ class DropInVisionTransformer(torch.nn.Module):
             ttnn.deallocate(sin)
             ttnn.deallocate(rot_mats[0])
             ttnn.deallocate(rot_mats[1])
+            ttnn.deallocate(tt_attention_mask_windowed_att)
+            ttnn.deallocate(tt_attention_mask_full_att)
 
             # --- Postprocessing ---
             # 1. Convert TT output back to torch tensor
@@ -324,6 +409,28 @@ class DropInVisionTransformer(torch.nn.Module):
                 logger.info(f"DropInVisionTransformer: PCC to reference model: {pcc}")
 
             final_outputs.append(final_output)
+
+            if profiler is not None:
+                profiler.end(f"vision_model_loop_postprocess", iteration=num_iters)
+                num_iters += 1
+
+        signpost("dropin_vision_transformer_forward", "end")
+
+        if profiler is not None:
+            # print the total time for each iteration
+            for i in range(num_iters):
+                logger.info(
+                    f"vision_model_loop_preprocess at {i}: {profiler.get_duration('vision_model_loop_preprocess', iteration=i)}"
+                )
+                logger.info(
+                    f"vision_model_loop_create_tt_mask at {i}: {profiler.get_duration('vision_model_loop_create_tt_mask', iteration=i)}"
+                )
+                logger.info(
+                    f"vision_model_loop_tt_model at {i}: {profiler.get_duration('vision_model_loop_tt_model', iteration=i)}"
+                )
+                logger.info(
+                    f"vision_model_loop_postprocess at {i}: {profiler.get_duration('vision_model_loop_postprocess', iteration=i)}"
+                )
 
         # concatenate all the outputs
         return torch.cat(final_outputs, dim=0)

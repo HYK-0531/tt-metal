@@ -46,6 +46,9 @@ def create_tt_model(
         optimizations=optimizations,
         max_seq_len=max_seq_len,
     )
+    assert (
+        max_seq_len % tt_model_args.MAX_QKV_MM_SEQ_LEN == 0
+    ), f"max_seq_len ({max_seq_len}) must be divisible by {tt_model_args.max_seq_len}"
     state_dict = tt_model_args.load_state_dict()
 
     page_table = None
@@ -180,6 +183,19 @@ def create_tt_model(
             False,  # stop_at_eos
             True,  # ci_only
         ),
+        (  # Batch-1 run with 300 dpi scanned document (Latency) - single user, real-world test
+            "models/demos/qwen25_vl/demo/sample_prompts/demo_2.json",  # single qwen demo prompt
+            True,  # instruct mode
+            4,  # repeat_batches to simulate multiple users (batch_size=1) with the same prompt
+            12288,  # max_seq_len, allow for image tokens
+            1,  # batch_size -- samples to load from the prompt JSON
+            200,  # max_generated_tokens
+            True,  # paged_attention
+            {"page_block_size": 32, "page_max_num_blocks": 1024},  # page_params
+            {"temperature": 0, "top_p": 0.08},  # sampling_params (argmax)
+            True,  # stop_at_eos
+            False,  # ci_only
+        ),
     ],
     ids=[
         "batch-1",  # latency
@@ -188,6 +204,7 @@ def create_tt_model(
         "ci-only-two-users",  # ci_only batch-2 for faster testing coverage in CI pipelines
         "ci-only-repeated-batch",  # ci_only repeated batch for faster testing coverage in CI pipelines
         "ci-only-32-users",  # ci_only batch-32 for faster testing coverage in CI pipelines
+        "real-world-test",  # real-world test
     ],
 )
 @pytest.mark.parametrize(
@@ -364,6 +381,7 @@ def test_demo(
     for batch_idx, input_prompts in enumerate(repeat_batch_prompts):
         logger.info(f"Processing batch {batch_idx}")
         profiler.start(f"preprocess_prefill_inputs", iteration=batch_idx)
+        profiler.start(f"before_vision_prefill", iteration=batch_idx)
         text = processor.apply_chat_template(input_prompts, tokenize=False, add_generation_prompt=True)
         image_inputs, video_inputs = process_vision_info(input_prompts)
         inputs = processor(
@@ -376,16 +394,25 @@ def test_demo(
         merge_length = processor.image_processor.merge_size**2
         num_image_tokens.append([inputs.image_grid_thw[i].prod().item() // merge_length for i in range(batch_size)])
         logger.info(f"num_image_tokens: {num_image_tokens[-1]}")
+        profiler.end(f"before_vision_prefill", iteration=batch_idx)
+        logger.info(
+            f"before_vision_prefill at {batch_idx}: {profiler.get_duration('before_vision_prefill', iteration=batch_idx)}"
+        )
 
         # Vision prefill
         logger.info(f"Vision model prefill batch {batch_idx}")
         profiler.start(f"vision_model_prefill", iteration=batch_idx)
         image_embeds = (
-            visual_model(inputs.pixel_values, grid_thw=inputs.image_grid_thw)
+            visual_model(inputs.pixel_values, grid_thw=inputs.image_grid_thw, profiler=profiler)
             if "pixel_values" in inputs
             else torch.tensor([], dtype=torch.bfloat16)
         )
         profiler.end(f"vision_model_prefill", iteration=batch_idx)
+
+        logger.info(
+            f"vision_model_prefill at {batch_idx}: {profiler.get_duration('vision_model_prefill', iteration=batch_idx)}"
+        )
+        # exit()
 
         # Prepare text + vision inputs for decoder model
         logger.info(f"Prepare text + vision inputs for decoder model batch {batch_idx}")
@@ -437,6 +464,7 @@ def test_demo(
         profiler.end(f"inference_prefill", iteration=batch_idx)
         logger.info(f"Prefill finished")
 
+        profiler.start(f"preprocess_decode_inputs", iteration=batch_idx)
         # Initial positions continuing from prefill, no need to offset by rope_deltas
         current_pos = torch.tensor([decoding_pos[b] for b in range(batch_size)])
 
@@ -461,8 +489,9 @@ def test_demo(
 
         out_tok = prefilled_token
 
-        logger.info(f"Starting decode loop...")
+        profiler.end(f"preprocess_decode_inputs", iteration=batch_idx)
 
+        logger.info(f"Starting decode loop...")
         # Log total inference (accounting for compile_decode as well)
         profiler.start(f"inference_decode", iteration=batch_idx)
         while users_decoding:
@@ -594,20 +623,52 @@ def test_demo(
         assert all_match, "text_outputs should be the same for all batches"
 
     # Prepare profile benchmark metrics for the first repeat batch only
+    # 1. preprocess time (visual model and more)
+    preprocess_prefill_time = profiler.get_duration("preprocess_prefill_inputs")
+    vision_model_prefill_time = profiler.get_duration("vision_model_prefill")
+    # 2. compile prefill time
     compile_prefill_time = profiler.get_duration("compile_prefill")
+    # 3. inference prefill time
+    inference_prefill_time = profiler.get_duration("inference_prefill")
+    # 4. preprocess decode time
+    preprocess_decode_time = profiler.get_duration("preprocess_decode_inputs")
+    # 5. inference decode time
+    inference_decode_time = profiler.get_duration("inference_decode")
+    # 6. compile decode time
     compile_decode_time = profiler.get_duration("compile_decode")
-
-    total_inference_prefill_time = profiler.get_duration("inference_prefill")
+    # 7. inference decode times
+    inference_decode_times = []
     total_inference_decode_time = 0
-    for i in range(1, iteration):  # Iteration 0 is the compile time
+    for i in range(1, iteration):
+        inference_decode_times.append(profiler.get_duration(f"inference_decode_time_{i}"))
         total_inference_decode_time += profiler.get_duration(f"inference_decode_time_{i}")
 
+    # save the performance metrics to a json file
+    with open(f"qwen25_vl_demo_performance_metrics_{test_id}.json", "w") as f:
+        json.dump(
+            {
+                "test_id": test_id,
+                "device_name": model_args.device_name,
+                "batch_size": batch_size,
+                "unit": "s",
+                "preprocess_time": preprocess_prefill_time,
+                "vision_model_prefill_time": vision_model_prefill_time,
+                "compile_prefill_time": compile_prefill_time,
+                "inference_prefill_time": inference_prefill_time,
+                "preprocess_decode_time": preprocess_decode_time,
+                "inference_decode_time": inference_decode_time,
+                "compile_decode_time": compile_decode_time,
+                "inference_decode_times": inference_decode_times,
+            },
+            f,
+        )
+
     # Average prefill time for each user
-    avg_time_to_first_token = total_inference_prefill_time / batch_size
+    avg_time_to_first_token = inference_prefill_time / batch_size
     # Average decode time per batch iteration
     avg_decode_iteration_time = total_inference_decode_time / (iteration - 1)
 
-    prefill_tok_s = prefill_lens[0] / total_inference_prefill_time * batch_size
+    prefill_tok_s = prefill_lens[0] / inference_prefill_time * batch_size
     decode_tok_s_user = (num_tokens_generated_decode[0] - 1) / total_inference_decode_time  # Remove the compile time
     decode_tok_s = (
         (num_tokens_generated_decode[0] - 1) / total_inference_decode_time * batch_size
@@ -625,7 +686,7 @@ def test_demo(
         "vision_model_prefill time per user per token": vision_model_t_u_s,
         "compile_prefill": compile_prefill_time,
         "compile_decode": compile_decode_time,
-        "inference_prefill": total_inference_prefill_time,
+        "inference_prefill": inference_prefill_time,
         "inference_decode": total_inference_decode_time,
         "prefill_time_to_token": avg_time_to_first_token,
         "prefill_t/s": prefill_tok_s,  # tokens/s

@@ -164,6 +164,10 @@ class MultiCommandQueueMultiDeviceEventFixture : public MultiCommandQueueMultiDe
 
 class MultiCommandQueueMultiDeviceOnFabricFixture : public MultiCommandQueueMultiDeviceFixture,
                                                     public ::testing::WithParamInterface<tt::tt_metal::FabricConfig> {
+private:
+    // Save the result to reduce UMD calls
+    inline static bool should_skip_ = false;
+
 protected:
     static bool ShouldSkip() {
         if (MultiCommandQueueMultiDeviceFixture::ShouldSkip()) {
@@ -180,15 +184,15 @@ protected:
     }
 
     static std::string GetSkipMessage() {
-        return MultiCommandQueueMultiDeviceFixture::GetSkipMessage() + ", Wormhole B0, not Galaxy Cluster";
+        return MultiCommandQueueMultiDeviceFixture::GetSkipMessage() + ", Wormhole B0, not TG";
     }
 
     // Multiple fabric configs so need to reset the devices for each test
-    static void SetUpTestSuite() {}
+    static void SetUpTestSuite() { should_skip_ = ShouldSkip(); }
     static void TearDownTestSuite() {}
 
     void SetUp() override {
-        if (ShouldSkip()) {
+        if (should_skip_) {
             GTEST_SKIP() << GetSkipMessage();
         }
         tt::tt_metal::MetalContext::instance().rtoptions().set_fd_fabric(true);
@@ -204,7 +208,7 @@ protected:
     }
 
     void TearDown() override {
-        if (ShouldSkip()) {
+        if (should_skip_) {
             return;
         }
         MultiCommandQueueMultiDeviceFixture::TearDown();

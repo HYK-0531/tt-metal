@@ -10,6 +10,7 @@
 #include "gtest/gtest.h"
 #include "dispatch_fixture.hpp"
 #include "hostdevcommon/common_values.hpp"
+#include <tt-logger/tt-logger.hpp>
 #include <tt-metalium/device.hpp>
 #include "umd/device/types/cluster_descriptor_types.h"
 #include <tt-metalium/host_api.hpp>
@@ -181,10 +182,18 @@ protected:
         }
         this->reserved_devices_ = tt::tt_metal::detail::CreateDevices(
             chip_ids, 1, DEFAULT_L1_SMALL_SIZE, trace_region_size, dispatch_core_config);
+        this->devices_.clear();
         auto enable_remote_chip = getenv("TT_METAL_ENABLE_REMOTE_CHIP");
         if (enable_remote_chip) {
-            for (const auto& [id, device] : this->reserved_devices_) {
-                this->devices_.push_back(device);
+            const auto tunnels =
+                tt::tt_metal::MetalContext::instance().get_cluster().get_tunnels_from_mmio_device(mmio_device_id);
+            for (const auto& tunnel : tunnels) {
+                for (const auto& chip_id : tunnel) {
+                    if (reserved_devices_.contains(chip_id)) {
+                        this->devices_.push_back(this->reserved_devices_.at(chip_id));
+                    }
+                }
+                break;
             }
         } else {
             for (const auto& chip_id : chip_ids) {
@@ -193,7 +202,9 @@ protected:
         }
     }
 
+    // Devices to test
     std::vector<tt::tt_metal::IDevice*> devices_;
+    // Devices that were initialized
     std::map<chip_id_t, tt::tt_metal::IDevice*> reserved_devices_;
 };
 
@@ -264,8 +275,21 @@ protected:
 
         reserved_devices_internal = tt::tt_metal::detail::CreateDevices(
             chip_ids, num_cqs, l1_small_size, trace_region_size, dispatch_core_config);
-        for (const auto& [id, device] : reserved_devices_internal) {
-            devices_internal.push_back(device);
+        if (tt::tt_metal::IsGalaxyCluster()) {
+            // For Galaxy, only test one tunnel as all tunnels takes a long time
+            const auto tunnels = tt::tt_metal::MetalContext::instance().get_cluster().get_tunnels_from_mmio_device(0);
+            for (const auto& tunnel : tunnels) {
+                for (const auto& chip_id : tunnel) {
+                    if (reserved_devices_internal.contains(chip_id)) {
+                        devices_internal.push_back(reserved_devices_internal.at(chip_id));
+                    }
+                }
+                break;
+            }
+        } else {
+            for (const auto& [id, device] : reserved_devices_internal) {
+                devices_internal.push_back(device);
+            }
         }
     }
 

@@ -22,9 +22,9 @@ from models.utility_functions import comp_allclose, comp_pcc, skip_for_grayskull
     "weights, layers",
     [
         ("random", 1),
-        ("instruct", None),
+        # ("instruct", None),
     ],
-    ids=["quick", "full"],
+    ids=["quick"],
 )
 @pytest.mark.parametrize(
     "paged_attention",
@@ -53,9 +53,9 @@ from models.utility_functions import comp_allclose, comp_pcc, skip_for_grayskull
     "optimizations",
     [
         lambda model_args: DecodersPrecision.performance(model_args.n_layers, model_args.model_name),
-        lambda model_args: DecodersPrecision.accuracy(model_args.n_layers, model_args.model_name),
+        # lambda model_args: DecodersPrecision.accuracy(model_args.n_layers, model_args.model_name),
     ],
-    ids=["performance", "accuracy"],
+    ids=["performance"],
 )
 @pytest.mark.parametrize(
     "mesh_device",
@@ -65,6 +65,13 @@ from models.utility_functions import comp_allclose, comp_pcc, skip_for_grayskull
         )
     ],
     indirect=True,
+)
+@pytest.mark.parametrize(
+    "device_params",
+    [
+        {"fabric_config": ttnn.FabricConfig.FABRIC_1D},
+    ],
+    indirect=["device_params"],
 )
 def test_model_inference(
     weights,

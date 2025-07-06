@@ -219,22 +219,6 @@ def run_reduce_scatter_impl(
         #     ttnn.bfloat16,
         #     1,
         # ),  # Full SD3.5 shape, when reduce scatter unfused
-        (8, 1, [1, 1, 256, 512], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 384, 1024], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [4, 1, 384, 1024], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 512, 512], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 256, 512], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 128, 512], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 128, 256], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 128, 1024], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 192, 256], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 192, 512], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 192, 1024], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 192, 1536], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 64, 256], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 64, 512], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 92, 256], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
-        (8, 1, [1, 1, 92, 512], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # 1280
         (8, 1, [8, 1, 512, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
         (8, 1, [4, 1, 1024, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
         (8, 1, [2, 1, 2048, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused

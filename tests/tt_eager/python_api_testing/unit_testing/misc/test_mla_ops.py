@@ -196,7 +196,7 @@ class DecodeModelConfig:
             use_height_and_width_as_shard_shape=True,
         )
 
-        self.configs["KVPE_CACHE_DTYPE"] = ttnn.bfloat4_b
+        self.configs["KVPE_CACHE_DTYPE"] = ttnn.bfloat16
 
         # q_norm
         self.configs["QNORM_SHAPE"] = (1, 1, self.bsz // DP, self.args.q_lora_rank)

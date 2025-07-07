@@ -23,8 +23,6 @@ class TtGroupNormParameters:
     core_grid: ttnn.CoreGrid
     num_out_blocks: int
     inplace: bool
-    input_width: int
-    input_height: int
     num_channels: int
     num_groups: int
 
@@ -33,8 +31,6 @@ class TtGroupNormParameters:
         cls,
         state: dict[str, torch.Tensor],
         *,
-        input_width: int,
-        input_height: int,
         num_channels: int,
         num_groups: int,
         num_out_blocks: int,
@@ -74,8 +70,6 @@ class TtGroupNormParameters:
             core_grid=core_grid,
             num_out_blocks=num_out_blocks,
             inplace=inplace,
-            input_width=input_width,
-            input_height=input_height,
             num_channels=num_channels,
             num_groups=num_groups,
         )
@@ -116,3 +110,27 @@ class TtGroupNorm:
         # x = ttnn.to_layout(x, ttnn.TILE_LAYOUT)
 
         return x.reshape([batch_size, height, width, channels])
+
+
+def vae_group_norm(x_in, parameters: TtGroupNormParameters, eps: float):
+    [batch_size, height, width, channels] = list(x_in.shape)
+
+    x = ttnn.to_layout(x_in, ttnn.ROW_MAJOR_LAYOUT)
+    x = x.reshape([batch_size, 1, width * height, channels])
+    x = ttnn.tilize_with_zero_padding(x, use_multicore=True)
+
+    x = ttnn.group_norm(
+        x,
+        weight=parameters.weight,
+        bias=parameters.bias,
+        input_mask=parameters.mask,
+        num_groups=parameters.num_groups,
+        epsilon=eps,
+        core_grid=parameters.core_grid,
+        memory_config=parameters.memory_config,
+        inplace=False,
+        num_out_blocks=parameters.num_out_blocks,
+        output_layout=ttnn.TILE_LAYOUT,
+    )
+
+    return x.reshape([batch_size, height, width, channels])

@@ -159,7 +159,8 @@ protected:
 
 class UnitMeshMultiCQSingleDeviceProgramFixture : public UnitMeshMultiCQSingleDeviceFixture {};
 
-class UnitMeshMultiCommandQueueSingleDeviceTraceFixture : public UnitMeshMultiCommandQueueSingleDeviceFixture {
+class UnitMeshMultiCQSingleDeviceTraceFixture : public UnitMeshMultiCQSingleDeviceFixture {
+protected:
     void SetUp() override {
         if (!this->validate_dispatch_mode()) {
             GTEST_SKIP();

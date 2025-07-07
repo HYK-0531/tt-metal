@@ -320,8 +320,8 @@ void MAIN {
                 if (k_chunk == k_chunk_start) {
                     cb_out_mm = cb_out_im;
                 } else {
-                    reconfig_data_format(cb_prev_max, cb_cur_max);  // DEBUG
-                    pack_reconfig_data_format(cb_exp_max_diff);
+                    reconfig_data_format_srca(cb_out_o);  // DEBUG
+                    pack_reconfig_data_format(cb_out_accumulate_im_2);
                     /* cb_exp_max_diff = torch.exp(cb_prev_max - cb_cur_max) */
                     sub_exp_block(cb_prev_max, cb_cur_max, cb_exp_max_diff, Sq_chunk_t);
                     cb_pop_front(cb_prev_max, Sq_chunk_t);

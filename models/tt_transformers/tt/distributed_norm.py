@@ -8,9 +8,10 @@ from models.tt_transformers.tt.ccl import tt_distributed_rmsnorm, tt_sharded_dis
 
 
 class DistributedNorm(LightweightModule):
-    def __init__(self, norm, args, TG=False):
+    def __init__(self, norm, args, tt_ccl, TG=False):
         self.norm = norm
         self.args = args
+        self.tt_ccl = tt_ccl
 
         if TG:
             core_grid_ln = (
@@ -53,7 +54,7 @@ class DistributedNorm(LightweightModule):
                     epsilon=self.norm.eps,
                     gamma=self.norm.weight_distributed,
                     mesh_device=self.args.mesh_device,
-                    tt_ccl=self.args.tt_ccl,
+                    tt_ccl=self.tt_ccl,
                     ln_sharded_input_memcfg=self.gather_in_mem_cfg,
                     ln_sharded_progcfg=self.ln_prg_cfg,
                     ln_sharded_stats_memcfg=self.ln_sharded_stats_memcfg,
@@ -64,7 +65,7 @@ class DistributedNorm(LightweightModule):
                     epsilon=self.norm.eps,
                     gamma=self.norm.weight_distributed,
                     mesh_device=self.args.mesh_device,
-                    tt_ccl=self.args.tt_ccl,
+                    tt_ccl=self.tt_ccl,
                     compute_kernel_config=self.ln_cfg,
                 )
 

@@ -82,6 +82,7 @@ class TransformerBlock(LightweightModule):
                 ccl_topology=self.args.ccl_topology(),
             ),
             args,
+            tt_ccl,
             TG=args.is_galaxy,
         )
         self.ff_norm = DistributedNorm(
@@ -101,6 +102,7 @@ class TransformerBlock(LightweightModule):
                 ccl_topology=self.args.ccl_topology(),
             ),
             args,
+            tt_ccl,
             TG=args.is_galaxy,
         )
 

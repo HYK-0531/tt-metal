@@ -93,6 +93,7 @@ class Transformer(LightweightModule):
                 ccl_topology=self.args.ccl_topology(),
             ),
             args,
+            tt_ccl,
             args.is_galaxy,
         )
 

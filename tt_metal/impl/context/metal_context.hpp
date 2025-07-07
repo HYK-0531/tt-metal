@@ -60,6 +60,7 @@ public:
     }
     std::unique_ptr<DPrintServer>& dprint_server() { return dprint_server_; }
 
+    void set_force_reinit_flag(bool flag) { force_reinit_ = flag; }
     void initialize(
         const DispatchCoreConfig& dispatch_core_config,
         uint8_t num_hw_cqs,

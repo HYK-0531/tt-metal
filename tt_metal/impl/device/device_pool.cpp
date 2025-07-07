@@ -237,6 +237,7 @@ void DevicePool::initialize(
     // to allow TT-Mesh Workload dispatch to target active ethernet cores.
     ZoneScoped;
     log_debug(tt::LogMetal, "DevicePool initialize");
+    tt::tt_metal::MetalContext::instance().set_force_reinit_flag(true);
     tt::tt_metal::MetalContext::instance().initialize(
         dispatch_core_config, num_hw_cqs, {l1_bank_remap.begin(), l1_bank_remap.end()}, worker_l1_size);
 

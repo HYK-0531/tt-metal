@@ -523,7 +523,7 @@ void MAIN {
             }
             // Start Variance Calc
             {
-                DeviceZoneScopedN("Recip Calc");
+                DeviceZoneScopedN("Reciprocal Calc");
                 //  global reduce results
                 cb_wait_front(cb_eps, 1);
                 cb_wait_front(cb_ex2_global, 1);

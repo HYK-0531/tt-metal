@@ -538,12 +538,14 @@ class Attention(LightweightModule):
             attn_output_cat = ttnn.to_memory_config(
                 attn_output_cat, self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"]
             )
-            _, dense_out_sharded, _ = ttnn.experimental.all_gather_matmul(
+            _, dense_out_sharded = ttnn.experimental.all_gather_matmul_async(
                 attn_output_cat,
                 self.wo,
                 dim=3,
+                multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 all_gather_core_grid_offset=(0, 4),
                 num_links=1,
+                subdevice_id=self.tt_ccl.worker_sub_device_id,
                 program_config=self.model_config["ATTN_ALL_GATHER_MATMUL_PROGCFG"],
                 compute_kernel_config=self.li_o_decode_compute_kernel_cfg,
                 memory_config_ag=self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"],
@@ -820,12 +822,14 @@ class Attention(LightweightModule):
 
         # Non fused All Gather Matmul
         if self.use_fused_all_gather_matmul:  # is true for Ring topology
-            attn_output_11SH = ttnn.all_gather(
+            attn_output_11SH = ttnn.experimental.all_gather_async(
                 attn_output_11SH,
-                dim=3,
+                3,
+                multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 num_links=1,
                 topology=self.ccl_topology,
                 memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
 
         output_11SH = ttnn.linear(

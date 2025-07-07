@@ -325,16 +325,25 @@ class Transformer(LightweightModule):
         # Gather the output across all devices and untilize the tensor (for argmax)
         if self.args.num_devices > 1:
             if self.args.is_galaxy:
-                tt_logits = ttnn.all_gather(
+                tt_logits = ttnn.experimental.all_gather_async(
                     tt_logits,
                     dim=3,
+                    multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                     num_links=2,
                     cluster_axis=0,
                     mesh_device=self.mesh_device,
                     topology=self.args.ccl_topology(),
+                    subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )
             else:
-                tt_logits = ttnn.all_gather(tt_logits, dim=3, num_links=1, topology=self.args.ccl_topology())
+                tt_logits = ttnn.experimental.all_gather_async(
+                    tt_logits,
+                    dim=3,
+                    multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
+                    num_links=1,
+                    topology=self.args.ccl_topology(),
+                    subdevice_id=self.tt_ccl.worker_sub_device_id,
+                )
         tt_logits = ttnn.untilize(tt_logits, use_multicore=True)
 
         if argmax_on_device:

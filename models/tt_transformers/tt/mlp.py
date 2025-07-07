@@ -145,25 +145,28 @@ class MLP(LightweightModule):
             #     w3_out = ttnn.to_memory_config(w3_out, ttnn.DRAM_MEMORY_CONFIG)
             if self.dim == 8192 or mode == "prefill":
                 input_mem_cfg = w1_out.memory_config()
-                w1_out = ttnn.reduce_scatter(
+                w1_out = ttnn.experimental.reduce_scatter_minimal_async(
                     w1_out,
                     dim=3,
-                    math_op=ttnn.ReduceType.Sum,
+                    multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
                     num_links=self.args.num_reduce_scatter_links,
                     cluster_axis=1,
                     mesh_device=self.mesh_device,
-                    topology=ttnn.Topology.Linear,
                     memory_config=self.model_config["FF1_OUT_REDUCE_SCATTER_MEMCFG"] if mode == "decode" else None,
+                    topology=ttnn.Topology.Linear,
+                    subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )
-                w3_out = ttnn.reduce_scatter(
+
+                w3_out = ttnn.experimental.reduce_scatter_minimal_async(
                     w3_out,
                     dim=3,
-                    math_op=ttnn.ReduceType.Sum,
+                    multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
                     num_links=1,
                     cluster_axis=1,
                     mesh_device=self.mesh_device,
-                    topology=ttnn.Topology.Linear,
                     memory_config=self.model_config["FF1_OUT_REDUCE_SCATTER_MEMCFG"] if mode == "decode" else None,
+                    topology=ttnn.Topology.Linear,
+                    subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )
             else:
                 w1_out = tt_all_reduce(
@@ -203,15 +206,18 @@ class MLP(LightweightModule):
         ttnn.deallocate(w1_out)
 
         if TG and (self.dim == 8192 or mode == "prefill"):
-            w2_in = ttnn.all_gather(
+            w2_in = ttnn.experimental.all_gather_async(
                 w2_in,
                 3,
+                multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 num_links=2,
                 cluster_axis=1,
                 mesh_device=self.mesh_device,
                 topology=ttnn.Topology.Linear,
                 memory_config=input_mem_cfg,
+                subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
+
             if mode == "decode":
                 w2_in = ttnn.to_memory_config(w2_in, ttnn.L1_MEMORY_CONFIG)
 

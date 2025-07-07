@@ -72,7 +72,15 @@ class DistributedNorm(LightweightModule):
 
         # Distributed norm already performs a gather
         if self.args.is_multichip and not self.args.is_distributed_norm(mode):
-            x = ttnn.all_gather(x, dim=3, num_links=1, topology=self.args.ccl_topology(), memory_config=input_mem_cfg)
+            x = ttnn.experimental.all_gather_async(
+                x,
+                dim=3,
+                multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
+                num_links=1,
+                topology=self.args.ccl_topology(),
+                memory_config=input_mem_cfg,
+                subdevice_id=self.tt_ccl.worker_sub_device_id,
+            )
         else:
             x = ttnn.to_memory_config(x, input_mem_cfg)
 
@@ -80,6 +88,13 @@ class DistributedNorm(LightweightModule):
 
         # Distributed norm requires a gather
         if self.args.is_distributed_norm(mode):
-            x = ttnn.all_gather(x, dim=3, num_links=1, topology=self.args.ccl_topology())
+            x = ttnn.experimental.all_gather_async(
+                x,
+                dim=3,
+                multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
+                num_links=1,
+                topology=self.args.ccl_topology(),
+                subdevice_id=self.tt_ccl.worker_sub_device_id,
+            )
 
         return x

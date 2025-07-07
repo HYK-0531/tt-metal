@@ -89,6 +89,21 @@ void GraphArgumentSerializer::register_small_vector() {
     };
 }
 
+template <typename T, std::size_t N>
+void GraphArgumentSerializer::register_array() {
+    registry()[typeid(std::reference_wrapper<std::array<T, N>>)] = [](const std::any& value) -> std::string {
+        std::ostringstream oss;
+        auto referenced_value = std::any_cast<std::reference_wrapper<std::array<T, N>>>(value);
+        for (const auto& item : referenced_value.get()) {
+            if (oss.tellp() > 0) {
+                oss << ", ";
+            }
+            oss << item;
+        }
+        return oss.str();
+    };
+}
+
 template <typename OptionalT>
 void GraphArgumentSerializer::register_optional_type() {
     registry()[typeid(std::reference_wrapper<OptionalT>)] = [](const std::any& value) -> std::string {
@@ -138,6 +153,12 @@ void GraphArgumentSerializer::register_type() {
     register_small_vector<T, 4>();
     register_small_vector<T, 8>();
     register_small_vector<T, 16>();
+
+    // Array
+    register_array<T, 2>();
+    register_array<T, 4>();
+    register_array<T, 8>();
+    register_array<T, 16>();
 }
 
 std::vector<std::string> GraphArgumentSerializer::to_list(const std::span<std::any>& span) {

@@ -507,3 +507,142 @@ def test_vector_linear(device, shape_a, shape_b, shape_bias) -> tuple:
     assert torch.allclose(torch_result, ttnn_result_torch, atol=atol, rtol=rtol, equal_nan=True), (
         f"mismatch in allclose: torch: {torch_result}, ttnn: {ttnn_result_torch}",
     )
+
+
+@pytest.mark.parametrize(
+    "input_size, weights1_size, bias1_size, weights2_size, bias2_size, activation, dtype",
+    [
+        ((1, 2816), (1280, 2816), (1280,), (1280, 1280), (1280,), "silu", ttnn.bfloat16),
+        ((1, 320), (1280, 320), (1280,), (1280, 1280), (1280,), "silu", ttnn.bfloat16),
+    ],
+)
+def test_sdxl_linear(device, input_size, weights1_size, bias1_size, weights2_size, bias2_size, activation, dtype):
+    torch.manual_seed(0)
+    torch_input_tensor = torch_random(input_size, -0.1, 0.1, dtype=torch.float32)
+    torch_weight1_tensor = torch_random(weights1_size, -0.1, 0.1, dtype=torch.float32)
+    torch_bias1_tensor = torch_random(bias1_size, -0.01, 0.01, dtype=torch.float32)
+    torch_weight2_tensor = torch_random(weights2_size, -0.1, 0.1, torch.float32)
+    torch_bias2_tensor = torch_random(bias2_size, -0.01, 0.01, torch.float32)
+
+    torch_output_tensor = torch.nn.functional.linear(torch_input_tensor, torch_weight1_tensor, bias=torch_bias1_tensor)
+    torch_output_tensor = torch.nn.functional.silu(torch_output_tensor)
+    torch_output_tensor = torch.nn.functional.linear(torch_output_tensor, torch_weight2_tensor, bias=torch_bias2_tensor)
+
+    ttnn_input_tensor = ttnn.from_torch(
+        torch_input_tensor,
+        dtype=dtype,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+    )
+    weights1 = ttnn.from_torch(
+        torch_weight1_tensor.movedim(-1, -2),
+        dtype=dtype,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+    )
+    bias1 = ttnn.from_torch(
+        torch_bias1_tensor.reshape((1, -1)),
+        dtype=dtype,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+    )
+    weights2 = ttnn.from_torch(
+        torch_weight2_tensor.movedim(-1, -2),
+        dtype=dtype,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+    )
+    bias2 = ttnn.from_torch(
+        torch_bias2_tensor.reshape((1, -1)),
+        dtype=dtype,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+    )
+    compute_kernel_config = ttnn.WormholeComputeKernelConfig(
+        math_fidelity=ttnn.MathFidelity.HiFi2,
+        math_approx_mode=False,
+        fp32_dest_acc_en=False,
+        packer_l1_acc=True,
+    )
+    output = ttnn.linear(
+        ttnn_input_tensor, weights1, bias=bias1, activation=activation, compute_kernel_config=compute_kernel_config
+    )
+    output = ttnn.linear(output, weights2, bias=bias2, compute_kernel_config=compute_kernel_config)
+    output_tensor = ttnn.to_torch(output)
+    _, pcc = assert_with_pcc(torch_output_tensor, output_tensor, 0.999)
+    print(f"pcc: {pcc}")
+
+
+@pytest.mark.parametrize(
+    "input_size, weights1_size, bias1_size, weights2_size, bias2_size, activation, dtype",
+    [
+        ((1, 2816), (1280, 2816), (1280,), (1280, 1280), (1280,), "silu", ttnn.bfloat16),
+        ((1, 320), (1280, 320), (1280,), (1280, 1280), (1280,), "silu", ttnn.bfloat16),
+    ],
+)
+def test_sdxl_matmul(device, input_size, weights1_size, bias1_size, weights2_size, bias2_size, activation, dtype):
+    torch.manual_seed(0)
+    torch_input_tensor = torch_random(input_size, -0.1, 0.1, dtype=torch.float32)
+    torch_weight1_tensor = torch_random(weights1_size, -0.1, 0.1, dtype=torch.float32)
+    # torch_bias1_tensor = 0 * torch_random(bias1_size, -0.01, 0.01, dtype=torch.float32)
+    torch_weight2_tensor = torch_random(weights2_size, -0.1, 0.1, torch.float32)
+    # torch_bias2_tensor = 0 * torch_random(bias2_size, -0.01, 0.01, torch.float32)
+
+    torch_output_tensor = torch.matmul(torch_input_tensor, torch_weight1_tensor.T)
+    torch_output_tensor = torch.nn.functional.silu(torch_output_tensor)
+    torch_output_tensor = torch.matmul(torch_output_tensor, torch_weight2_tensor.T)
+
+    ttnn_input_tensor = ttnn.from_torch(
+        torch_input_tensor,
+        dtype=dtype,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+    )
+    weights1 = ttnn.from_torch(
+        torch_weight1_tensor.movedim(-1, -2),
+        dtype=dtype,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+    )
+    # bias1 = ttnn.from_torch(
+    #     torch_bias1_tensor.reshape((1, -1)), dtype=dtype, device=device, layout=ttnn.TILE_LAYOUT, memory_config=ttnn.L1_MEMORY_CONFIG,
+    # )
+    weights2 = ttnn.from_torch(
+        torch_weight2_tensor.movedim(-1, -2),
+        dtype=dtype,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.L1_MEMORY_CONFIG,
+    )
+    # bias2 = ttnn.from_torch(
+    #     torch_bias2_tensor.reshape((1, -1)), dtype=dtype, device=device, layout=ttnn.TILE_LAYOUT, memory_config=ttnn.L1_MEMORY_CONFIG,
+    # )
+    compute_kernel_config = ttnn.WormholeComputeKernelConfig(
+        math_fidelity=ttnn.MathFidelity.HiFi2,
+        math_approx_mode=False,
+        fp32_dest_acc_en=False,
+        packer_l1_acc=True,
+    )
+    output = ttnn.matmul(
+        ttnn_input_tensor,
+        weights1,
+        # bias=bias1,
+        activation=activation,
+        compute_kernel_config=compute_kernel_config,
+    )
+    output = ttnn.matmul(
+        output,
+        weights2,
+        # bias=bias2,
+        compute_kernel_config=compute_kernel_config,
+    )
+    output_tensor = ttnn.to_torch(output)
+    _, pcc = assert_with_pcc(torch_output_tensor, output_tensor, 0.999)
+    print(f"pcc: {pcc}")

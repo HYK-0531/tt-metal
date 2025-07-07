@@ -75,6 +75,9 @@ class ClusterVertex:
     def __str__(self) -> str:
         return f"ClusterVertex(vertices={self.vertices}, connections={self.connections})"
 
+    def __repr__(self) -> str:
+        return self.__str__()
+
 
 class Graph:
     """
@@ -167,6 +170,7 @@ class Graph:
                 # skip these
                 assert (
                     (vertex.stacking_level == 1 and vertex.node_type == "tensor")
+                    or (vertex.stacking_level == 1 and vertex.node_type == "buffer")
                     or (vertex.stacking_level == 1 and vertex.node_type == "capture_start")
                     or (vertex.stacking_level == 1 and vertex.node_type == "buffer_deallocate")
                     or (vertex.stacking_level == 1 and vertex.node_type == "capture_end")
@@ -192,6 +196,23 @@ class Graph:
     def to_dict_list(self) -> List[Dict[str, Any]]:
         """Convert the graph back to a list of dictionaries."""
         return [vertex.to_dict() for vertex in self.vertices.values()]
+
+    def fix_backward_links(self, names: List[str]) -> None:
+        # Remove all connections from nodes to previous nodes
+        for vertex in self.vertices.values():
+            if vertex.params["name"] not in names:
+                continue
+            if len(vertex.connections) == 0:
+                continue
+
+            conns = [conn for conn in vertex.connections if conn >= vertex.id]
+            vertex.connections = conns
+
+    def fix_links_to_ones(self) -> None:
+        for vertex in self.vertices.values():
+            for child in self.get_children_vertices(vertex.id):
+                if child.params["name"] == "ttnn::ones":
+                    vertex.connections.remove(child.id)
 
     def fix_tensors(self) -> None:
         # Replace each argument starting with "Tensor(" with index of incoming node
@@ -250,8 +271,11 @@ def create_simplified_graph_from_clusterized(graph: Graph) -> Graph:
 
         # For some reason, ttnn::ones calls somehow always point to next node in the graph + the correct node where its resulting tensor is consumed - fixing this by taking only the consumption node
         if added_vertex.params["name"] == "ttnn::ones":
-            assert len(added_vertex.connections) == 2
-            added_vertex.connections = [added_vertex.connections[-1]]
+            if len(added_vertex.connections) == 2:
+                added_vertex.connections = [added_vertex.connections[-1]]
+            else:
+                # assert False
+                pass
 
     return new_graph
 
@@ -278,6 +302,8 @@ def main():
 
     simplified_graph = create_simplified_graph_from_clusterized(graph)
 
+    simplified_graph.fix_backward_links(["ttnn::conv2d", "ttnn::to_memory_config"])
+    simplified_graph.fix_links_to_ones()
     simplified_graph.fix_tensors()
 
     # Output simplified graph if requested

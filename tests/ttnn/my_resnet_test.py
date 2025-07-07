@@ -139,7 +139,8 @@ class Bottleneck:
         self.stride = stride
 
     def __call__(self, x: ttnn.Tensor):
-        identity = ttnn.to_memory_config(x, ttnn.DRAM_MEMORY_CONFIG)  # copy input
+        # identity = ttnn.to_memory_config(x, ttnn.DRAM_MEMORY_CONFIG)  # copy input
+        identity = x
 
         # First block
         x = ttnn.conv2d(
@@ -226,7 +227,7 @@ class Bottleneck:
             identity = self.downsample_layer(identity)
 
         # Add identity
-        identity = ttnn.to_memory_config(identity, x.memory_config())
+        # identity = ttnn.to_memory_config(identity, x.memory_config())
         x += identity
         x = ttnn.relu(x)
 
@@ -268,6 +269,16 @@ class Resnet50:
         self.layer2 = self._make_layer(self.layer_list[1], planes=128, stride=2)
         self.layer3 = self._make_layer(self.layer_list[2], planes=256, stride=2)
         self.layer4 = self._make_layer(self.layer_list[3], planes=512, stride=2)
+
+        self.avg_pool_args = MaxPool2dArgs(
+            batch_size=batch_size,
+            channels=2048,
+            kernel_size=7,
+            stride=1,
+            padding=0,
+            dilation=1,
+            ceil_mode=False,
+        )
 
         # ttnn.global_avg_pool2d
 
@@ -322,7 +333,35 @@ class Resnet50:
         for layer in self.layer4:
             x = layer(x)
 
-        x = ttnn.global_avg_pool2d(x)
+            # py::arg("input_tensor"),
+            # py::arg("batch_size"),
+            # py::arg("input_h"),
+            # py::arg("input_w"),
+            # py::arg("channels"),
+            # py::arg("kernel_size"),
+            # py::arg("stride"),
+            # py::arg("padding"),
+            # py::arg("ceil_mode") = false,
+            # py::arg("count_include_pad") = true,
+            # py::arg("divisor_override") = std::nullopt,
+            # py::kw_only(),
+            # py::arg("memory_config") = std::nullopt,
+            # py::arg("applied_shard_scheme") = std::nullopt,
+            # py::arg("in_place_halo") = false,
+            # py::arg("queue_id") = 0});
+
+        # x = ttnn.global_avg_pool2d(x)
+        x = ttnn.avg_pool2d(
+            input_tensor=x,
+            batch_size=self.avg_pool_args.batch_size,
+            input_h=get_input_height(x, self.avg_pool_args.batch_size),
+            input_w=get_input_width(x, self.avg_pool_args.batch_size),
+            channels=self.avg_pool_args.channels,
+            kernel_size=self.avg_pool_args.kernel_size,
+            stride=self.avg_pool_args.stride,
+            padding=self.avg_pool_args.padding,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+        )
         # ttnn.linear
 
         return x
@@ -368,35 +407,27 @@ def run_resnet_50(
     device,
     batch_size,
 ):
+    # Begin graph capture
+    #
+    ttnn.graph.begin_graph_capture(ttnn.graph.RunMode.NORMAL)
     resnet = Resnet50(device, batch_size)
-
     x = ttnn.ones(
         shape=[1, 1, batch_size * 224 * 224, 3],
         dtype=DTYPE,
         device=device,
     )
-
     out = resnet(x)
+    captured_graph = ttnn.graph.end_graph_capture()
+    #
+    # End graph capture
 
-    # # Begin graph capture
-    # #
-    # ttnn.graph.begin_graph_capture(ttnn.graph.RunMode.NORMAL)
-    # # test_infra.input_tensor = tt_inputs_host.to(test_infra.device, input_mem_config)
-    # # test_infra.run()
-    # captured_graph = ttnn.graph.end_graph_capture()
-    # #
-    # # End graph capture
+    # Dump the captured graph
+    #
+    with open("dump.txt", "w") as f:
+        f.write(str(captured_graph))
 
-    # ttnn.graph.pretty_print(captured_graph)
-    # # ttnn.graph.visualize(captured_graph, file_name="graph.svg")
-
-    # # Dump the captured graph
-    # #
-    # with open("dump.txt", "w") as f:
-    #     f.write(str(captured_graph))
-
-    # passed, message = test_infra.validate()
-    # assert passed, message
+    ttnn.graph.pretty_print(captured_graph)
+    ttnn.graph.visualize(captured_graph, file_name="graph.svg")
 
     return out
 

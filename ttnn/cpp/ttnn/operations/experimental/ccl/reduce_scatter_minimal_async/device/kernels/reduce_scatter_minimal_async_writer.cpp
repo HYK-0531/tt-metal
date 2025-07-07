@@ -190,8 +190,13 @@ void kernel_main() {
                     while (tiles_read_in_current_direction < tiles_to_read_in_current_direction) {
                         uint32_t tiles_remaining_to_read_in_current_direction =
                             tiles_to_read_in_current_direction - tiles_read_in_current_direction;
+
+#ifdef ARCH_WORMHOLE
                         uint32_t tiles_to_put_in_current_packet =
                             std::min(tiles_remaining_to_read_in_current_direction, num_tiles_to_write_per_packet);
+#else
+                        uint32_t tiles_to_put_in_current_packet = 1;
+#endif
 
                         // Will have more cases once scatter-write supports more than 2 distinct addresses
                         switch (tiles_to_put_in_current_packet) {

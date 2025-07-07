@@ -4,6 +4,7 @@
 
 import pytest
 import torch
+import ttnn
 import random
 import os
 import numpy as np
@@ -290,8 +291,15 @@ def get_tt_cache_path():
 
 
 @pytest.fixture(scope="function")
-def device_params(request):
-    return getattr(request, "param", {})
+def device_params(request, galaxy_type):
+    params = getattr(request, "param", {}).copy()
+
+    if "fabric_config" in params and params["fabric_config"] == True:
+        params["fabric_config"] = (
+            ttnn.FabricConfig.FABRIC_1D_RING if galaxy_type == "6U" else ttnn.FabricConfig.FABRIC_1D
+        )
+
+    return params
 
 
 @pytest.fixture(scope="function")

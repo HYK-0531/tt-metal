@@ -243,10 +243,13 @@ def run_trace_2cq_model(device, tt_inputs, test_infra, num_warmup_iterations, nu
     if use_signpost:
         signpost(header="start")
     outputs = []
+
+    ttnn.wait_for_event(1, op_event)
+    ttnn.copy_host_to_device_tensor(tt_inputs_host, tt_image_res, 1)
     profiler.start(f"run")
     for iter in range(0, num_measurement_iterations):
-        ttnn.wait_for_event(1, op_event)
-        ttnn.copy_host_to_device_tensor(tt_inputs_host, tt_image_res, 1)
+        # ttnn.wait_for_event(1, op_event)
+        # ttnn.copy_host_to_device_tensor(tt_inputs_host, tt_image_res, 1)
         write_event = ttnn.record_event(device, 1)
         ttnn.wait_for_event(0, write_event)
         # TODO: Add in place support to ttnn to_memory_config

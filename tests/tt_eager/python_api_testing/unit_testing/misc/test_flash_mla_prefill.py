@@ -150,7 +150,11 @@ def run_flash_mla_prefill_impl(
         is_causal=True,
     )
 
-    out_pass, out_pcc = comp_pcc(tt_out_torch, out_t)
+    pcc_threshold = 0.99
+    if dtype == ttnn.bfloat4_b:
+        pcc_threshold = 0.98
+
+    out_pass, out_pcc = comp_pcc(tt_out_torch, out_t, pcc_threshold)
     logger.info(f"Output PCC: {out_pcc}")
 
     assert out_pass, f"Output mismatch: PCC {out_pcc} < 0.99"
@@ -160,14 +164,21 @@ def run_flash_mla_prefill_impl(
     "batch, seq_len, nh, nkv, kv_lora_rank, d_rope",
     # batch, seq_len, num heads q, num heads kv, kv lora rank, dim rope
     [
-        # (2, 1024, 16, 16, 512, 64), # DeepSeek V3 TG TP=8, DP=4 (OOM)
-        (2, 1024, 8, 8, 128, 64),
+        (2, 1024, 128, 1, 512, 64),
+        (2, 8 * 1024, 8, 1, 128, 64),
+        (2, 8 * 1024, 64, 1, 256, 0),
+        (2, 8 * 1024, 64, 1, 32, 64),
+        (8, 4 * 1024, 8, 1, 128, 32),
+        # (32, 8 * 1024, 8, 1, 128, 32), OOM
     ],
 )
 @pytest.mark.parametrize(
     "q_dtype, dtype",
     [
         (ttnn.bfloat16, ttnn.bfloat8_b),
+        (ttnn.bfloat8_b, ttnn.bfloat8_b),
+        (ttnn.bfloat16, ttnn.bfloat4_b),
+        (ttnn.bfloat8_b, ttnn.bfloat4_b),
     ],
 )
 def test_flash_mla_prefill(

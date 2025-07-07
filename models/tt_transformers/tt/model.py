@@ -8,6 +8,7 @@ from tqdm import tqdm
 import ttnn
 from models.common.lightweightmodule import LightweightModule
 from models.common.rmsnorm import RMSNorm
+from models.tt_transformers.tt.ccl import TT_CCL
 from models.tt_transformers.tt.common import copy_host_to_device
 from models.tt_transformers.tt.decoder import TransformerBlock
 from models.tt_transformers.tt.distributed_norm import DistributedNorm
@@ -39,6 +40,8 @@ class Transformer(LightweightModule):
         self.grid_size = self.args.max_grid_size
         state_dict_prefix = args.get_state_dict_prefix("", None)
 
+        self.tt_ccl = TT_CCL(self.mesh_device)
+
         self.embd = Embedding(
             mesh_device=mesh_device,
             args=args,
@@ -62,6 +65,7 @@ class Transformer(LightweightModule):
             TransformerBlock(
                 args=args,
                 mesh_device=mesh_device,
+                tt_ccl=self.tt_ccl,
                 dtype=dtype,
                 state_dict=state_dict,
                 weight_cache_path=weight_cache_path,
@@ -75,6 +79,7 @@ class Transformer(LightweightModule):
         self.norm = DistributedNorm(
             RMSNorm(
                 device=mesh_device,
+                tt_ccl=self.tt_ccl,
                 dim=args.dim,
                 eps=args.norm_eps,
                 state_dict=state_dict,
@@ -94,6 +99,7 @@ class Transformer(LightweightModule):
         self.lm_head = LMHead(
             args=args,
             mesh_device=mesh_device,
+            tt_ccl=self.tt_ccl,
             dtype=dtype,
             state_dict=state_dict,
             state_dict_prefix=state_dict_prefix,
@@ -399,3 +405,6 @@ class Transformer(LightweightModule):
             x = ttnn.to_layout(x, layout=ttnn.ROW_MAJOR_LAYOUT)
             x = ttnn.to_memory_config(x, memory_config=ttnn.DRAM_MEMORY_CONFIG)
         return x
+
+    def __del__(self):
+        self.tt_ccl.close()

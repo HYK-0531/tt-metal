@@ -53,6 +53,7 @@ class DistributedNorm(LightweightModule):
                     epsilon=self.norm.eps,
                     gamma=self.norm.weight_distributed,
                     mesh_device=self.args.mesh_device,
+                    tt_ccl=self.args.tt_ccl,
                     ln_sharded_input_memcfg=self.gather_in_mem_cfg,
                     ln_sharded_progcfg=self.ln_prg_cfg,
                     ln_sharded_stats_memcfg=self.ln_sharded_stats_memcfg,
@@ -63,6 +64,7 @@ class DistributedNorm(LightweightModule):
                     epsilon=self.norm.eps,
                     gamma=self.norm.weight_distributed,
                     mesh_device=self.args.mesh_device,
+                    tt_ccl=self.args.tt_ccl,
                     compute_kernel_config=self.ln_cfg,
                 )
 

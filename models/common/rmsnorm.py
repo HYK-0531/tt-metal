@@ -36,6 +36,7 @@ class RMSNorm(LightweightModule):
     def __init__(
         self,
         device,
+        tt_ccl,
         dim,
         state_dict,
         weight_key,
@@ -52,6 +53,9 @@ class RMSNorm(LightweightModule):
         ccl_topology=ttnn.Topology.Ring,
     ):
         super().__init__()
+        self.device = device
+        self.tt_ccl = tt_ccl
+
         self.eps = eps
         self.is_distributed = is_distributed
         self.ccl_topology = ccl_topology

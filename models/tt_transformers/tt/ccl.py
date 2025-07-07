@@ -5,10 +5,65 @@
 import ttnn
 
 
+class TT_CCL:
+    def __init__(
+        self,
+        mesh_device,
+    ):
+        self.mesh_device = mesh_device
+        self.worker_sub_device_id = ttnn.SubDeviceId(0)
+        self.sub_device_crs = ttnn.CoreRangeSet(
+            {
+                ttnn.CoreRange(
+                    ttnn.CoreCoord(0, 0),
+                    ttnn.CoreCoord(
+                        self.mesh_device.compute_with_storage_grid_size().x - 1,
+                        self.mesh_device.compute_with_storage_grid_size().y - 1,
+                    ),
+                )
+            }
+        )
+
+        self.ag_semaphores_idx = 0
+        self.ag_semaphore_handles = [[], []]
+
+        self.rs_semaphores_idx = 0
+        self.rs_semaphore_handles = [[], []]
+
+        for i in range(2):
+            for _ in range(2):
+                self.ag_semaphore_handles[i].append(
+                    ttnn.create_global_semaphore(self.mesh_device, self.sub_device_crs, 0)
+                )
+            for _ in range(3):
+                self.rs_semaphore_handles[i].append(
+                    ttnn.create_global_semaphore(self.mesh_device, self.sub_device_crs, 0)
+                )
+
+        worker_sub_device = ttnn.SubDevice([self.sub_device_crs])
+        sub_device_manager = self.mesh_device.create_sub_device_manager([worker_sub_device], 0)
+        self.mesh_device.load_sub_device_manager(sub_device_manager)
+        self.mesh_device.set_sub_device_stall_group([self.worker_sub_device_id])
+
+    def get_and_cycle_ag_semaphore_handles(self):
+        current_idx = self.ag_semaphores_idx
+        self.ag_semaphores_idx = (self.ag_semaphores_idx + 1) % 2
+        return self.ag_semaphore_handles[current_idx]
+
+    def get_and_cycle_rs_semaphore_handles(self):
+        current_idx = self.rs_semaphores_idx
+        self.rs_semaphores_idx = (self.rs_semaphores_idx + 1) % 2
+        return self.rs_semaphore_handles[current_idx]
+
+    def close(self):
+        self.mesh_device.reset_sub_device_stall_group()
+
+
 # def tt_all_reduce(input_tensor, mesh_device, cluster_axis=0, dim=0, num_links=2, memory_config=None, sharded=False):
 def tt_all_reduce(
     input_tensor,
     mesh_device,
+    tt_ccl,
     cluster_axis=0,
     dim=0,
     num_reduce_scatter_links=1,
@@ -112,6 +167,7 @@ def tt_all_reduce(
 def tt_all_gather(
     input_tensor,
     mesh_device,
+    tt_ccl,
     cluster_axis,
     dim,
     num_links=2,
@@ -156,7 +212,7 @@ def tt_all_gather(
     return gathered
 
 
-def tt_distributed_rmsnorm(inp, epsilon, gamma, mesh_device, compute_kernel_config):
+def tt_distributed_rmsnorm(inp, epsilon, gamma, mesh_device, tt_ccl, compute_kernel_config):
     # Run distributed rmsnorm part 1
     tt_stats = ttnn.rms_norm_pre_all_gather(inp, compute_kernel_config=compute_kernel_config, dtype=ttnn.bfloat16)
     padded_shape = (1, 1, inp.shape[-2], 32)
@@ -164,6 +220,7 @@ def tt_distributed_rmsnorm(inp, epsilon, gamma, mesh_device, compute_kernel_conf
     tt_stats_gathered = tt_all_gather(
         tt_stats,
         mesh_device=mesh_device,
+        tt_ccl=tt_ccl,
         dim=3,
         cluster_axis=1,
         num_links=1,
@@ -184,7 +241,7 @@ def tt_distributed_rmsnorm(inp, epsilon, gamma, mesh_device, compute_kernel_conf
 
 
 def tt_sharded_distributed_rmsnorm(
-    inp, epsilon, gamma, mesh_device, ln_sharded_input_memcfg, ln_sharded_progcfg, ln_sharded_stats_memcfg
+    inp, epsilon, gamma, mesh_device, tt_ccl, ln_sharded_input_memcfg, ln_sharded_progcfg, ln_sharded_stats_memcfg
 ):
     inp = ttnn.to_memory_config(inp, memory_config=ln_sharded_input_memcfg)
 

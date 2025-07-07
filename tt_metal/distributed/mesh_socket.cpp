@@ -10,6 +10,38 @@ using namespace tt::tt_metal::distributed::multihost;
 
 namespace tt::tt_metal::distributed {
 
+namespace {
+
+void point_to_point_barrier(const std::vector<Rank>& ranks) {
+    auto distributed_context = DistributedContext::get_current_world();
+
+    TT_FATAL(ranks.size() == 2, "Point-to-point barrier requires exactly two ranks.");
+    TT_FATAL(ranks[0] != ranks[1], "Point-to-Point barrier cannot be used for synchronization within the same rank.");
+    TT_FATAL(
+        distributed_context->rank() == ranks[0] || distributed_context->rank() == ranks[1],
+        "Point-to-Point barrier for ranks {} and {} cannot be caleed on rank {}.",
+        *ranks[0],
+        *ranks[1],
+        *distributed_context->rank());
+
+    if (distributed_context->rank() == ranks[0]) {
+        int sync_msg = 1;
+        distributed_context->send(
+            tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&sync_msg), sizeof(sync_msg)), ranks[1], Tag{0}
+            // Use a fixed tag for the point-to-point barrier
+        );
+    } else {
+        int sync_msg = 0;
+        distributed_context->recv(
+            tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&sync_msg), sizeof(sync_msg)), ranks[0], Tag{0}
+            // Use the same tag for the point-to-point barrier
+        );
+        TT_FATAL(sync_msg == 1, "Received unexpected message during point-to-point barrier.");
+    }
+}
+
+}  // namespace
+
 MeshSocket::MeshSocket(const std::shared_ptr<MeshDevice>& device, const SocketConfig& config) : config_(config) {
     auto context = config.distributed_context ? config.distributed_context : DistributedContext::get_current_world();
     TT_FATAL(
@@ -54,6 +86,8 @@ void MeshSocket::connect_with_peer(std::shared_ptr<multihost::DistributedContext
         fabric_node_id_map_ = generate_fabric_node_id_map(config_, remote_endpoint_desc, local_endpoint_desc);
     }
     write_socket_configs(config_buffer_, local_endpoint_desc, remote_endpoint_desc, socket_endpoint_type_);
+    // Barrier on both hosts to ensure that each socket endpoint has been initialized on the respective MeshDevices.
+    point_to_point_barrier({config_.sender_rank, config_.receiver_rank});
 }
 
 std::pair<MeshSocket, MeshSocket> MeshSocket::create_socket_pair(

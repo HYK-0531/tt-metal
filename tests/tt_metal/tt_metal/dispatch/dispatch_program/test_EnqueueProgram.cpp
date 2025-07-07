@@ -2300,24 +2300,6 @@ TEST_F(UnitMeshRandomProgramFixture, TensixTestSimplePrograms) {
     Finish(device_->mesh_command_queue());
 }
 
-TEST_F(UnitMeshRandomProgramFixture, TensixTestSimplePrograms) {
-    for (uint32_t i = 0; i < NUM_PROGRAMS; i++) {
-        if (i % 10 == 0) {
-            log_info(tt::LogTest, "Creating Program {}", i);
-        }
-        distributed::MeshWorkload workload;
-        distributed::MeshCoordinate zero_coord = distributed::MeshCoordinate::zero_coordinate(device_->shape().dims());
-        distributed::MeshCoordinateRange device_range = distributed::MeshCoordinateRange(zero_coord, zero_coord);
-        Program program = CreateProgram();
-        distributed::AddProgramToMeshWorkload(workload, std::move(program), device_range);
-        auto& program_ = workload.get_programs().at(device_range);
-        this->create_kernel(program_, CoreType::WORKER, true);
-        distributed::EnqueueMeshWorkload(device_->mesh_command_queue(), workload, false);
-    }
-
-    Finish(device_->mesh_command_queue());
-}
-
 TEST_F(UnitMeshRandomProgramFixture, ActiveEthTestSimplePrograms) {
     for (const auto& device : device_->get_devices()) {
         if (!does_device_have_active_eth_cores(device)) {

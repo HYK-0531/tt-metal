@@ -163,11 +163,11 @@ def test_llama_tg_LayerNorm(
     "start_core, sub_core_grids",
     [
         (
-            ttnn.CoreCoord(1, 0),
+            ttnn.CoreCoord(3, 0),
             ttnn.CoreRangeSet(
                 [
-                    ttnn.CoreRange(ttnn.CoreCoord(1, 0), ttnn.CoreCoord(3, 9)),
-                    ttnn.CoreRange(ttnn.CoreCoord(5, 0), ttnn.CoreCoord(6, 9)),
+                    # ttnn.CoreRange(ttnn.CoreCoord(1, 0), ttnn.CoreCoord(3, 9)),
+                    ttnn.CoreRange(ttnn.CoreCoord(3, 0), ttnn.CoreCoord(6, 9)),
                 ]
             ),
         ),
@@ -265,11 +265,11 @@ def test_llama_tg_BinaryDeviceOperation(use_program_cache, device, batch_size, s
     "start_core, sub_core_grids",
     [
         (
-            ttnn.CoreCoord(1, 0),
+            ttnn.CoreCoord(3, 0),
             ttnn.CoreRangeSet(
                 [
-                    ttnn.CoreRange(ttnn.CoreCoord(1, 0), ttnn.CoreCoord(3, 9)),
-                    ttnn.CoreRange(ttnn.CoreCoord(5, 0), ttnn.CoreCoord(6, 9)),
+                    # ttnn.CoreRange(ttnn.CoreCoord(1, 0), ttnn.CoreCoord(3, 9)),
+                    ttnn.CoreRange(ttnn.CoreCoord(3, 0), ttnn.CoreCoord(6, 9)),
                 ]
             ),
         ),

@@ -824,7 +824,7 @@ class Attention(LightweightModule):
         if self.use_fused_all_gather_matmul:  # is true for Ring topology
             attn_output_11SH = ttnn.experimental.all_gather_async(
                 attn_output_11SH,
-                3,
+                dim=3,
                 multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 num_links=1,
                 topology=self.ccl_topology,

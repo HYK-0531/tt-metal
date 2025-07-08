@@ -45,7 +45,7 @@ class TransformerBlock(LightweightModule):
 
         self.attention = Attention(
             mesh_device=mesh_device,
-            tt_ccl=tt_ccl,
+            tt_ccl=self.tt_ccl,
             state_dict=state_dict,
             weight_cache_path=weight_cache_path,
             layer_num=layer_num,
@@ -57,7 +57,7 @@ class TransformerBlock(LightweightModule):
         )
         self.feed_forward = MLP(
             mesh_device=mesh_device,
-            tt_ccl=tt_ccl,
+            tt_ccl=self.tt_ccl,
             args=args,
             state_dict=state_dict,
             weight_cache_path=weight_cache_path,
@@ -82,7 +82,7 @@ class TransformerBlock(LightweightModule):
                 ccl_topology=self.args.ccl_topology(),
             ),
             args,
-            tt_ccl,
+            self.tt_ccl,
             TG=args.is_galaxy,
         )
         self.ff_norm = DistributedNorm(
@@ -102,7 +102,7 @@ class TransformerBlock(LightweightModule):
                 ccl_topology=self.args.ccl_topology(),
             ),
             args,
-            tt_ccl,
+            self.tt_ccl,
             TG=args.is_galaxy,
         )
 

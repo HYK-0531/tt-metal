@@ -145,7 +145,8 @@ public:
         uint32_t packed_write_max_unicast_sub_cmds,
         uint32_t offset_idx = 0,
         bool no_stride = false,
-        uint32_t write_offset_index = 0);
+        uint32_t write_offset_index = 0,
+        uint32_t data_collection_offset = 0);
 
     // Tuple in data_collection is:
     //  0:address, 1:size, 2:stride

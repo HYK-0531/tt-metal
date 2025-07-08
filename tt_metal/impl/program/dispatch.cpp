@@ -468,11 +468,12 @@ void generate_runtime_args_cmds(
     uint32_t pcie_alignment = MetalContext::instance().hal().get_alignment(HalMemType::HOST);
     uint32_t l1_alignment = MetalContext::instance().hal().get_alignment(HalMemType::L1);
     while (num_packed_cmds_in_seq != 0) {
+        uint32_t num_packed_cmds = std::min(num_packed_cmds_in_seq, max_packed_cmds);
+        // In 32-bit units.
         uint32_t write_offset = 0;
         while (write_offset < max_runtime_args_len) {
-            uint32_t current_runtime_args_len = std::min(max_runtime_args_len - write_offset, max_packed_write_size / sizeof(uint32_t));
+            uint32_t current_runtime_args_len = std::min(max_runtime_args_len - write_offset, static_cast<uint32_t>(max_packed_write_size / sizeof(uint32_t)));
             // Generate the device command
-            uint32_t num_packed_cmds = std::min(num_packed_cmds_in_seq, max_packed_cmds);
             uint32_t rt_payload_sizeB =
                 get_runtime_payload_sizeB(num_packed_cmds, current_runtime_args_len, unicast, no_stride);
             DeviceCommandCalculator calculator;
@@ -485,7 +486,7 @@ void generate_runtime_args_cmds(
             runtime_args_command_sequences.back().add_dispatch_write_packed<PackedSubCmd>(
                 CQ_DISPATCH_CMD_PACKED_WRITE_FLAG_TYPE_RTA,
                 num_packed_cmds,
-                l1_arg_base_addr,
+                l1_arg_base_addr + write_offset * sizeof(uint32_t),
                 current_runtime_args_len * sizeof(uint32_t),
                 rt_payload_sizeB,
                 sub_cmds,

@@ -5,7 +5,7 @@
 #include <chrono>
 #include <random>
 #include <stdint.h>
-#include <math.h>
+#include <cmath>
 
 #include <tt-metalium/control_plane.hpp>
 #include <tt-metalium/device_pool.hpp>

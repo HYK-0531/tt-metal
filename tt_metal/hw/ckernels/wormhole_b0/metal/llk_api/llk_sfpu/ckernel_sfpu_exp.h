@@ -50,7 +50,7 @@ void calculate_exponential(const uint iterations = ITERATIONS, const uint exp_ba
         for (int d = 0; d < ITERATIONS; d++) {
             sfpi::vFloat val = sfpi::dst_reg[0];
             sfpi::vFloat result = _sfpu_exp_21f_(val);
-            // sfpi::vFloat result = 5.0;
+            // sfpi::vFloat result = 5.0f;
             sfpi::dst_reg[0] = result;
             sfpi::dst_reg++;
         }

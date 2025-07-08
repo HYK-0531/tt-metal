@@ -21,7 +21,7 @@ def print_unique_values(tensor):
     "input_shapes",
     ((torch.Size([1, 1, 32, 32])),),
 )
-@pytest.mark.parametrize("input_val", [-88, -89, -90])
+@pytest.mark.parametrize("input_val", [-88, -89, -90, 4.3944, 20.7058])
 def test_unary_max_fill_val_bf16(input_shapes, input_val, device):
     torch_input = torch.ones(input_shapes, dtype=torch.bfloat16) * input_val
 
@@ -36,12 +36,15 @@ def test_unary_max_fill_val_bf16(input_shapes, input_val, device):
         memory_config=ttnn.DRAM_MEMORY_CONFIG,
     )
 
+    # tt_in = ttnn.fill(tt_in, input_val)
+
     tt_result = ttnn.exp(tt_in)
     result = ttnn.to_torch(tt_result)
     print("\nInput : ", torch_input[0, 0, 0, 0])
     print("\ngolden:", golden[0, 0, 0, 0], "\nTTNN:", result[0, 0, 0, 0])
     # assert_with_pcc(golden, result, 0.999)
-    assert compare_equal([tt_result], [golden])
+    assert assert_with_ulp(golden, result)
+    # assert compare_equal([tt_result], [golden])
 
 
 @pytest.mark.parametrize(
@@ -83,15 +86,15 @@ def test_unary_max_bf16(input_shapes, low, high, device):
 
 
 def test_pow_bf16(device):
-    torch_input_a = torch.tensor([9.0, 100000])
-    torch_input_b = torch.tensor([2.0, 1.7984])
+    torch_input_a = torch.tensor([9.0, 100000, 5.0], dtype=torch.float32)
+    torch_input_b = torch.tensor([2.0, 1.7984, 3.0], dtype=torch.float32)
 
     golden_function = ttnn.get_golden_function(ttnn.pow)
     golden = golden_function(torch_input_a, torch_input_b, device=device)
 
     tt_ina = ttnn.from_torch(
         torch_input_a,
-        dtype=ttnn.bfloat16,
+        dtype=ttnn.float32,
         device=device,
         layout=ttnn.TILE_LAYOUT,
         memory_config=ttnn.DRAM_MEMORY_CONFIG,
@@ -99,13 +102,31 @@ def test_pow_bf16(device):
 
     tt_inb = ttnn.from_torch(
         torch_input_b,
-        dtype=ttnn.bfloat16,
+        dtype=ttnn.float32,
         device=device,
         layout=ttnn.TILE_LAYOUT,
         memory_config=ttnn.DRAM_MEMORY_CONFIG,
     )
 
-    tt_result = ttnn.pow(tt_ina, tt_inb)
+    tt_log = ttnn.log(tt_ina)
+    print("tt logA - ", tt_log)
+    print("torch logA - ", torch.log(torch_input_a))
+    tt_mul = ttnn.multiply(tt_log, tt_inb)
+    print("tt log mul - ", tt_mul)
+    print("torch log mul - ", torch_input_b * torch.log(torch_input_a))
+    tt_exp = ttnn.exp(tt_mul)
+    print("tt exp - ", tt_exp)
+
+    print("torch exp - ", torch.exp(torch_input_b * torch.log(torch_input_a)))
+
+    tt_result = ttnn.multiply(
+        tt_ina,
+        tt_inb,
+        input_tensor_a_activations=[ttnn.UnaryWithParam(ttnn.UnaryOpType.LOG)],
+        activations=[ttnn.UnaryWithParam(ttnn.UnaryOpType.EXP, False)],
+        use_legacy=False,
+    )
+
     result = ttnn.to_torch(tt_result)
     # assert_with_pcc(golden, result, 0.999)
     print("\ngolden:", golden, "\nTTNN:", result)

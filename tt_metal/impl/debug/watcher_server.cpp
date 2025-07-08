@@ -430,6 +430,10 @@ void watcher_attach(chip_id_t device_id) {
     const std::lock_guard<std::mutex> lock(watcher::watch_mutex);
     auto& rtoptions = tt_metal::MetalContext::instance().rtoptions();
 
+    if (!rtoptions.get_watcher_enabled()) {
+        return;
+    }
+
     if (!watcher::enabled && rtoptions.get_watcher_enabled()) {
         watcher::create_log_file();
         if (!watcher::kernel_file) {

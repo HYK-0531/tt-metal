@@ -1180,6 +1180,9 @@ std::set<std::pair<chan_id_t, eth_chan_directions>> ControlPlane::get_active_fab
     for (const auto& [direction, eth_chans] :
          this->router_port_directions_to_physical_eth_chan_map_.at(fabric_node_id)) {
         for (const auto& eth_chan : eth_chans) {
+            if (direction == RoutingDirection::NONE) {
+                continue;  // Skip directions that are not valid
+            }
             active_fabric_eth_channels.insert({eth_chan, this->routing_direction_to_eth_direction(direction)});
         }
     }
@@ -1748,7 +1751,7 @@ void ControlPlane::initialize_intermesh_eth_links() {
         for (auto link : extract_intermesh_eth_links(config_data[0], chip_id)) {
             // Find the CoreCoord for this channel
             for (const auto& [core_coord, channel] : soc_desc.logical_eth_core_to_chan_map) {
-                if (channel == link) {
+                if (channel == link and this->is_intermesh_eth_link_trained(chip_id, core_coord)) {
                     intermesh_eth_links.push_back({core_coord, link});
                     break;
                 }
@@ -1804,8 +1807,6 @@ bool ControlPlane::is_intermesh_eth_link(chip_id_t chip_id, CoreCoord eth_core) 
 
 // TODO: Support Intramesh links through this API as well
 bool ControlPlane::is_intermesh_eth_link_trained(chip_id_t chip_id, CoreCoord eth_core) const {
-    TT_FATAL(
-        this->is_intermesh_eth_link(chip_id, eth_core), "Can only call {} on intermesh ethernet links.", __FUNCTION__);
     const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
     // Read the link status from designated L1 address
     tt_cxy_pair virtual_eth_core(
@@ -2149,8 +2150,7 @@ void ControlPlane::assign_neighbor_meshes_to_exit_node(const FabricNodeId& fabri
                 }
             }
             if (exit_node_found) {
-                break;  // No need to check other edges for this link. We found the local exit node it corresponds
-                        // toåååå
+                break;  // No need to check other edges for this link. We found the local exit node it corresponds to
             }
         }
     }

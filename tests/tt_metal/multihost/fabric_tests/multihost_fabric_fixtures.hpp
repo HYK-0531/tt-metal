@@ -1,4 +1,3 @@
-
 // SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 //
 // SPDX-License-Identifier: Apache-2.0
@@ -121,7 +120,8 @@ public:
 
     bool system_supported() override {
         const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
-        return cluster.user_exposed_chip_ids().size() == 4;
+        return cluster.user_exposed_chip_ids().size() == 4 &&
+               *(tt::tt_metal::MetalContext::instance().get_distributed_context().size()) == 2;
     }
 };
 
@@ -137,12 +137,38 @@ class Dual2x4FabricFixture : public Fixture {
 
     bool system_supported() override {
         const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
-        return cluster.user_exposed_chip_ids().size() == 8;
+        return cluster.user_exposed_chip_ids().size() == 8 &&
+               *(tt::tt_metal::MetalContext::instance().get_distributed_context().size()) == 2;
+    }
+};
+
+template <typename Fixture>
+class NanoExaboxFabricFixture : public Fixture {
+    std::string get_path_to_mesh_graph_desc() override {
+        return "tests/tt_metal/tt_fabric/custom_mesh_descriptors/dual_t3k_mesh_graph_descriptor.yaml";
+    }
+
+    std::vector<std::vector<eth_coord_t>> get_eth_coord_mapping() override {
+        return {
+            get_eth_coords_for_t3k(),
+            get_eth_coords_for_t3k(),
+            get_eth_coords_for_t3k(),
+            get_eth_coords_for_t3k(),
+            get_eth_coords_for_t3k()};
+    }
+
+    bool system_supported() override {
+        const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
+        return cluster.user_exposed_chip_ids().size() == 8 &&
+               *(tt::tt_metal::MetalContext::instance().get_distributed_context().size()) == 5;
     }
 };
 
 using InterMeshDual2x4FabricFixture = Dual2x4FabricFixture<InterMeshRoutingFabric2DFixture>;
 using MeshDeviceDual2x4Fixture = Dual2x4FabricFixture<MultiMeshDeviceFabricFixture>;
+
+using IntermeshNanoExaboxFabricFixture = NanoExaboxFabricFixture<InterMeshRoutingFabric2DFixture>;
+using MeshDeviceNanoExaboxFixture = NanoExaboxFabricFixture<MultiMeshDeviceFabricFixture>;
 
 }  // namespace fabric_router_tests
 }  // namespace tt::tt_fabric

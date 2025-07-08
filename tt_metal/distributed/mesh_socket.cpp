@@ -19,7 +19,7 @@ void point_to_point_barrier(const std::vector<Rank>& ranks) {
     TT_FATAL(ranks[0] != ranks[1], "Point-to-Point barrier cannot be used for synchronization within the same rank.");
     TT_FATAL(
         distributed_context->rank() == ranks[0] || distributed_context->rank() == ranks[1],
-        "Point-to-Point barrier for ranks {} and {} cannot be caleed on rank {}.",
+        "Point-to-Point barrier for ranks {} and {} cannot be called on rank {}.",
         *ranks[0],
         *ranks[1],
         *distributed_context->rank());
@@ -27,15 +27,11 @@ void point_to_point_barrier(const std::vector<Rank>& ranks) {
     if (distributed_context->rank() == ranks[0]) {
         int sync_msg = 1;
         distributed_context->send(
-            tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&sync_msg), sizeof(sync_msg)), ranks[1], Tag{0}
-            // Use a fixed tag for the point-to-point barrier
-        );
+            tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&sync_msg), sizeof(sync_msg)), ranks[1], Tag{0});
     } else {
         int sync_msg = 0;
         distributed_context->recv(
-            tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&sync_msg), sizeof(sync_msg)), ranks[0], Tag{0}
-            // Use the same tag for the point-to-point barrier
-        );
+            tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&sync_msg), sizeof(sync_msg)), ranks[0], Tag{0});
         TT_FATAL(sync_msg == 1, "Received unexpected message during point-to-point barrier.");
     }
 }
@@ -44,12 +40,16 @@ void point_to_point_barrier(const std::vector<Rank>& ranks) {
 
 MeshSocket::MeshSocket(const std::shared_ptr<MeshDevice>& device, const SocketConfig& config) : config_(config) {
     auto context = config.distributed_context ? config.distributed_context : DistributedContext::get_current_world();
-    TT_FATAL(
-        context->rank() == config.sender_rank || context->rank() == config.receiver_rank,
-        "Cannot create a socket on rank {} with sender rank {} and receiver rank {}.",
-        *context->rank(),
-        *config.sender_rank,
-        *config.receiver_rank);
+    if (!(context->rank() == config.sender_rank || context->rank() == config.receiver_rank)) {
+        log_warning(
+            LogMetal,
+            "Creating a null socket on host rank {} with sender rank {} and receiver rank {}.",
+            *context->rank(),
+            *config.sender_rank,
+            *config.receiver_rank);
+        return;
+    }
+
     TT_FATAL(
         config.sender_rank != config.receiver_rank,
         "{} must only be used for communication between different host ranks, not within the same rank.",

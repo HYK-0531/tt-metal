@@ -6,10 +6,16 @@
 #include <gtest/gtest.h>
 #include <stdint.h>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <vector>
 
 #include "multihost_fabric_fixtures.hpp"
+#include <tt-metalium/distributed.hpp>
+#include <tt-metalium/fabric.hpp>
+
+#include <random>
+#include <algorithm>
 
 namespace tt::tt_fabric {
 namespace fabric_router_tests::multihost {
@@ -133,6 +139,50 @@ TEST_F(InterMeshDual2x4FabricFixture, MultiMesh_EW_MulticastWithTurns) {
         multihost_utils::InterMeshLineMcast(
             this, mcast_req_nodes[i % 4], mcast_start_nodes[i % 4], routing_info, mcast_group_node_ids[i % 4]);
     }
+}
+
+// ========= Data-Movement Tests for NanoExabox Machines  =========
+
+TEST_F(IntermeshNanoExaboxFabricFixture, RandomizedIntermeshUnicastBwd) {
+    auto distributed_context = tt_metal::distributed::multihost::DistributedContext::get_current_world();
+
+    constexpr uint32_t sender_rank = 1;
+    constexpr uint32_t num_iterations = 500;
+
+    if (*(distributed_context->rank()) == sender_rank) {
+        std::vector<uint32_t> recv_node_ranks = {0, 2, 3, 4};
+        for (uint32_t i = 0; i < num_iterations; i++) {
+            for (auto recv_rank : recv_node_ranks) {
+                multihost_utils::run_unicast_sender_step(this, tt::tt_metal::distributed::multihost::Rank{recv_rank});
+            }
+        }
+    } else {
+        for (uint32_t i = 0; i < num_iterations; i++) {
+            multihost_utils::run_unicast_recv_step(this, tt::tt_metal::distributed::multihost::Rank{sender_rank});
+        }
+    }
+    distributed_context->barrier();
+}
+
+TEST_F(IntermeshNanoExaboxFabricFixture, RandomizedIntermeshUnicastFwd) {
+    auto distributed_context = tt_metal::distributed::multihost::DistributedContext::get_current_world();
+
+    constexpr uint32_t recv_rank = 1;
+    constexpr uint32_t num_iterations = 500;
+
+    if (*(distributed_context->rank()) == recv_rank) {
+        std::vector<uint32_t> sender_node_ranks = {0, 2, 3, 4};
+        for (uint32_t i = 0; i < num_iterations; i++) {
+            for (auto sender_rank : sender_node_ranks) {
+                multihost_utils::run_unicast_recv_step(this, tt::tt_metal::distributed::multihost::Rank{sender_rank});
+            }
+        }
+    } else {
+        for (uint32_t i = 0; i < num_iterations; i++) {
+            multihost_utils::run_unicast_sender_step(this, tt::tt_metal::distributed::multihost::Rank{recv_rank});
+        }
+    }
+    distributed_context->barrier();
 }
 
 }  // namespace fabric_router_tests::multihost

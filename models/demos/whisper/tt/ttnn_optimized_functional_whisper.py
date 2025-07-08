@@ -436,6 +436,7 @@ def convert_to_ttnn(model, name):
 
 def get_conv_configs(device):
     conv1d_config = ttnn.Conv1dConfig(
+        dtype=ttnn.bfloat16,
         weights_dtype=ttnn.bfloat16,
         shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
     )
@@ -490,7 +491,6 @@ def preprocess_encoder_inputs(config, input_features, *, parameters, device):
         padding=1,
         dilation=1,
         groups=1,
-        dtype=ttnn.bfloat16,
         conv_config=conv1d_config,
         compute_config=conv1d_compute_config,
         return_weights_and_bias=True,
@@ -514,7 +514,6 @@ def preprocess_encoder_inputs(config, input_features, *, parameters, device):
             padding=1,
             dilation=1,
             groups=1,
-            dtype=ttnn.bfloat16,
             conv_config=conv1d_config,
             compute_config=conv1d_compute_config,
             return_weights_and_bias=True,

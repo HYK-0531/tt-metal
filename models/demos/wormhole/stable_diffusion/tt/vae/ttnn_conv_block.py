@@ -5,7 +5,6 @@
 from models.demos.wormhole.stable_diffusion.tt.vae.ttnn_vae_configs import (
     get_default_compute_config,
     get_default_conv_config,
-    get_default_conv_output_dtype,
 )
 from models.demos.wormhole.stable_diffusion.tt.vae.ttnn_vae_utils import (
     prepare_split_conv_weights_bias,
@@ -43,7 +42,6 @@ class ConvBlock:
         self.return_weights_and_bias = True
         self.compute_config = get_default_compute_config(device)
         self.conv_config = get_default_conv_config()
-        self.conv_output_dtype = get_default_conv_output_dtype()
 
         self.conv_weights, self.conv_bias = prepare_split_conv_weights_bias(
             in_channels,
@@ -71,7 +69,6 @@ class ConvBlock:
             self.conv_out_channel_split_factor,
             self.compute_config,
             self.conv_config,
-            self.conv_output_dtype,
             self.kernel_size,
             self.padding,
             self.return_weights_and_bias,

@@ -139,7 +139,6 @@ class TtConv2d:
                     if slice_count > 1
                     else None
                 ),
-                dtype=ttnn.bfloat16,
             )
 
             return _Conv2dRawResult(

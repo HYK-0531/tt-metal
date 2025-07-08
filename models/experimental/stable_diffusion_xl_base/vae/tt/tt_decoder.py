@@ -100,7 +100,6 @@ class TtDecoder(nn.Module):
         )
         self.conv_out_slice_config = get_DRAM_conv_config(None, 2)
         self.conv_out_config = model_config.get_conv_config(conv_path="decoder.conv_out")
-        self.conv_output_dtype = model_config.get_conv_output_dtype()
 
     def forward(self, sample, input_shape):
         B, C, H, W = input_shape
@@ -130,7 +129,6 @@ class TtDecoder(nn.Module):
             slice_config=self.conv_in_slice_config,
             return_output_dim=True,
             return_weights_and_bias=True,
-            dtype=self.conv_output_dtype,
         )
         C = self.conv_in_params["output_channels"]
 
@@ -188,7 +186,6 @@ class TtDecoder(nn.Module):
             slice_config=self.conv_out_slice_config,
             return_output_dim=True,
             return_weights_and_bias=True,
-            dtype=self.conv_output_dtype,
         )
         C = self.conv_out_params["output_channels"]
 

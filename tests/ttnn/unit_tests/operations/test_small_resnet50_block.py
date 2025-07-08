@@ -116,6 +116,7 @@ class resnet50Bottleneck:
             input_height=input_height,
             input_width=input_width,
             conv_config=ttnn.Conv2dConfig(
+                dtype=self.model_config["ACTIVATIONS_DTYPE"],
                 weights_dtype=self.model_config["WEIGHTS_DTYPE"],
             ),
             compute_config=ttnn.init_device_compute_kernel_config(
@@ -124,7 +125,6 @@ class resnet50Bottleneck:
             ),
             return_output_dim=True,
             return_weights_and_bias=True,
-            dtype=self.model_config["ACTIVATIONS_DTYPE"],
         )
 
         out, [input_height, input_width], [self.conv1_weight_tensor, self.conv1_bias_tensor] = ttnn.conv2d(
@@ -141,6 +141,7 @@ class resnet50Bottleneck:
             input_height=input_height,
             input_width=input_width,
             conv_config=ttnn.Conv2dConfig(
+                dtype=self.model_config["ACTIVATIONS_DTYPE"],
                 weights_dtype=self.model_config["WEIGHTS_DTYPE"],
                 activation="relu",
             ),
@@ -150,7 +151,6 @@ class resnet50Bottleneck:
             ),
             return_output_dim=True,
             return_weights_and_bias=True,
-            dtype=self.model_config["ACTIVATIONS_DTYPE"],
         )
 
         if self.downsample:
@@ -168,6 +168,7 @@ class resnet50Bottleneck:
                 input_height=input_height,
                 input_width=input_width,
                 conv_config=ttnn.Conv2dConfig(
+                    dtype=self.model_config["ACTIVATIONS_DTYPE"],
                     weights_dtype=self.model_config["WEIGHTS_DTYPE"],
                 ),
                 compute_config=ttnn.init_device_compute_kernel_config(
@@ -176,7 +177,6 @@ class resnet50Bottleneck:
                 ),
                 return_output_dim=False,
                 return_weights_and_bias=True,
-                dtype=self.model_config["ACTIVATIONS_DTYPE"],
             )
             ttnn.deallocate(x)
         else:
@@ -197,6 +197,7 @@ class resnet50Bottleneck:
             input_height=input_height,
             input_width=input_width,
             conv_config=ttnn.Conv2dConfig(
+                dtype=self.model_config["ACTIVATIONS_DTYPE"],
                 weights_dtype=self.model_config["WEIGHTS_DTYPE"],
                 activation="relu",
             ),
@@ -206,7 +207,6 @@ class resnet50Bottleneck:
             ),
             return_output_dim=True,
             return_weights_and_bias=True,
-            dtype=self.model_config["ACTIVATIONS_DTYPE"],
         )
 
         # conv3 is 1x1 conv
@@ -225,6 +225,7 @@ class resnet50Bottleneck:
             input_height=input_height,
             input_width=input_width,
             conv_config=ttnn.Conv2dConfig(
+                dtype=self.model_config["ACTIVATIONS_DTYPE"],
                 weights_dtype=self.model_config["WEIGHTS_DTYPE"],
             ),
             compute_config=ttnn.init_device_compute_kernel_config(
@@ -233,7 +234,6 @@ class resnet50Bottleneck:
             ),
             return_output_dim=False,
             return_weights_and_bias=True,
-            dtype=self.model_config["ACTIVATIONS_DTYPE"],
         )
 
         # underscore version is in_place = True

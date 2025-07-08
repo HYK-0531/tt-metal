@@ -127,8 +127,6 @@ ttnn::Tensor prepare_conv_transpose2d_weights(
     const bool has_bias,
     uint32_t groups,
     T* device,
-    DataType input_dtype,
-    const std::optional<const DataType>& output_dtype,
     const std::optional<const Conv2dConfig>& conv_config_,
     const std::optional<const DeviceComputeKernelConfig>& compute_config_,
     bool mirror_kernel) {
@@ -154,8 +152,6 @@ ttnn::Tensor prepare_conv_transpose2d_weights(
         has_bias,
         groups,
         device,
-        input_dtype,
-        output_dtype,
         conv_config_,
         compute_config_,
         std::nullopt);
@@ -177,8 +173,6 @@ ttnn::Tensor prepare_conv_transpose2d_bias(
     std::array<uint32_t, 2> dilation,
     uint32_t groups,
     T* device,
-    DataType input_dtype,
-    const std::optional<const DataType>& output_dtype,
     const std::optional<const Conv2dConfig>& conv_config_,
     const std::optional<const DeviceComputeKernelConfig>& compute_config_) {
     return prepare_conv_bias(
@@ -196,8 +190,6 @@ ttnn::Tensor prepare_conv_transpose2d_bias(
         dilation,
         groups,
         device,
-        input_dtype,
-        output_dtype,
         conv_config_,
         compute_config_);
 }
@@ -219,8 +211,6 @@ template ttnn::Tensor prepare_conv_transpose2d_weights(
     const bool has_bias,
     uint32_t groups,
     IDevice* device,
-    DataType input_dtype,
-    const std::optional<const DataType>& output_dtype,
     const std::optional<const Conv2dConfig>& conv_config_,
     const std::optional<const DeviceComputeKernelConfig>& compute_config_,
     bool mirror_kernel);
@@ -242,8 +232,6 @@ template ttnn::Tensor prepare_conv_transpose2d_weights(
     const bool has_bias,
     uint32_t groups,
     tt::tt_metal::distributed::MeshDevice* device,
-    DataType input_dtype,
-    const std::optional<const DataType>& output_dtype,
     const std::optional<const Conv2dConfig>& conv_config_,
     const std::optional<const DeviceComputeKernelConfig>& compute_config_,
     bool mirror_kernel);
@@ -263,8 +251,6 @@ template ttnn::Tensor prepare_conv_transpose2d_bias(
     std::array<uint32_t, 2> dilation,
     uint32_t groups,
     IDevice* device,
-    DataType input_dtype,
-    const std::optional<const DataType>& output_dtype,
     const std::optional<const Conv2dConfig>& conv_config_,
     const std::optional<const DeviceComputeKernelConfig>& compute_config_);
 
@@ -283,8 +269,6 @@ template ttnn::Tensor prepare_conv_transpose2d_bias(
     std::array<uint32_t, 2> dilation,
     uint32_t groups,
     tt::tt_metal::distributed::MeshDevice* device,
-    DataType input_dtype,
-    const std::optional<const DataType>& output_dtype,
     const std::optional<const Conv2dConfig>& conv_config_,
     const std::optional<const DeviceComputeKernelConfig>& compute_config_);
 

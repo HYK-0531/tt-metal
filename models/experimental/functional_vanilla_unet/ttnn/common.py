@@ -46,6 +46,7 @@ class Conv:
             packer_l1_acc=False,
         )
         conv_config = ttnn.Conv2dConfig(
+            dtype=self.dtype,
             weights_dtype=ttnn.bfloat16,
             activation=self.activation,
             shard_layout=self.shard_layout,
@@ -75,7 +76,6 @@ class Conv:
             groups=self.groups,
             return_output_dim=True,
             return_weights_and_bias=True,
-            dtype=self.dtype,
         )
 
         output_tensor = ttnn.reshape(
@@ -126,6 +126,7 @@ class ConvTranspose:
             packer_l1_acc=False,
         )
         conv_config = ttnn.Conv2dConfig(
+            dtype=self.dtype,
             weights_dtype=ttnn.bfloat16,
             shard_layout=self.shard_layout,
             reshard_if_not_optimal=self.reshard,
@@ -156,7 +157,6 @@ class ConvTranspose:
             output_padding=(0, 0),
             dilation=(1, 1),
             mirror_kernel=True,
-            dtype=self.dtype,
         )
 
         output_tensor = ttnn.reshape(
@@ -219,6 +219,7 @@ class ConvSplit:
             packer_l1_acc=False,
         )
         conv_config = ttnn.Conv2dConfig(
+            dtype=self.dtype,
             weights_dtype=ttnn.bfloat16,
             activation=self.activation,
             shard_layout=self.shard_layout,
@@ -249,7 +250,6 @@ class ConvSplit:
                 groups=self.groups,
                 return_output_dim=True,
                 return_weights_and_bias=True,
-                dtype=self.dtype,
             )
 
             conv_output_tensor = ttnn.reshape(

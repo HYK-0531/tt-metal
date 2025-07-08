@@ -15,7 +15,6 @@ class ModelOptimisations:
         ff_weights_dtype=ttnn.bfloat8_b,
     ):
         self.conv_configs = {}
-        self.conv_output_dtype = conv_act_dtype
         self.matmul_configs = {}
         self.compute_configs = {}
         self.prepared_weights = False
@@ -26,6 +25,7 @@ class ModelOptimisations:
 
         # HEIGHT SHARDED
         self.conv_configs["ABH_256_ADB"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=conv_w_dtype,
             shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
             deallocate_activation=True,
@@ -38,6 +38,7 @@ class ModelOptimisations:
             act_block_h_override=256,
         )
         self.conv_configs["ABH_128_NO_ADB_HS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=conv_w_dtype,
             shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
             deallocate_activation=True,
@@ -52,6 +53,7 @@ class ModelOptimisations:
 
         # BLOCK SHARDED
         self.conv_configs["ABH_32_NO_ADB_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -64,6 +66,7 @@ class ModelOptimisations:
             act_block_h_override=32,
         )
         self.conv_configs["ABH_64_NO_ADB_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -76,6 +79,7 @@ class ModelOptimisations:
             act_block_h_override=64,
         )
         self.conv_configs["ABH_64_NO_ADB_WDB_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -89,6 +93,7 @@ class ModelOptimisations:
             act_block_h_override=64,
         )
         self.conv_configs["ABH_64_NO_ADB_WDB_MOVE_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -102,6 +107,7 @@ class ModelOptimisations:
             act_block_h_override=64,
         )
         self.conv_configs["ABH_64_ADB_WDB_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -116,6 +122,7 @@ class ModelOptimisations:
         )
 
         self.conv_configs["ABH_64_NO_ADB_BS_BF16"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_w_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -129,6 +136,7 @@ class ModelOptimisations:
         )
 
         self.conv_configs["ABH_128_ADB_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -141,6 +149,7 @@ class ModelOptimisations:
             act_block_h_override=128,
         )
         self.conv_configs["ABH_128_ADB_WDB_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -154,6 +163,7 @@ class ModelOptimisations:
             act_block_h_override=128,
         )
         self.conv_configs["ABH_128_NO_ADB_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -166,6 +176,7 @@ class ModelOptimisations:
             act_block_h_override=128,
         )
         self.conv_configs["ABH_128_NO_ADB_WDB_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -179,6 +190,7 @@ class ModelOptimisations:
             act_block_h_override=128,
         )
         self.conv_configs["ABH_128_ADB_WDB_NO_DEALLOC_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=False,
@@ -192,6 +204,7 @@ class ModelOptimisations:
             act_block_h_override=128,
         )
         self.conv_configs["ABH_128_NO_ADB_WDB_NO_DEALLOC_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=False,
@@ -205,6 +218,7 @@ class ModelOptimisations:
             act_block_h_override=128,
         )
         self.conv_configs["ABH_256_NO_ADB_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_w_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -217,6 +231,7 @@ class ModelOptimisations:
             act_block_h_override=256,
         )
         self.conv_configs["ABH_256_NO_ADB_WDB_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=True,
@@ -230,6 +245,7 @@ class ModelOptimisations:
             act_block_h_override=256,
         )
         self.conv_configs["ABH_256_ADB_WDB_NO_DEALLOC_BS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.BLOCK_SHARDED,
             deallocate_activation=False,
@@ -245,6 +261,7 @@ class ModelOptimisations:
 
         # WIDTH SHARDED
         self.conv_configs["ABH_256_NO_ADB_WS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
             deallocate_activation=True,
@@ -258,6 +275,7 @@ class ModelOptimisations:
             act_block_h_override=256,
         )
         self.conv_configs["ABH_512_NO_ADB_WS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=self.conv_ws_dtype,
             shard_layout=ttnn.TensorMemoryLayout.WIDTH_SHARDED,
             deallocate_activation=True,
@@ -273,6 +291,7 @@ class ModelOptimisations:
 
         # DEFAULT CONF
         self.conv_configs["DEFAULT"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=conv_w_dtype,
             shard_layout=None,
             deallocate_activation=True,
@@ -286,6 +305,7 @@ class ModelOptimisations:
 
         # DRAM CONF
         self.conv_configs["ABH_64_NO_ADB_DRAM"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=conv_w_dtype,
             shard_layout=None,
             deallocate_activation=False,
@@ -297,6 +317,7 @@ class ModelOptimisations:
             act_block_h_override=64,
         )
         self.conv_configs["ABH_128_NO_ADB_DRAM"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=conv_w_dtype,
             shard_layout=None,
             deallocate_activation=False,
@@ -308,6 +329,7 @@ class ModelOptimisations:
             act_block_h_override=128,
         )
         self.conv_configs["ABH_512_NO_ADB_DRAM"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=conv_w_dtype,
             shard_layout=None,
             deallocate_activation=False,
@@ -319,6 +341,7 @@ class ModelOptimisations:
             act_block_h_override=512,
         )
         self.conv_configs["DEFAULT_DRAM"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=conv_w_dtype,
             shard_layout=None,
             deallocate_activation=False,
@@ -330,6 +353,7 @@ class ModelOptimisations:
             act_block_h_override=0,
         )
         self.conv_configs["ABH_256_NO_ADB_HS"] = ttnn.Conv2dConfig(
+            dtype=conv_act_dtype,
             weights_dtype=conv_w_dtype,
             shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
             deallocate_activation=True,
@@ -916,6 +940,3 @@ class ModelOptimisations:
                 return self.conv_configs["ABH_512_NO_ADB_DRAM"]
             else:
                 return self.conv_configs["DEFAULT_DRAM"]
-
-    def get_conv_output_dtype(self):
-        return self.conv_output_dtype

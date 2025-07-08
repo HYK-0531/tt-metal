@@ -90,7 +90,6 @@ class TtResnetBlock2D(nn.Module):
             self.device, norm_weights_2.shape[0], self.norm_groups, self.norm_core_grid_2.y
         )
 
-        self.conv_output_dtype = model_config.get_conv_output_dtype()
         self.conv1_config = model_config.get_conv_config(conv_path=f"{module_path}.conv1")
         if self.split_conv:
             (
@@ -213,7 +212,6 @@ class TtResnetBlock2D(nn.Module):
                 compute_config=self.compute1_config,
                 conv_config=self.conv1_config,
                 conv_params=self.conv1_params,
-                conv_dtype=self.conv_output_dtype,
                 stride=self.stride,
                 padding=self.padding,
                 dilation=self.dilation,
@@ -240,7 +238,6 @@ class TtResnetBlock2D(nn.Module):
                 memory_config=None,
                 return_output_dim=True,
                 return_weights_and_bias=True,
-                dtype=self.conv_output_dtype,
             )
             C = self.conv1_params["output_channels"]
 
@@ -301,7 +298,6 @@ class TtResnetBlock2D(nn.Module):
             memory_config=None,
             return_output_dim=True,
             return_weights_and_bias=True,
-            dtype=self.conv_output_dtype,
         )
         C = self.conv2_params["output_channels"]
 

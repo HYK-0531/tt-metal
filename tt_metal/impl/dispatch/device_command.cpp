@@ -699,6 +699,12 @@ void DeviceCommand<hugepage_write>::add_dispatch_write_packed(
         max_num_packed_sub_cmds,
         num_sub_cmds);
 
+    TT_FATAL(
+        packed_data_sizeB <= (1 << DispatchSettings::DISPATCH_BUFFER_LOG_PAGE_SIZE),
+        "Packed data size {} is greater than the dispatch buffer page size {}",
+        packed_data_sizeB,
+        DispatchSettings::DISPATCH_BUFFER_LOG_PAGE_SIZE);
+
     TT_ASSERT((type & ~CQ_DISPATCH_CMD_PACKED_WRITE_FLAG_TYPE_MASK) == 0, "Invalid type {}", type);
 
     constexpr bool flush_prefetch = true;

@@ -613,6 +613,10 @@ BatchedTransfers assemble_runtime_args_commands(
     // kernel_group multicast is best when multiple kernels on the same kernel group have common RTAs. It may also merge
     // CRTA writes with CB and semaphore writes.
     uint32_t kernel_group_crta_multicast_count = 0;
+    // write_packed is limited to 1 page, so if the common RTAs are larger than that, we need to use kernel_group
+    // multicast, which uses write_packed_large.
+    bool over_max_packed_write_size = false;
+    constexpr uint32_t max_packed_write_size = 1 << DispatchSettings::DISPATCH_BUFFER_LOG_PAGE_SIZE;
     {
         uint32_t index = hal.get_programmable_core_type_index(HalProgrammableCoreType::TENSIX);
         for (auto& kg : program.get_kernel_groups(index)) {
@@ -625,6 +629,9 @@ BatchedTransfers assemble_runtime_args_commands(
                         has_crtas = true;
                         break;
                     }
+                    if (kernel->common_runtime_args().size() * sizeof(uint32_t) > max_packed_write_size) {
+                        over_max_packed_write_size = true;
+                    }
                 }
             }
             if (has_crtas) {
@@ -634,7 +641,8 @@ BatchedTransfers assemble_runtime_args_commands(
     }
 
     // kernel group multicast can merge with CB multicast, so prefer it in general.
-    bool use_kernel_group_crta_multicast = kernel_group_crta_multicast_count <= per_kernel_crta_multicast_count;
+    bool use_kernel_group_crta_multicast =
+        over_max_packed_write_size || (kernel_group_crta_multicast_count <= per_kernel_crta_multicast_count);
 
     for (size_t kernel_id = 0; kernel_id < program.num_kernels(); kernel_id++) {
         auto kernel = detail::GetKernel(program, kernel_id);

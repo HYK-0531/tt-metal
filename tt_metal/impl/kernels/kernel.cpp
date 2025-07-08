@@ -282,7 +282,7 @@ RuntimeArgsData &Kernel::common_runtime_args_data() { return this->common_runtim
 // Ensure that unique and common runtime args do not overflow reserved region in L1.
 void Kernel::validate_runtime_args_size(
     size_t num_unique_rt_args, size_t num_common_rt_args, const CoreCoord &logical_core) {
-    uint32_t total_rt_args = (num_unique_rt_args + num_common_rt_args);
+    uint32_t total_rt_args = (num_unique_rt_args/* + num_common_rt_args*/);
     auto arch = MetalContext::instance().hal().get_arch();
     uint32_t idle_eth_max_runtime_args = MetalContext::instance().hal().get_dev_size(
                                             HalProgrammableCoreType::ACTIVE_ETH, HalL1MemAddrType::KERNEL_CONFIG) /

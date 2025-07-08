@@ -16,7 +16,7 @@ namespace fabric_router_tests {
 
 namespace multihost_utils {
 
-void RandomizedInterMeshUnicast(BaseFabricFixture* fixture);
+void RandomizedInterMeshUnicast(BaseFabricFixture* fixture, bool flip_direction = false);
 
 void InterMeshLineMcast(
     BaseFabricFixture* fixture,

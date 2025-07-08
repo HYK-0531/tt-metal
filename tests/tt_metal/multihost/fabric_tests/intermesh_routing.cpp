@@ -22,6 +22,12 @@ TEST_F(InterMesh2x4Fabric2DFixture, RandomizedInterMeshUnicast) {
     }
 }
 
+TEST_F(InterMesh2x4Fabric2DFixture, RandomizedInterMeshUnicast) {
+    for (uint32_t i = 0; i < 500; i++) {
+        multihost_utils::RandomizedInterMeshUnicast(this);
+    }
+}
+
 TEST_F(InterMesh2x4Fabric2DFixture, MultiMeshEastMulticast) {
     std::vector<FabricNodeId> mcast_req_nodes = {
         FabricNodeId(MeshId{0}, 1), FabricNodeId(MeshId{0}, 0), FabricNodeId(MeshId{0}, 3), FabricNodeId(MeshId{0}, 2)};
@@ -67,6 +73,12 @@ TEST_F(InterMesh2x4Fabric2DFixture, MultiMeshNorthMulticast) {
 TEST_F(InterMeshDual2x4Fabric2DFixture, RandomizedInterMeshUnicast) {
     for (uint32_t i = 0; i < 500; i++) {
         multihost_utils::RandomizedInterMeshUnicast(this);
+    }
+}
+
+TEST_F(InterMeshDual2x4Fabric2DFixture, RandomizedBidirectionalInterMeshUnicast) {
+    for (uint32_t i = 0; i < 500; i++) {
+        multihost_utils::RandomizedBidirectionalInterMeshUnicast(this, i % 2);
     }
 }
 

@@ -73,12 +73,11 @@ std::shared_ptr<tt_metal::Program> create_receiver_program(
     return recv_program;
 }
 
-void run_unicast_sender_step(BaseFabricFixture* fixture) {
+void run_unicast_sender_step(
+    BaseFabricFixture* fixture, tt::tt_metal::distributed::multihost::Rank dest_rank, bool random = false) {
     // The following code runs on the sender host
     auto& control_plane = tt::tt_metal::MetalContext::instance().get_control_plane();
     auto distributed_context = tt_metal::distributed::multihost::DistributedContext::get_current_world();
-
-    constexpr uint32_t num_packets = 100;
 
     const auto& fabric_context = control_plane.get_fabric_context();
     const auto topology = fabric_context.get_fabric_topology();
@@ -93,9 +92,12 @@ void run_unicast_sender_step(BaseFabricFixture* fixture) {
     uint32_t time_seed = std::chrono::system_clock::now().time_since_epoch().count();
     distributed_context->send(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&time_seed), sizeof(time_seed)),
-        tt::tt_metal::distributed::multihost::Rank{1},  // send to receiver host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange seed over tag 0
+        tt::tt_metal::distributed::multihost::Rank{dest_rank},  // send to receiver host
+        tt::tt_metal::distributed::multihost::Tag{0}            // exchange seed over tag 0
     );
+    uint32_t num_packets = random ? std::uniform_int_distribution<uint32_t>(10, 100)(time_seed) : 100;
+    int32_t tag =
+        random ? std::uniform_int_distribution<int32_t>(0, std::numeric_limits<int32_t>::max())(time_seed) : 0;
     // Randomly select a tx device
     auto random_dev = std::uniform_int_distribution<uint32_t>(0, devices.size() - 1)(global_rng);
     auto src_physical_device_id = devices[random_dev]->id();
@@ -112,15 +114,15 @@ void run_unicast_sender_step(BaseFabricFixture* fixture) {
     // Request randomized logical core from the receiver host
     distributed_context->recv(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&receiver_logical_core), sizeof(receiver_logical_core)),
-        tt::tt_metal::distributed::multihost::Rank{1},  // receive from receiver host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange logical core over tag 0
+        tt::tt_metal::distributed::multihost::Rank{dest_rank},  // receive from receiver host
+        tt::tt_metal::distributed::multihost::Tag{tag}          // exchange logical core over tag 0
     );
     FabricNodeId dst_fabric_node_id(MeshId{0}, 0);
     // Receive the randomized destination fabric node id from the receiver host
     distributed_context->recv(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&dst_fabric_node_id), sizeof(dst_fabric_node_id)),
-        tt::tt_metal::distributed::multihost::Rank{1},  // receive from receiver host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange fabric node id over tag 0
+        tt::tt_metal::distributed::multihost::Rank{dest_rank},  // receive from receiver host
+        tt::tt_metal::distributed::multihost::Tag{tag}          // exchange fabric node id over tag 0
     );
 
     // Determine the port to use for intermesh routing
@@ -171,7 +173,10 @@ void run_unicast_sender_step(BaseFabricFixture* fixture) {
 
     // common compile time args for sender and receiver
     std::vector<uint32_t> compile_time_args = {
-        worker_mem_map.test_results_address, worker_mem_map.test_results_size_bytes, target_address};
+        worker_mem_map.test_results_address,
+        worker_mem_map.test_results_size_bytes,
+        target_address,
+        false /* use_dram_dst */};
 
     // Create the sender program
     auto sender_program = tt_metal::CreateProgram();
@@ -247,24 +252,24 @@ void run_unicast_sender_step(BaseFabricFixture* fixture) {
     uint64_t receiver_bytes = 0;
     distributed_context->send(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&sender_bytes), sizeof(sender_bytes)),
-        tt::tt_metal::distributed::multihost::Rank{1},  // send to receiver host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange tests results over tag 0
+        tt::tt_metal::distributed::multihost::Rank{dest_rank},  // send to receiver host
+        tt::tt_metal::distributed::multihost::Tag{tag}          // exchange tests results over tag 0
     );
     // Request test results from the receiver host and ensure that they match
     distributed_context->recv(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&receiver_bytes), sizeof(receiver_bytes)),
-        tt::tt_metal::distributed::multihost::Rank{1},  // recv from receiver host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange tests results over tag 0
+        tt::tt_metal::distributed::multihost::Rank{dest_rank},  // recv from receiver host
+        tt::tt_metal::distributed::multihost::Tag{tag}          // exchange tests results over tag 0
     );
     EXPECT_EQ(sender_bytes, receiver_bytes);
 }
 
-void run_unicast_recv_step(BaseFabricFixture* fixture) {
+void run_unicast_recv_step(
+    BaseFabricFixture* fixture, bool random = false, const tt::tt_metal::distributed::multihost::Rank src_rank) {
     // The following code runs on the receiver host
     auto& control_plane = tt::tt_metal::MetalContext::instance().get_control_plane();
     auto distributed_context = tt_metal::distributed::multihost::DistributedContext::get_current_world();
 
-    constexpr uint32_t num_packets = 100;
     const auto& fabric_context = control_plane.get_fabric_context();
     const auto topology = fabric_context.get_fabric_topology();
     TT_FATAL(topology == Topology::Mesh, "Intermesh Routing tests need Dynamic Routing enabled.");
@@ -275,9 +280,13 @@ void run_unicast_recv_step(BaseFabricFixture* fixture) {
     uint32_t time_seed = 0;
     distributed_context->recv(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&time_seed), sizeof(time_seed)),
-        tt::tt_metal::distributed::multihost::Rank{0},  // recv from sender host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange seed over tag 0
+        tt::tt_metal::distributed::multihost::Rank{src_rank},  // recv from sender host
+        tt::tt_metal::distributed::multihost::Tag{0}           // exchange seed over tag 0
     );
+
+    uint32_t num_packets = random ? std::uniform_int_distribution<uint32_t>(10, 100)(time_seed) : 100;
+    int32_t tag =
+        random ? std::uniform_int_distribution<int32_t>(0, std::numeric_limits<int32_t>::max())(time_seed) : 0;
 
     // Randomly select an rx device
     auto random_dev = std::uniform_int_distribution<uint32_t>(0, devices.size() - 1)(global_rng);
@@ -294,15 +303,15 @@ void run_unicast_recv_step(BaseFabricFixture* fixture) {
     // Send the randomized rx core to the sender host, so it can send packets to the correct destination
     distributed_context->send(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&receiver_logical_core), sizeof(receiver_logical_core)),
-        tt::tt_metal::distributed::multihost::Rank{0},  // send to sender host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange logical core over tag 0
+        tt::tt_metal::distributed::multihost::Rank{src_rank},  // send to sender host
+        tt::tt_metal::distributed::multihost::Tag{tag}         // exchange logical core over tag 0
     );
 
     // Send the randomized rx fabric node id to the sender host, so it can send packets to the correct destination
     distributed_context->send(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&dst_fabric_node_id), sizeof(dst_fabric_node_id)),
-        tt::tt_metal::distributed::multihost::Rank{0},  // send to sender host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange fabric node id over tag 0
+        tt::tt_metal::distributed::multihost::Rank{src_rank},  // send to sender host
+        tt::tt_metal::distributed::multihost::Tag{tag}         // exchange fabric node id over tag 0
     );
 
     // test parameters
@@ -314,9 +323,7 @@ void run_unicast_recv_step(BaseFabricFixture* fixture) {
         worker_mem_map.test_results_address,
         worker_mem_map.test_results_size_bytes,
         target_address,
-        0 /* mcast_mode */,
-        true,
-        fabric_config == tt_metal::FabricConfig::FABRIC_2D_DYNAMIC};
+        false /* use_dram_dst */};
 
     std::vector<uint32_t> receiver_runtime_args = {worker_mem_map.packet_payload_size_bytes, num_packets, time_seed};
 
@@ -343,14 +350,14 @@ void run_unicast_recv_step(BaseFabricFixture* fixture) {
     uint64_t sender_bytes = 0;
     distributed_context->recv(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&sender_bytes), sizeof(sender_bytes)),
-        tt::tt_metal::distributed::multihost::Rank{0},  // recv from sender host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange tests results over tag 0
+        tt::tt_metal::distributed::multihost::Rank{src_rank},  // recv from sender host
+        tt::tt_metal::distributed::multihost::Tag{tag}         // exchange tests results over tag 0
     );
     // Send test results to the sender host
     distributed_context->send(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&receiver_bytes), sizeof(receiver_bytes)),
-        tt::tt_metal::distributed::multihost::Rank{0},  // send to sender host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange tests results over tag 0
+        tt::tt_metal::distributed::multihost::Rank{src_rank},  // send to sender host
+        tt::tt_metal::distributed::multihost::Tag{tag}         // exchange tests results over tag 0
     );
     EXPECT_EQ(sender_bytes, receiver_bytes);
 }
@@ -629,12 +636,20 @@ void run_mcast_recv_step(
     }
 }
 
-void RandomizedInterMeshUnicast(BaseFabricFixture* fixture) {
+void RandomizedInterMeshUnicast(BaseFabricFixture* fixture, bool flip_direction = false) {
     auto distributed_context = tt_metal::distributed::multihost::DistributedContext::get_current_world();
     if (*(distributed_context->rank()) == 0) {
-        run_unicast_sender_step(fixture);
+        if (flip_direction) {
+            run_unicast_recv_step(fixture, tt::tt_metal::distributed::multihost::Rank{1});
+        } else {
+            run_unicast_sender_step(fixture, tt::tt_metal::distributed::multihost::Rank{1});
+        }
     } else {
-        run_unicast_recv_step(fixture);
+        if (flip_direction) {
+            run_unicast_sender_step(fixture, tt::tt_metal::distributed::multihost::Rank{0});
+        } else {
+            run_unicast_recv_step(fixture, tt::tt_metal::distributed::multihost::Rank{0});
+        }
     }
 }
 

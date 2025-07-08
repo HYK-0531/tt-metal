@@ -1260,8 +1260,8 @@ void DeviceProfiler::serializeJsonNocTraces(
 }
 
 CoreCoord DeviceProfiler::getPhysicalAddressFromVirtual(chip_id_t device_id, const CoreCoord& c) const {
-    bool coord_is_translated = c.x >= MetalContext::instance().hal().get_virtual_worker_start_x() - 1 ||
-                               c.y >= MetalContext::instance().hal().get_virtual_worker_start_y() - 1;
+    // HACK: do not merge!
+    bool coord_is_translated = c.x >= MetalContext::instance().hal().get_virtual_worker_start_x() - 1 || c.y >= 16;
     try {
         if (MetalContext::instance().hal().is_coordinate_virtualization_enabled() && coord_is_translated) {
             const metal_SocDescriptor& soc_desc =

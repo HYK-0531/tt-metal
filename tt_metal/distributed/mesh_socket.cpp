@@ -12,6 +12,17 @@ namespace tt::tt_metal::distributed {
 
 MeshSocket::MeshSocket(const std::shared_ptr<MeshDevice>& device, const SocketConfig& config) : config_(config) {
     auto context = config.distributed_context ? config.distributed_context : DistributedContext::get_current_world();
+
+    if (!(context->rank() == config.sender_rank || context->rank() == config.receiver_rank)) {
+        log_warning(
+            LogMetal,
+            "Creating a null socket on host rank {} with sender rank {} and receiver rank {}.",
+            *context->rank(),
+            *config.sender_rank,
+            *config.receiver_rank);
+        return;
+    }
+
     TT_FATAL(
         context->rank() == config.sender_rank || context->rank() == config.receiver_rank,
         "Cannot create a socket on rank {} with sender rank {} and receiver rank {}.",
@@ -54,6 +65,21 @@ void MeshSocket::connect_with_peer(std::shared_ptr<multihost::DistributedContext
         fabric_node_id_map_ = generate_fabric_node_id_map(config_, remote_endpoint_desc, local_endpoint_desc);
     }
     write_socket_configs(config_buffer_, local_endpoint_desc, remote_endpoint_desc, socket_endpoint_type_);
+    if (socket_endpoint_type_ == SocketEndpoint::SENDER) {
+        int desc_size = 1;
+        std::cout << "Send to receiver rank: " << *local_endpoint_desc.config.receiver_rank << std::endl;
+        context->send(
+            tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&desc_size), sizeof(desc_size)),
+            Rank{local_endpoint_desc.config.receiver_rank},
+            Tag{0});
+    } else {
+        int desc_size = 0;
+        std::cout << "Receive from sender rank: " << *local_endpoint_desc.config.sender_rank << std::endl;
+        context->recv(
+            tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&desc_size), sizeof(desc_size)),
+            Rank{local_endpoint_desc.config.sender_rank},
+            Tag{0});
+    }
 }
 
 std::pair<MeshSocket, MeshSocket> MeshSocket::create_socket_pair(

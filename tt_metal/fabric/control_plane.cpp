@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+#include <iostream>
 #include <magic_enum/magic_enum.hpp>
 #include <algorithm>
 #include <cstddef>
@@ -326,6 +327,32 @@ ControlPlane::ControlPlane(const std::string& mesh_graph_desc_file) {
     this->initialize_intermesh_eth_links();
     this->generate_local_intermesh_link_table();
     this->exchange_intermesh_link_tables();
+
+    // std::vector<chip_id_t> chips = {0, 1, 2, 3, 4, 5, 6, 7};
+    // for (auto chip : chips) {
+    //     if (this->has_intermesh_links(chip)) {
+    //         auto intermesh_links = this->get_intermesh_eth_links(chip);
+    //         auto board_id = chip_id_to_asic_id_.at(chip);
+    //         for (const auto& [eth_core, eth_chan] : intermesh_links) {
+    //             auto curr_eth_chan_desc = EthChanDescriptor{.board_id = board_id, .chan_id = eth_chan};
+    //             const auto& remote_eth_chan_desc = intermesh_link_table_.intermesh_links.at(curr_eth_chan_desc);
+    //             for (auto connected_mesh_id = 0; connected_mesh_id < 5; connected_mesh_id++) {
+    //                 if (connected_mesh_id ==
+    //                 *tt::tt_metal::MetalContext::instance().get_distributed_context().rank()) {
+    //                     continue;
+    //                 }
+    //                 for (const auto& [candidate_desc, candidate_peer_desc] :
+    //                 peer_intermesh_link_tables_[MeshId{connected_mesh_id}]) {
+    //                     if (candidate_desc == remote_eth_chan_desc && candidate_peer_desc == curr_eth_chan_desc) {
+    //                         // Found the matching intermesh link
+    //                         std::cout << "Chip " << chip << " chan " << +eth_chan << " is connected to " <<
+    //                         connected_mesh_id << std::endl; break;
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 }
 
 ControlPlane::ControlPlane(
@@ -1182,6 +1209,9 @@ std::set<std::pair<chan_id_t, eth_chan_directions>> ControlPlane::get_active_fab
     for (const auto& [direction, eth_chans] :
          this->router_port_directions_to_physical_eth_chan_map_.at(fabric_node_id)) {
         for (const auto& eth_chan : eth_chans) {
+            if (direction == RoutingDirection::NONE) {
+                continue;  // Skip directions that are not valid
+            }
             active_fabric_eth_channels.insert({eth_chan, this->routing_direction_to_eth_direction(direction)});
         }
     }
@@ -1226,7 +1256,14 @@ std::vector<std::pair<FabricNodeId, chan_id_t>> ControlPlane::get_fabric_route_t
             this->get_connected_mesh_chip_chan_ids(src_fabric_node_id, next_chan_id);
         route.push_back({src_fabric_node_id, src_chan_id});
     }
-    // Append exit connection
+    // Append exit connection.
+    // Check if the exit node has an outgoing connection to the destination mesh, on this channel
+    // If not, return empty route
+    auto next_chan_id = this->inter_mesh_routing_tables_.at(src_fabric_node_id)[src_chan_id][*dst_mesh_id];
+    if (next_chan_id == eth_chan_magic_values::INVALID_DIRECTION) {
+        return {};
+    }
+    // Routing plane can be used for inter-mesh traffic. Return the route to the exit node
     route.push_back({src_fabric_node_id, this->inter_mesh_routing_tables_.at(src_fabric_node_id)[src_chan_id][*dst_mesh_id]});
     // TODO: Get routing plane index and return empty if this is > num intermesh routing planes
     return route;
@@ -1243,6 +1280,11 @@ std::vector<std::pair<FabricNodeId, chan_id_t>> ControlPlane::get_fabric_route(
         src_fabric_node_id.mesh_id);
 
     if (!this->is_local_mesh(dst_fabric_node_id.mesh_id)) {
+        // Current algorithm to find a fabric route between meshes is to simply find a route to a local exit node
+        // that can route traffic to the requested destination mesh. Once traffic has reached the appropriate exit
+        // node, routers on the destination mesh will route the traffic to the destination chip.
+        // The assumption here is that a routing plane that can route traffic to the exit node and along the intermesh
+        // link is a valid routing plane within the destination mesh (reasonable assumption for current topologies).
         return this->get_fabric_route_to_exit_node(src_fabric_node_id, dst_fabric_node_id.mesh_id, src_chan_id);
     }
 
@@ -1661,7 +1703,7 @@ void ControlPlane::initialize_intermesh_eth_links() {
         for (auto link : extract_intermesh_eth_links(config_data[0], chip_id)) {
             // Find the CoreCoord for this channel
             for (const auto& [core_coord, channel] : soc_desc.logical_eth_core_to_chan_map) {
-                if (channel == link) {
+                if (channel == link and this->is_intermesh_eth_link_trained(chip_id, core_coord)) {
                     intermesh_eth_links.push_back({core_coord, link});
                     break;
                 }
@@ -1717,8 +1759,6 @@ bool ControlPlane::is_intermesh_eth_link(chip_id_t chip_id, CoreCoord eth_core) 
 
 // TODO: Support Intramesh links through this API as well
 bool ControlPlane::is_intermesh_eth_link_trained(chip_id_t chip_id, CoreCoord eth_core) const {
-    TT_FATAL(
-        this->is_intermesh_eth_link(chip_id, eth_core), "Can only call {} on intermesh ethernet links.", __FUNCTION__);
     const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
     // Read the link status from designated L1 address
     tt_cxy_pair virtual_eth_core(
@@ -2036,6 +2076,7 @@ void ControlPlane::assign_intermesh_link_directions_to_remote_host(const FabricN
 }
 
 void ControlPlane::assign_neighbor_meshes_to_exit_node(const FabricNodeId& fabric_node_id) {
+    // Generate a map tracking the exit nodes connected to each neighbor mesh
     const auto& inter_mesh_connectivity = this->routing_table_generator_->mesh_graph->get_inter_mesh_connectivity();
     auto physical_chip_id = this->logical_mesh_chip_id_to_physical_chip_id_mapping_.at(fabric_node_id);
     auto board_id = chip_id_to_asic_id_.at(physical_chip_id);
@@ -2046,11 +2087,17 @@ void ControlPlane::assign_neighbor_meshes_to_exit_node(const FabricNodeId& fabri
         const auto& remote_eth_chan_desc = intermesh_link_table_.intermesh_links.at(curr_eth_chan_desc);
         for (const auto& [connected_mesh_id, edge] :
             inter_mesh_connectivity[*fabric_node_id.mesh_id][fabric_node_id.chip_id]) {
+            bool exit_node_found = false;
             for (const auto& [candidate_desc, candidate_peer_desc] : peer_intermesh_link_tables_[connected_mesh_id]) {
                 if (candidate_desc == remote_eth_chan_desc && candidate_peer_desc == curr_eth_chan_desc) {
                     exit_nodes_per_neighbor_mesh_[connected_mesh_id].push_back(fabric_node_id);
+                    exit_node_found = true;
                     break;
                 }
+            }
+            if (exit_node_found) {
+                break;  // No need to check other edges for this link. We found the local exit node it corresponds
+                        // toåååå
             }
         }
     }

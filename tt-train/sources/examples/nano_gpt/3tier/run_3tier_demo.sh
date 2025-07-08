@@ -13,7 +13,7 @@ IFS=$'\n\t'
 # Defaults (customize as needed)
 METAL_HOME="${TT_METAL_HOME:-/home/ttuser/git/tt-metal}"
 CONFIG="training_shakespear_nanogpt_3tier.yaml"
-BIN_DIR="${METAL_HOME}/tt-train/build/sources/examples/nano_gpt"
+BIN_DIR="${METAL_HOME}/build_Release/tt-train/sources/examples/nano_gpt/"
 CFG_DIR="${METAL_HOME}/tt-train/configs"
 HOSTFILE="/tmp/mpi_hosts.$$"
 BINARIES=(nano_gpt nano_gpt_aggregator nano_gpt_optimizer)
@@ -49,7 +49,7 @@ while getopts "hm:c:p:d:" opt; do
   case "$opt" in
     h) print_usage; exit 0 ;;
     m) METAL_HOME="$OPTARG"
-       BIN_DIR="${METAL_HOME}/tt-train/build/sources/examples/nano_gpt"
+       BIN_DIR="${METAL_HOME}/build_Release/tt-train/sources/examples/nano_gpt/nano_gpt"
        CFG_DIR="${METAL_HOME}/tt-train/configs" ;;
     c) CONFIG="$OPTARG" ;;
     p) P_FLAG="-p $OPTARG" ;;

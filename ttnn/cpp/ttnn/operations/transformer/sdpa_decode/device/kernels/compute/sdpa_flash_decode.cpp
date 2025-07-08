@@ -320,8 +320,8 @@ void MAIN {
                 if (k_chunk == k_chunk_start) {
                     cb_out_mm = cb_out_im;
                 } else {
-                    reconfig_data_format_srca(cb_out_o);  // DEBUG
-                    pack_reconfig_data_format(cb_out_accumulate_im_2);
+                    reconfig_data_format(cb_prev_max, cb_cur_max);  // DEBUG
+                    pack_reconfig_data_format(cb_exp_max_diff);
                     /* cb_exp_max_diff = torch.exp(cb_prev_max - cb_cur_max) */
                     sub_exp_block(cb_prev_max, cb_cur_max, cb_exp_max_diff, Sq_chunk_t);
                     cb_pop_front(cb_prev_max, Sq_chunk_t);
@@ -369,8 +369,8 @@ void MAIN {
                 // This indicates that there are computes done by other workers. Needs to wait for them and send to
                 // reducer's compute
                 for (uint32_t i = 0; i < num_cores_to_wait; i++) {
-                    // reconfig_data_format_srca(cb_out_o);  // DEBUG
-                    // pack_reconfig_data_format(cb_out_accumulate_im_2);
+                    reconfig_data_format(cb_q_in, cb_q_in);  // DEBUG
+                    pack_reconfig_data_format(cb_out_accumulate_im_2);
                     copy_block(cb_out_o, cb_out_accumulate_im_2, q_chunk_tiles);
                     copy_block(cb_l_in, cb_prev_sum_2, Sq_chunk_t);
                     max_block(cb_m_in, cb_prev_max, cb_cur_max, Sq_chunk_t);  // pushed, pushed, popped

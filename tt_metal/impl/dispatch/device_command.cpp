@@ -682,7 +682,8 @@ void DeviceCommand<hugepage_write>::add_dispatch_write_packed(
     uint32_t packed_write_max_unicast_sub_cmds,
     const uint32_t offset_idx,
     const bool no_stride,
-    uint32_t write_offset_index) {
+    uint32_t write_offset_index,
+    uint32_t data_collection_offset) {
     static_assert(
         std::is_same<PackedSubCmd, CQDispatchWritePackedUnicastSubCmd>::value or
         std::is_same<PackedSubCmd, CQDispatchWritePackedMulticastSubCmd>::value);
@@ -743,7 +744,7 @@ void DeviceCommand<hugepage_write>::add_dispatch_write_packed(
     uint32_t num_data_copies = no_stride ? 1 : num_sub_cmds;
     for (uint32_t i = offset_idx; i < offset_idx + num_data_copies; ++i) {
         this->memcpy(
-            (char*)this->cmd_region + this->cmd_write_offsetB, data_collection[i].first, data_collection[i].second);
+            (char*)this->cmd_region + this->cmd_write_offsetB, data_collection[i].first + data_collection_offset, std::min(data_collection[i].second, packed_data_sizeB));
         this->cmd_write_offsetB += increment_sizeB;
     }
 

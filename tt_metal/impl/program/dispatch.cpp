@@ -448,11 +448,12 @@ void generate_runtime_args_cmds(
         };
 
     constexpr bool unicast = std::is_same<PackedSubCmd, CQDispatchWritePackedUnicastSubCmd>::value;
+    constexpr uint32_t max_packed_write_size = 1 << DispatchSettings::DISPATCH_BUFFER_LOG_PAGE_SIZE;
 
     uint32_t num_packed_cmds_in_seq = sub_cmds.size();
     DeviceCommandCalculator calculator;
     uint32_t max_packed_cmds = calculator.get_max_write_packed_sub_cmds<PackedSubCmd>(
-        max_runtime_args_len,
+        max_runtime_args_len * sizeof(uint32_t) > max_packed_write_size ? max_packed_write_size / sizeof(uint32_t) : max_runtime_args_len,
         constants.max_prefetch_command_size,
         constants.packed_write_max_unicast_sub_cmds,
         no_stride);
@@ -467,57 +468,64 @@ void generate_runtime_args_cmds(
     uint32_t pcie_alignment = MetalContext::instance().hal().get_alignment(HalMemType::HOST);
     uint32_t l1_alignment = MetalContext::instance().hal().get_alignment(HalMemType::L1);
     while (num_packed_cmds_in_seq != 0) {
-        // Generate the device command
-        uint32_t num_packed_cmds = std::min(num_packed_cmds_in_seq, max_packed_cmds);
-        uint32_t rt_payload_sizeB =
-            get_runtime_payload_sizeB(num_packed_cmds, max_runtime_args_len, unicast, no_stride);
-        DeviceCommandCalculator calculator;
-        calculator.add_dispatch_write_packed<PackedSubCmd>(
-            num_packed_cmds,
-            max_runtime_args_len * sizeof(uint32_t),
-            constants.packed_write_max_unicast_sub_cmds,
-            no_stride);
-        runtime_args_command_sequences.emplace_back(calculator.write_offset_bytes());
-        runtime_args_command_sequences.back().add_dispatch_write_packed<PackedSubCmd>(
-            CQ_DISPATCH_CMD_PACKED_WRITE_FLAG_TYPE_RTA,
-            num_packed_cmds,
-            l1_arg_base_addr,
-            max_runtime_args_len * sizeof(uint32_t),
-            rt_payload_sizeB,
-            sub_cmds,
-            rt_data_and_sizes,
-            constants.packed_write_max_unicast_sub_cmds,
-            offset_idx,
-            no_stride,
-            write_offset_index);
-        TT_ASSERT(
-            runtime_args_command_sequences.back().size_bytes() ==
-            runtime_args_command_sequences.back().write_offset_bytes());
+        uint32_t write_offset = 0;
+        while (write_offset < max_runtime_args_len) {
+            uint32_t current_runtime_args_len = std::min(max_runtime_args_len - write_offset, max_packed_write_size / sizeof(uint32_t));
+            // Generate the device command
+            uint32_t num_packed_cmds = std::min(num_packed_cmds_in_seq, max_packed_cmds);
+            uint32_t rt_payload_sizeB =
+                get_runtime_payload_sizeB(num_packed_cmds, current_runtime_args_len, unicast, no_stride);
+            DeviceCommandCalculator calculator;
+            calculator.add_dispatch_write_packed<PackedSubCmd>(
+                num_packed_cmds,
+                current_runtime_args_len * sizeof(uint32_t),
+                constants.packed_write_max_unicast_sub_cmds,
+                no_stride);
+            runtime_args_command_sequences.emplace_back(calculator.write_offset_bytes());
+            runtime_args_command_sequences.back().add_dispatch_write_packed<PackedSubCmd>(
+                CQ_DISPATCH_CMD_PACKED_WRITE_FLAG_TYPE_RTA,
+                num_packed_cmds,
+                l1_arg_base_addr,
+                current_runtime_args_len * sizeof(uint32_t),
+                rt_payload_sizeB,
+                sub_cmds,
+                rt_data_and_sizes,
+                constants.packed_write_max_unicast_sub_cmds,
+                offset_idx,
+                no_stride,
+                write_offset_index,
+                write_offset * sizeof(uint32_t));
+            TT_ASSERT(
+                runtime_args_command_sequences.back().size_bytes() ==
+                runtime_args_command_sequences.back().write_offset_bytes());
 
-        uint32_t data_offset = (uint32_t)get_runtime_args_data_offset(num_packed_cmds, max_runtime_args_len, unicast);
-        const uint32_t data_inc = tt::align(max_runtime_args_len * sizeof(uint32_t), l1_alignment);
-        uint32_t num_data_copies = no_stride ? 1 : num_packed_cmds;
-        for (uint32_t i = offset_idx; i < offset_idx + num_data_copies; ++i) {
-            uint32_t offset = 0;
-            for (uint32_t j = 0; j < rt_args_data[i].size(); ++j) {
-                auto& data = rt_args_data[i][j];
-                uint32_t* data_in_sequence =
-                    (uint32_t*)((char*)runtime_args_command_sequences.back().data() + data_offset + offset);
-                if (data.first.get().rt_args_data == data.second.get().data()) {
-                    // Update the pointer to point into the command sequence. Future RTA updates will modify the command
-                    // sequence directly.
-                    data.first.get().rt_args_data = data_in_sequence;
-                } else {
-                    TT_ASSERT(data.first.get().rt_args_data == std::get<0>(rt_data_and_sizes[i][j]));
-                    // Pointer already points into another command sequence. Schedule a copy from there.
-                    rta_updates.emplace_back(
-                        data.first.get().rt_args_data,
-                        data_in_sequence,
-                        data.first.get().rt_args_count * sizeof(uint32_t));
+            uint32_t data_offset = (uint32_t)get_runtime_args_data_offset(num_packed_cmds, current_runtime_args_len, unicast);
+            const uint32_t data_inc = tt::align(current_runtime_args_len * sizeof(uint32_t), l1_alignment);
+            uint32_t num_data_copies = no_stride ? 1 : num_packed_cmds;
+            for (uint32_t i = offset_idx; i < offset_idx + num_data_copies; ++i) {
+                uint32_t offset = 0;
+                for (uint32_t j = 0; j < rt_args_data[i].size(); ++j) {
+                    auto& data = rt_args_data[i][j];
+                    uint32_t* data_in_sequence =
+                        (uint32_t*)((char*)runtime_args_command_sequences.back().data() + data_offset + offset);
+                    if (current_runtime_args_len == max_runtime_args_len && data.first.get().rt_args_data == data.second.get().data()) {
+                        // Update the pointer to point into the command sequence. Future RTA updates will modify the command
+                        // sequence directly.
+                        data.first.get().rt_args_data = data_in_sequence;
+                    } else {
+                        TT_ASSERT(data.first.get().rt_args_data == std::get<0>(rt_data_and_sizes[i][j]));
+                        TT_ASSERT(data.first.get().rt_args_count >= current_runtime_args_len + write_offset);
+                        // Pointer already points into another command sequence. Schedule a copy from there.
+                        rta_updates.emplace_back(
+                            data.first.get().rt_args_data + write_offset * sizeof(uint32_t),
+                            data_in_sequence,
+                            current_runtime_args_len * sizeof(uint32_t));
+                    }
+                    offset += data.first.get().rt_args_count * sizeof(uint32_t);
                 }
-                offset += data.first.get().rt_args_count * sizeof(uint32_t);
+                data_offset += data_inc;
             }
-            data_offset += data_inc;
+            write_offset += current_runtime_args_len;
         }
         num_packed_cmds_in_seq -= num_packed_cmds;
         offset_idx += num_packed_cmds;

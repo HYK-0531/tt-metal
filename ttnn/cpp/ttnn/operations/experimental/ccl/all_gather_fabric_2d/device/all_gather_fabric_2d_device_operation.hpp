@@ -15,9 +15,14 @@
 #include "ttnn/decorators.hpp"
 #include "ttnn/global_semaphore.hpp"
 #include "ttnn/operations/ccl/ccl_host_datastructures.hpp"
+#include "ttnn/operations/ccl/all_to_all_dispatch/device/all_to_all_dispatch_device_operation.hpp"
 #include <tt-metalium/sub_device.hpp>
+#include <tt-metalium/fabric_edm_types.hpp>
 
 namespace ttnn::operations::experimental::ccl {
+
+// Reuse the detail functions from all_to_all_dispatch
+// Reuse the detail functions from all_to_all_dispatch directly
 
 struct AllGatherFabric2DDeviceOperation {
     struct operation_attributes_t {
@@ -29,18 +34,19 @@ struct AllGatherFabric2DDeviceOperation {
         const ttnn::ccl::Topology topology;
         const std::optional<tt::tt_metal::SubDeviceId> subdevice_id;
     };
+
     struct tensor_args_t {
         const Tensor input_tensor;
     };
 
-    using spec_return_value_t = ttnn::TensorSpec;
-
+    using spec_return_value_t = TensorSpec;
     using tensor_return_value_t = Tensor;
 
     struct AllGatherFabric2DAdd {
-        // Shared variables are the variables that are shared between the create and override_runtime_arguments methods
         struct shared_variables_t {
-            // Empty for now - will be filled in with actual implementation
+            tt::tt_metal::KernelHandle reader_kernel_id;
+            tt::tt_metal::KernelHandle writer_kernel_id;
+            CoreCoord core;
         };
         using cached_mesh_workload_t = ttnn::device_operation::AdaptedCachedMeshWorkload<shared_variables_t>;
 
@@ -50,30 +56,13 @@ struct AllGatherFabric2DDeviceOperation {
             const tensor_args_t& tensor_args,
             tensor_return_value_t& tensor_return_value);
 
-        static ttnn::device_operation::CachedProgram<shared_variables_t> create_at_helper(
-            const operation_attributes_t& operation_attributes,
-            const ttnn::MeshCoordinate& mesh_coordinate,
-            const tensor_args_t& tensor_args,
-            tensor_return_value_t& tensor_return_value);
         static ttnn::device_operation::CachedProgram<shared_variables_t> create_at(
             const operation_attributes_t& operation_attributes,
             const ttnn::MeshCoordinate& mesh_coordinate,
             const tensor_args_t& tensor_args,
             tensor_return_value_t& tensor_return_value,
-            tt::tt_metal::Program& program);
+            const ttnn::MeshCoordinateRangeSet& tensor_coords);
 
-        static shared_variables_t create_at_program_processing(
-            const operation_attributes_t& operation_attributes,
-            const ttnn::MeshCoordinate& mesh_coordinate,
-            const tensor_args_t& tensor_args,
-            tensor_return_value_t& tensor_return_value,
-            tt::tt_metal::Program& program);
-        static void override_runtime_arguments_per_program(
-            const shared_variables_t& shared_variables,
-            tt::tt_metal::Program& program,
-            const operation_attributes_t& operation_attributes,
-            const tensor_args_t& tensor_args,
-            AllGatherFabric2DDeviceOperation::tensor_return_value_t& tensor_return_value);
         static void override_runtime_arguments(
             cached_mesh_workload_t& cached_program,
             const operation_attributes_t& operation_attributes,
@@ -84,20 +73,10 @@ struct AllGatherFabric2DDeviceOperation {
     using program_factory_t = std::variant<AllGatherFabric2DAdd>;
 
     // Mandatory methods
-
-    // Select the program factory based on the operation attributes and tensor args
     static program_factory_t select_program_factory(const operation_attributes_t&, const tensor_args_t&);
-
-    // Validate the operation when it creates a program.
     static void validate_on_program_cache_miss(const operation_attributes_t&, const tensor_args_t&);
-
-    // Empty as there doesn't seem to be any complicated hashing requirement
     static void validate_on_program_cache_hit(const operation_attributes_t&, const tensor_args_t&);
-
-    // Compute the output shapes based on the operation attributes and tensor args
     static spec_return_value_t compute_output_specs(const operation_attributes_t&, const tensor_args_t&);
-
-    // Create the output tensors based on the operation attributes and tensor args
     static tensor_return_value_t create_output_tensors(const operation_attributes_t&, const tensor_args_t&);
 
     static std::tuple<operation_attributes_t, tensor_args_t> invoke(
@@ -110,6 +89,7 @@ struct AllGatherFabric2DDeviceOperation {
         ttnn::ccl::Topology topology = ttnn::ccl::Topology::Ring,
         std::optional<tt::tt_metal::SubDeviceId> subdevice_id = std::nullopt);
 };
+
 }  // namespace ttnn::operations::experimental::ccl
 
 namespace ttnn::prim {

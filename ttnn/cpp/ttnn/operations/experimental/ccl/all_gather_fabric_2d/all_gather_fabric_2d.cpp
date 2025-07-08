@@ -24,8 +24,6 @@ ttnn::Tensor ExecuteAllGatherFabric2D::invoke(
     const std::optional<ttnn::MemoryConfig>& memory_config,
     ttnn::ccl::Topology topology,
     std::optional<tt::tt_metal::SubDeviceId> subdevice_id) {
-    // For now, just create a simple output tensor with the same shape as input
-    // The actual implementation will be filled in later
     auto output_tensor = ttnn::Tensor(input_tensor);
     return output_tensor;
 }

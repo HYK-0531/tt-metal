@@ -68,6 +68,17 @@ def run_flash_mla_prefill_impl(
     q_dtype,
     dtype,
 ):
+    # Log the test parameters
+    logger.info(f"Running FlashMLA Prefill with parameters: ")
+    logger.info(f"Batch: {batch}")
+    logger.info(f"Sequence Length: {seq_len}")
+    logger.info(f"Number of Heads (Q): {nh}")
+    logger.info(f"Number of Heads (KV): {nkv}")
+    logger.info(f"KV LoRA Rank: {kv_lora_rank}")
+    logger.info(f"Dimensionality of RoPE: {d_rope}")
+    logger.info(f"Query Data Type: {q_dtype}")
+    logger.info(f"Key-Value Data Type: {dtype}")
+
     ######################
     ### Torch Setup
     ######################
@@ -120,9 +131,6 @@ def run_flash_mla_prefill_impl(
     ##########################
     ### FlashMLA Prefill
     ##########################
-    logger.info(
-        f"Running FlashMLA Prefill with TT Q shape: {tt_q.shape}, TT K shape: {tt_k.shape}, head_dim_v: {kv_lora_rank}"
-    )
     tt_out = ttnn.transformer.flash_mla_prefill(
         tt_q,
         tt_k,
@@ -169,7 +177,6 @@ def run_flash_mla_prefill_impl(
         (2, 8 * 1024, 64, 1, 256, 0),
         (2, 8 * 1024, 64, 1, 32, 64),
         (8, 4 * 1024, 8, 1, 128, 32),
-        # (32, 8 * 1024, 8, 1, 128, 32), OOM
     ],
 )
 @pytest.mark.parametrize(
@@ -182,6 +189,84 @@ def run_flash_mla_prefill_impl(
     ],
 )
 def test_flash_mla_prefill(
+    device,
+    batch,
+    seq_len,
+    nh,
+    nkv,
+    kv_lora_rank,
+    d_rope,
+    q_dtype,
+    dtype,
+    use_program_cache,
+    function_level_defaults,
+    reset_seeds,
+):
+    run_flash_mla_prefill_impl(
+        device,
+        batch,
+        seq_len,
+        nh,
+        nkv,
+        kv_lora_rank,
+        d_rope,
+        q_dtype,
+        dtype,
+    )
+
+
+@pytest.mark.parametrize(
+    "batch",
+    [
+        1,  # Single batch
+        2,  # Multiple batches
+        8,  # Even larger batch size
+    ],
+)
+@pytest.mark.parametrize(
+    "seq_len",
+    [
+        1 * 1024,  # Long sequence length
+    ],
+)
+@pytest.mark.parametrize(
+    "nh",
+    [
+        16,
+        32,
+        128,
+    ],
+)
+@pytest.mark.parametrize(
+    "nkv",
+    [
+        1,
+        8,
+        16,
+    ],
+)
+@pytest.mark.parametrize(
+    "kv_lora_rank",
+    [
+        64,
+        512,
+    ],
+)
+@pytest.mark.parametrize(
+    "d_rope",
+    [
+        0,
+        32,
+        128,
+    ],
+)
+@pytest.mark.parametrize(
+    "q_dtype, dtype",
+    [
+        (ttnn.bfloat16, ttnn.bfloat8_b),
+    ],
+)
+def test_flash_mla_prefill_stress(
     device,
     batch,
     seq_len,

@@ -22,9 +22,9 @@ TEST_F(InterMesh2x4Fabric2DFixture, RandomizedInterMeshUnicast) {
     }
 }
 
-TEST_F(InterMesh2x4Fabric2DFixture, RandomizedInterMeshUnicast) {
+TEST_F(InterMesh2x4Fabric2DFixture, RandomizedInterMeshBidirectionalUnicast) {
     for (uint32_t i = 0; i < 500; i++) {
-        multihost_utils::RandomizedInterMeshUnicast(this);
+        multihost_utils::RandomizedInterMeshUnicast(this, i % 2);
     }
 }
 

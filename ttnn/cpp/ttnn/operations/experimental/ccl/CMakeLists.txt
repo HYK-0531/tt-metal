@@ -24,6 +24,9 @@ target_sources(
         llama_reduce_scatter/llama_reduce_scatter.cpp
         llama_reduce_scatter/device/llama_reduce_scatter_device_operation.cpp
         llama_reduce_scatter/device/llama_reduce_scatter_program_factory.cpp
+        all_gather_fabric_2d/all_gather_fabric_2d.cpp
+        all_gather_fabric_2d/device/all_gather_fabric_2d_device_operation.cpp
+        all_gather_fabric_2d/device/all_gather_fabric_2d_program_factory.cpp
         llama_reduce_scatter_matmul/rs_matmul.cpp
         llama_reduce_scatter_matmul/device/rs_matmul_op.cpp
         llama_reduce_scatter_matmul/device/rs_matmul_program_factory.cpp

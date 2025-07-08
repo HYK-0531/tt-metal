@@ -139,7 +139,11 @@ tt::tt_metal::operation::ProgramWithCallbacks reduce_scatter_minimal_async_helpe
     CoreRangeSet sender_backward_core_range_set = CoreRangeSet(sender_backward_core_ranges);
 
     // scatter-write currently only supports 2 distinct noc addresses
+#ifdef ARCH_WORMHOLE
     uint32_t max_target_noc_addresses_per_packet = 2;
+#else
+    uint32_t max_target_noc_addresses_per_packet = 1;
+#endif
 
     // L1 Scratch CB Creation
     const size_t packet_size_bytes = tt::tt_fabric::get_tt_fabric_channel_buffer_size_bytes();

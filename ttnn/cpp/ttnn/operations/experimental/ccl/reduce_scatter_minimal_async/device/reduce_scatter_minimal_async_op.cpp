@@ -109,34 +109,19 @@ void ReduceScatterMinimalAsync::validate_with_output_tensors(
         semaphore.size());
 }
 
-// TODO: (GR) Creating intermediate buffer breaks for sharded input (since output and intermediate mem_configs need to
-// be different), could pass in intermediate mem config though
 std::vector<ttnn::TensorSpec> ReduceScatterMinimalAsync::compute_output_specs(
     const std::vector<Tensor>& input_tensors) const {
     const auto& input_tensor = input_tensors[0];
-    auto input_shape = input_tensor.get_padded_shape();  // TODO: Replace with get_logical_shape()
-
-    auto intermediate_shape = input_shape;
-    intermediate_shape[2] /= input_shape[0];
-
-    auto output_shape = input_shape;
-    output_shape[this->dim] /= this->ring_size;
-
-    return {
-        TensorSpec(
-            intermediate_shape,
-            TensorLayout(input_tensor.get_dtype(), input_tensor.get_tensor_spec().page_config(), L1_MEMORY_CONFIG)),
-        TensorSpec(
-            output_shape,
-            TensorLayout(input_tensor.get_dtype(), input_tensor.get_tensor_spec().page_config(), output_mem_config))};
+    auto shape = input_tensor.get_padded_shape();  // TODO: Replace with get_logical_shape()
+    shape[this->dim] *= this->ring_size;
+    return {TensorSpec(
+        shape,
+        TensorLayout(input_tensor.get_dtype(), input_tensor.get_tensor_spec().page_config(), output_mem_config))};
 }
 
 std::vector<Tensor> ReduceScatterMinimalAsync::create_output_tensors(
     const std::vector<Tensor>& input_tensors, const std::vector<std::optional<Tensor>>& optional_output_tensors) const {
-    auto tensor_specs = compute_output_specs(input_tensors);
-    return {
-        create_device_tensor(tensor_specs[0], input_tensors.at(0).device()),
-        create_device_tensor(tensor_specs[1], input_tensors.at(0).device())};
+    return tt::tt_metal::operation::default_create_output_tensors(*this, input_tensors, optional_output_tensors);
 }
 
 tt::tt_metal::operation::MeshWorkloadWithCallbacks ReduceScatterMinimalAsync::create_mesh_workload(
@@ -230,6 +215,8 @@ namespace ccl {
 namespace {
 Tensor reduce_scatter_minimal_async_impl(
     const Tensor& input_tensor,
+    Tensor& persistent_intermediate_buffer,
+    Tensor& persistent_output_buffer,
     const uint32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
     const uint32_t num_links,
@@ -256,7 +243,9 @@ Tensor reduce_scatter_minimal_async_impl(
     CoreCoord grid_size = devices[0]->compute_with_storage_grid_size();
     auto core_grid = CoreRange({0, 0}, {grid_size.x - 1, grid_size.y - 1});
 
-    std::vector<std::optional<Tensor>> optional_output_tensors = {};
+    std::vector<std::optional<Tensor>> optional_output_tensors = {
+        persistent_intermediate_buffer, persistent_output_buffer};
+
     return tt::tt_metal::operation::run(
                ttnn::ReduceScatterMinimalAsync(
                    devices,
@@ -277,6 +266,8 @@ Tensor reduce_scatter_minimal_async_impl(
 
 Tensor reduce_scatter_minimal_async(
     const Tensor& input_tensor,
+    Tensor& persistent_intermediate_buffer,
+    Tensor& persistent_output_buffer,
     const uint32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
     const uint32_t num_links,
@@ -287,6 +278,8 @@ Tensor reduce_scatter_minimal_async(
     std::vector<IDevice*> devices = ttnn::ccl::get_active_physical_devices(input_tensor);
     return reduce_scatter_minimal_async_impl(
         input_tensor,
+        persistent_intermediate_buffer,
+        persistent_output_buffer,
         dim,
         multi_device_global_semaphore,
         num_links,

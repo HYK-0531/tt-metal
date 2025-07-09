@@ -54,6 +54,7 @@ volatile tt_l1_ptr uint32_t (*profiler_data_buffer)[kernel_profiler::PROFILER_L1
     reinterpret_cast<volatile tt_l1_ptr uint32_t (*)[kernel_profiler::PROFILER_L1_VECTOR_SIZE]>(
         GET_MAILBOX_ADDRESS_DEV(profiler.buffer));
 
+// This is s a keepalive line
 #if defined(COMPILE_FOR_BRISC)
 constexpr uint32_t myRiscID = 0;
 #elif defined(COMPILE_FOR_ERISC) || defined(COMPILE_FOR_IDLE_ERISC)

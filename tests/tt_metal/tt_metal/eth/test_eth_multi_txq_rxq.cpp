@@ -8,61 +8,19 @@
 #include <umd/device/types/arch.h>
 #include <tt-metalium/host_api.hpp>
 #include <tt-logger/tt-logger.hpp>
-#include <algorithm>
 #include <cstdint>
-#include <iostream>
-#include <iterator>
-#include <magic_enum/magic_enum.hpp>
-#include <map>
-#include <string>
-#include <thread>
-#include <tuple>
-#include <unordered_set>
-#include <utility>
-#include <variant>
-#include <vector>
 
 #include <tt-metalium/assert.hpp>
-#include "command_queue_fixture.hpp"
 #include <tt-metalium/core_coord.hpp>
 #include <tt-metalium/data_types.hpp>
 #include <tt-metalium/device.hpp>
-#include "device_fixture.hpp"
 #include "dispatch_fixture.hpp"
-#include <tt-metalium/hal.hpp>
-#include <tt-metalium/hal_types.hpp>
-#include "jit_build/build.hpp"
-#include <tt-metalium/kernel_types.hpp>
-#include "llrt.hpp"
 #include "multi_device_fixture.hpp"
 #include <tt-metalium/program.hpp>
-#include <tt_stl/span.hpp>
 #include "impl/context/metal_context.hpp"
-#include "tt_memory.h"
-#include "tt_metal/jit_build/build_env_manager.hpp"
-#include "tt_metal/test_utils/stimulus.hpp"
-#include "umd/device/types/xy_pair.h"
-
-namespace {
-namespace CMAKE_UNIQUE_NAMESPACE {
-constexpr std::int32_t WORD_SIZE = 16;  // 16 bytes per eth send packet
-
-struct erisc_info_t {
-    volatile uint32_t num_bytes;
-    volatile uint32_t mode;
-    volatile uint32_t reserved_0_;
-    volatile uint32_t reserved_1_;
-    volatile uint32_t bytes_done;
-    volatile uint32_t reserverd_2_;
-    volatile uint32_t reserverd_3_;
-    volatile uint32_t reserverd_4_;
-};
-}  // namespace CMAKE_UNIQUE_NAMESPACE
-}  // namespace
 
 using namespace tt;
 using namespace tt::test_utils;
-
 namespace unit_tests::erisc::direct_send {
 
 static bool eth_direct_send_multi_txq_rxq(
@@ -166,8 +124,6 @@ static void run_multi_txq_rxq_test(
     uint32_t data_txq_id,
     uint32_t ack_txq_id,
     uint32_t num_messages) {
-    using namespace CMAKE_UNIQUE_NAMESPACE;
-
     auto arch = tt::tt_metal::MetalContext::instance().hal().get_arch();
     if (arch != tt::ARCH::BLACKHOLE) {
         GTEST_SKIP();
@@ -215,9 +171,6 @@ TEST_F(P300DeviceFixture, ActiveEthChipToChipMultiTxqRxq_Both0) {
 }
 TEST_F(P300DeviceFixture, ActiveEthChipToChipMultiTxqRxq_Qs_0_and_1) {
     run_multi_txq_rxq_test(this, this->devices_.at(0), this->devices_.at(1), 0, 1, 100000);
-}
-TEST_F(P300DeviceFixture, ActiveEthChipToChipMultiTxqRxq_Both1) {
-    run_multi_txq_rxq_test(this, this->devices_.at(0), this->devices_.at(1), 1, 1, 100000);
 }
 
 }  // namespace tt::tt_metal

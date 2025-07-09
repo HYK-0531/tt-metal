@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING
 
 import ttnn
 
-from .conv2d import TtConv2d, TtConv2dParameters
+from ..conv2d import TtConv2d, TtConv2dParameters
 from .group_norm import TtGroupNorm, TtGroupNormParameters
-from .linear import TtLinear, TtLinearParameters
-from .substate import has_substate, indexed_substates, substate
+from ..linear import TtLinear, TtLinearParameters
+from ..substate import has_substate, indexed_substates, substate
 
 if TYPE_CHECKING:
     import torch

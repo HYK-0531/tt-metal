@@ -7,8 +7,9 @@ import torch
 import ttnn
 from loguru import logger
 
-from ..tt.group_norm import TtGroupNorm, TtGroupNormParameters, vae_group_norm
-from ..tt.utils import assert_quality, to_torch
+from ...tt.vae_decoder.fun_resnet_block import resnet_block, TtResnetBlock2DParameters
+from ...reference.vae_decoder import ResnetBlock2D
+from ...tt.utils import assert_quality, to_torch
 from models.utility_functions import comp_allclose, comp_pcc
 
 
@@ -23,12 +24,13 @@ def print_stats(label, data: torch.Tensor, device=None):
 
 
 # @pytest.mark.parametrize("device_params", [{"trace_region_size": 40960}], indirect=True)
-@pytest.mark.parametrize("device_params", [{"l1_small_size": 0}], indirect=True)
+# @pytest.mark.parametrize("device_params", [{"l1_small_size": 0}], indirect=True)
 # @pytest.mark.usefixtures("use_program_cache")
+@pytest.mark.parametrize("device_params", [{"l1_small_size": 32768}])
 @pytest.mark.parametrize(
-    ("batch", "channels", "height", "width", "group_count", "num_out_blocks", "cores_y", "cores_x"),
+    ("batch", "in_channels", "out_channels", "height", "width", "num_groups", "num_out_blocks", "cores_y", "cores_x"),
     [
-        (8, 768, 1, 512, 32, 2, 8, 8),
+        (1, 3, 32, 480, 640, 32, 2, 8, 8),
         # (512, 256, 256, 32),
         # (256, 512, 512, 32),
         # (512, 512, 512, 32),
@@ -36,14 +38,15 @@ def print_stats(label, data: torch.Tensor, device=None):
         # (256, 1024, 1024, 32),
     ],
 )
-def test_group_norm(
+def test_resnet_block(
     *,
-    mesh_device: ttnn.MeshDevice,
+    device: ttnn.Device,
     batch: int,
-    channels: int,
+    in_channels: int,
+    out_channels: int,
     height: int,
     width: int,
-    group_count: int,
+    num_groups: int,
     num_out_blocks: int,
     cores_y: int,
     cores_x: int,
@@ -52,52 +55,54 @@ def test_group_norm(
     torch_dtype = torch.bfloat16
     ttnn_dtype = ttnn.bfloat16
     torch.manual_seed(0)
+    logger.info(f"Device: {device}, {device.core_grid}")
 
-    torch_model = torch.nn.GroupNorm(num_groups=group_count, num_channels=channels)
+    torch_model = ResnetBlock2D(in_channels=in_channels, out_channels=out_channels, groups=num_groups)
     torch_model.eval()
 
-    inp = torch.randn((batch, channels, height, width), dtype=torch_dtype)
-    t_model_state = torch_model.state_dict()
-
-    parameters = TtGroupNormParameters.from_torch(
-        t_model_state,
-        num_channels=channels,
-        num_groups=group_count,
-        num_out_blocks=num_out_blocks,
+    parameters = TtResnetBlock2DParameters.from_torch(
+        resnet_block=torch_model,
+        dtype=ttnn_dtype,
+        device=device,
         core_grid=ttnn.CoreGrid(x=cores_x, y=cores_y),
-        device=mesh_device,
+        num_out_blocks=num_out_blocks,
     )
 
-    print(torch_model.state_dict().keys())
-    breakpoint()
-    tt_model = TtGroupNorm(parameters, eps=torch_model.eps)
+    inp = torch.normal(1, 2, (batch, in_channels, height, width))
+    torch_input_tensor = torch.nn.functional.pad(
+        torch_input_tensor.permute(0, 2, 3, 1), (0, 5)
+    )  # channel dimension is padded to 8
+
+    memory_config = ttnn.create_sharded_memory_config(
+        [4800, 8],
+        core_grid=device.core_grid,
+        strategy=ttnn.ShardStrategy.HEIGHT,
+        use_height_and_width_as_shard_shape=True,
+    )
+
     tt_inp = ttnn.from_torch(
         inp.permute(0, 2, 3, 1),
         dtype=ttnn_dtype,
         layout=ttnn.ROW_MAJOR_LAYOUT,
-        device=mesh_device,
+        device=device,
         memory_config=ttnn.DRAM_MEMORY_CONFIG,
     )
 
     logger.info(print_stats("torch_input", inp))
-    logger.info(print_stats("tt_input", tt_inp, device=mesh_device))
+    logger.info(print_stats("tt_input", tt_inp, device=device))
 
     # tt_inp = allocate_tensor_on_device_like(tt_inp_host, device=mesh_device)
     logger.info(f" input shape TT: {tt_inp.shape}, Torch: {inp.shape}")
     with torch.no_grad():
         out = torch_model(inp)
 
-    tt_out = tt_model(tt_inp)
-    tt_out_f = vae_group_norm(tt_inp, parameters, torch_model.eps)
+    tt_out = resnet_block(tt_inp, parameters, None)
 
     tt_out_torch = to_torch(tt_out).permute(0, 3, 1, 2)
-    tt_out_torch_f = to_torch(tt_out_f).permute(0, 3, 1, 2)
 
     assert_quality(out, tt_out_torch, pcc=0.94, ccc=0.94)
     print(comp_allclose(out, tt_out_torch))
     result, output = comp_pcc(out, tt_out_torch)
     logger.info(f"Comparison result Pass:{result}, Output {output}, in: {torch.count_nonzero(tt_out_torch)}")
     logger.info(print_stats("torch", out))
-    logger.info(print_stats("tt", tt_out_torch, device=mesh_device))
-    logger.info(print_stats("in", inp))
-    logger.info(print_stats("tt_out_torch_f", tt_out_torch_f))
+    logger.info(print_stats("tt", tt_out_torch, device=device))

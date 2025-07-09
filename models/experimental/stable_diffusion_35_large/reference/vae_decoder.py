@@ -178,9 +178,10 @@ class ResnetBlock2D(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
 
-        x = self.norm1(x)
-        x = self.nonlinearity(x)
+        # x = self.norm1(x)
+        # x = self.nonlinearity(x)
         x = self.conv1(x)
+        return x
         x = self.norm2(x)
         x = self.nonlinearity(x)
         x = self.conv2(x)

@@ -34,11 +34,14 @@ class TtGroupNormParameters:
         num_channels: int,
         num_groups: int,
         num_out_blocks: int,
-        core_grid: ttnn.CoreGrid,
+        core_grid: ttnn.CoreGrid | None = None,
         device: ttnn.MeshDevice,
     ) -> TtGroupNormParameters:
         inplace = False  # input_width * input_height <= k_device  # a heuristic
 
+        # TODO: Update with parallel information
+        if not core_grid:  # get core grid from the mesh device.
+            core_grid = ttnn.CoreGrid(y=4, x=4)
         memory_config = ttnn.DRAM_MEMORY_CONFIG
         torch_weight = ttnn.create_group_norm_weight_bias_rm(state["weight"], num_channels, core_grid.y)
         torch_bias = ttnn.create_group_norm_weight_bias_rm(state["bias"], num_channels, core_grid.y)
@@ -112,7 +115,7 @@ class TtGroupNorm:
         return x.reshape([batch_size, height, width, channels])
 
 
-def vae_group_norm(x_in, parameters: TtGroupNormParameters, eps: float):
+def group_norm(x_in, parameters: TtGroupNormParameters, eps=1e-6):
     [batch_size, height, width, channels] = list(x_in.shape)
 
     x = ttnn.to_layout(x_in, ttnn.ROW_MAJOR_LAYOUT)
@@ -133,4 +136,5 @@ def vae_group_norm(x_in, parameters: TtGroupNormParameters, eps: float):
         output_layout=ttnn.TILE_LAYOUT,
     )
 
+    # x = ttnn.to_layout(x, x_in.layout)
     return x.reshape([batch_size, height, width, channels])

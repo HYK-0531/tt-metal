@@ -1,0 +1,1 @@
+[{"shape": [1, 1, 32, 8192], "mem_config": {"memory_layout": "INTERLEAVED", "buffer_type": "DRAM", "created_with_nd_shard_spec": 0, "shard_spec": null}, "dtype": "BFLOAT8_B"}]

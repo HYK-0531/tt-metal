@@ -291,6 +291,7 @@ def get_decode_model_config(model_config_str, input_shape, num_devices):
         # Constants based on hidden_dim
         shard_width_hidden_dim_across_32_cores = hidden_size // 32
         shard_width_4x_hidden_dim_across_32_cores = hidden_size * 4 // 32
+        print("num_devices", num_devices)
         shard_width_hidden_dim_per_device_across_32_cores = shard_width_hidden_dim_across_32_cores // num_devices
         shard_width_hidden_dim_across_8_cores = hidden_size // 8
 
@@ -527,6 +528,9 @@ def get_decode_model_config(model_config_str, input_shape, num_devices):
         )
         model_config["SELFOUT_MM_OUTPUT_MEMCFG"] = WIDTH_SHARDED_MEMCFG
         model_config["DENSE_H_TO_4H_MM_OUTPUT_MEMCFG"] = WIDTH_SHARDED_MEMCFG
+        print("shard_spec_32_cores_grid", shard_spec_32_cores_grid)
+        print("row_height", row_height)
+        print("shard_width_hidden_dim_per_device_across_32_cores", shard_width_hidden_dim_per_device_across_32_cores)
         model_config["MLP_REDUCE_SCATTER_OUTPUT_MEMCFG"] = ttnn.MemoryConfig(
             ttnn.TensorMemoryLayout.WIDTH_SHARDED,
             ttnn.BufferType.L1,

@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 import torch
 
 import ttnn
+from models.demos.t3000.falcon40b.tt.falcon_ccl import PBType
 from models.demos.t3000.falcon40b.tt.model_utils import determine_tensor_deallocation, falcon_prefill_matmul
 from models.utility_functions import nearest_32
 from ttnn import ReplicateTensorToMesh, ShardTensorToMesh
@@ -365,8 +366,14 @@ class TtFalconAttention:
             attn_output,
             memory_config=self.model_config["CONCAT_HEADS_OUTPUT_MEMCFG"],
         )
+        dim = 3
+        ag_output_shape = list(attn_output.shape)
+        ag_output_shape[dim] *= self.mesh_device.get_num_devices()
         attn_output = ttnn.experimental.all_gather_async(
             attn_output,
+            persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
+                ag_output_shape, self.model_config["DEFAULT_MEMCFG"], attn_output.dtype, PBType.OUTPUT
+            ),
             dim=3,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
@@ -584,8 +591,14 @@ class TtFalconAttention:
             attn_output,
             memory_config=self.model_config["CONCAT_HEADS_OUTPUT_MEMCFG"],
         )
+        dim = 3
+        ag_output_shape = list(attn_output.shape)
+        ag_output_shape[dim] *= self.mesh_device.get_num_devices()
         attn_output = ttnn.experimental.all_gather_async(
             attn_output,
+            persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
+                ag_output_shape, self.model_config["ATTN_ALL_GATHER_OUTPUT_MEMCFG"], attn_output.dtype, PBType.OUTPUT
+            ),
             dim=3,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],

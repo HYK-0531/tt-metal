@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 import ttnn
 from models.demos.t3000.falcon40b.tt.falcon_attention import generate_cos_sin_cache
-from models.demos.t3000.falcon40b.tt.falcon_ccl import TT_CCL
+from models.demos.t3000.falcon40b.tt.falcon_ccl import TT_CCL, PBType
 from models.demos.t3000.falcon40b.tt.falcon_decoder import TtFalconDecoderLayer
 from models.demos.t3000.falcon40b.tt.falcon_embeddings import TtFalconEmbeddings
 from models.demos.t3000.falcon40b.tt.model_utils import generate_layernorm_persistent_tensors, partial_layernorm
@@ -311,8 +311,14 @@ class TtFalconModelShared:
                 layer_output, self.model_config["BFP8_DTYPE"], memory_config=ttnn.DRAM_MEMORY_CONFIG
             )
 
+        dim = 3
+        ag_output_shape = list(layer_output.shape)
+        ag_output_shape[dim] *= self.mesh_device.get_num_devices()
         layer_output = ttnn.experimental.all_gather_async(
             layer_output,
+            persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
+                ag_output_shape, self.model_config["DEFAULT_MEMCFG"], layer_output.dtype, PBType.OUTPUT
+            ),
             dim=3,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
@@ -366,8 +372,14 @@ class TtFalconModelShared:
             presents += layer_output[1:]
             layer_output = layer_output[0]
 
+        dim = 3
+        ag_output_shape = list(layer_output.shape)
+        ag_output_shape[dim] *= self.mesh_device.get_num_devices()
         layer_output = ttnn.experimental.all_gather_async(
             layer_output,
+            persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
+                ag_output_shape, self.model_config["FINAL_ALL_GATHER_OUTPUT_MEMCFG"], layer_output.dtype, PBType.OUTPUT
+            ),
             dim=3,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],

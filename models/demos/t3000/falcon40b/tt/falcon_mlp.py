@@ -7,6 +7,7 @@ from typing import List
 import torch
 
 import ttnn
+from models.demos.t3000.falcon40b.tt.falcon_ccl import PBType
 from models.demos.t3000.falcon40b.tt.model_utils import determine_tensor_deallocation, falcon_prefill_matmul
 from ttnn import ReplicateTensorToMesh, ShardTensorToMesh
 
@@ -117,8 +118,26 @@ class TtFalconMLP:
             compute_kernel_config=self.model_config["COMPUTE_KERNEL_CONFIG"],
         )
 
+        rs_input_shape = list(hidden_states.shape)
+        rs_num_batches = rs_input_shape[0]
+        single_batch_input_shape = rs_input_shape[:]
+        single_batch_input_shape[2] //= rs_num_batches
+        rs_output_shape = rs_input_shape[:]
+        rs_output_shape[3] //= self.mesh_device.get_num_devices()
         hidden_states = ttnn.experimental.reduce_scatter_minimal_async(
             hidden_states,
+            persistent_intermediate_buffer=self.tt_ccl.get_or_add_persistent_buffer(
+                single_batch_input_shape,
+                self.model_config["MLP_REDUCE_SCATTER_OUTPUT_MEMCFG"],
+                hidden_states.dtype,
+                PBType.INTERMEDIARY,
+            ),
+            persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
+                rs_output_shape,
+                self.model_config["MLP_REDUCE_SCATTER_OUTPUT_MEMCFG"],
+                hidden_states.dtype,
+                PBType.OUTPUT,
+            ),
             dim=3,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
             num_links=1,  # only unidirectional supported for now
@@ -182,8 +201,24 @@ class TtFalconMLP:
         if should_deallocate_ln_tensors:
             x.deallocate(True)
 
+        rs_input_shape = list(self.output.shape)
+        rs_num_batches = rs_input_shape[0]
+        single_batch_input_shape = rs_input_shape[:]
+        single_batch_input_shape[2] //= rs_num_batches
+        rs_output_shape = rs_input_shape[:]
+        rs_output_shape[3] //= self.mesh_device.get_num_devices()
+        intermediate_pb = self.tt_ccl.get_or_add_persistent_buffer(
+            single_batch_input_shape, self.model_config["DEFAULT_MEMCFG"], self.output.dtype, PBType.INTERMEDIARY
+        )
+        output_pb = self.tt_ccl.get_or_add_persistent_buffer(
+            rs_output_shape, self.model_config["DEFAULT_MEMCFG"], self.output.dtype, PBType.OUTPUT
+        )
+        # print("inter: ", intermediate_pb)
+        # print("output: ", output_pb)
         return ttnn.experimental.reduce_scatter_minimal_async(
             self.output,
+            persistent_intermediate_buffer=intermediate_pb,
+            persistent_output_buffer=output_pb,
             dim=3,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
             num_links=1,  # only one link supported for now

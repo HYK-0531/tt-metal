@@ -8,6 +8,7 @@ import torch
 
 import ttnn
 from models.demos.t3000.falcon40b.tt.falcon_attention import TtFalconAttention
+from models.demos.t3000.falcon40b.tt.falcon_ccl import PBType
 from models.demos.t3000.falcon40b.tt.falcon_mlp import TtFalconMLP
 from models.demos.t3000.falcon40b.tt.model_utils import fused_partial_layernorm
 from ttnn import ReplicateTensorToMesh
@@ -211,8 +212,14 @@ class TtFalconDecoderLayer:
                 replicated_hidden_states, self.model_config["BFP8_DTYPE"], memory_config=ttnn.DRAM_MEMORY_CONFIG
             )
 
+        dim = 3
+        ag_output_shape = list(replicated_hidden_states.shape)
+        ag_output_shape[dim] *= self.mesh_device.get_num_devices()
         replicated_hidden_states = ttnn.experimental.all_gather_async(
             replicated_hidden_states,
+            persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
+                ag_output_shape, self.model_config["DEFAULT_MEMCFG"], replicated_hidden_states.dtype, PBType.OUTPUT
+            ),
             dim=3,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],
@@ -306,8 +313,17 @@ class TtFalconDecoderLayer:
 
         assert not output_attentions
 
+        dim = 3
+        ag_output_shape = list(hidden_states.shape)
+        ag_output_shape[dim] *= self.mesh_device.get_num_devices()
         replicated_hidden_states = ttnn.experimental.all_gather_async(
             hidden_states,
+            persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
+                ag_output_shape,
+                self.model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"],
+                hidden_states.dtype,
+                PBType.OUTPUT,
+            ),
             dim=3,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],

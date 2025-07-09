@@ -318,110 +318,102 @@ std::unordered_map<chip_id_t, std::uint32_t> compute_distances(
     return dist;
 }
 
-std::vector<chip_id_t> convert_1d_mesh_adjacency_to_row_major_vector(const IntraMeshAdjacencyMap& topology_info) {
-    // For 1D meshes, we expect exactly 2 corners (the endpoints)
-    TT_FATAL(
-        topology_info.corners.size() == 2, "Expected 2 corners for 1D mesh, got {}.", topology_info.corners.size());
+// -----------------------------------------------------------------------------
+// Unified conversion helper: works for both 1D (1xN or Nx1) and true 2D meshes.
+// -----------------------------------------------------------------------------
+std::vector<chip_id_t> convert_mesh_adjacency_to_row_major_vector(
+    const IntraMeshAdjacencyMap& topology_info, std::optional<chip_id_t> nw_corner_chip_id /* = std::nullopt */) {
+    // Mesh dimensions
+    const int mesh_rows = static_cast<int>(topology_info.ns_size);
+    const int mesh_cols = static_cast<int>(topology_info.ew_size);
 
-    std::vector<chip_id_t> physical_chip_ids(topology_info.ns_size * topology_info.ew_size);
-    std::fill(physical_chip_ids.begin(), physical_chip_ids.end(), static_cast<chip_id_t>(-1));
+    TT_FATAL(mesh_rows > 0 && mesh_cols > 0, "Invalid mesh dimensions ({}x{})", mesh_rows, mesh_cols);
 
-    // Place the first corner (closest to chip 0) at index 0
-    chip_id_t first_corner = topology_info.corners[0];
-    physical_chip_ids[0] = first_corner;
+    // Determine if this is a degenerate 1-D mesh (one dimension == 1)
+    const bool is_1d_mesh = (mesh_rows == 1) || (mesh_cols == 1);
+    const std::size_t expected_corners = is_1d_mesh ? 2 : 4;
 
-    // Place the second corner at the last index
-    chip_id_t second_corner = topology_info.corners[1];
-    physical_chip_ids[physical_chip_ids.size() - 1] = second_corner;
+    // Fast path: pure 1-D mesh (either 1×N or N×1). Keep original simple logic –
+    // index equals BFS distance from the first corner.
+    if (is_1d_mesh) {
+        TT_FATAL(
+            topology_info.corners.size() == 2, "Expected 2 corners for 1D mesh, got {}.", topology_info.corners.size());
 
-    // Fill in the middle chips using BFS distances
-    auto dist_from_first = compute_distances(first_corner, topology_info.adjacency_map);
+        std::vector<chip_id_t> physical_chip_ids(
+            static_cast<size_t>(mesh_rows) * static_cast<size_t>(mesh_cols), static_cast<chip_id_t>(-1));
 
-    for (const auto& [chip, distance] : dist_from_first) {
-        if (chip != first_corner && chip != second_corner) {
-            // For 1D mesh, distance directly corresponds to the index
-            size_t idx = static_cast<size_t>(distance);
-            TT_FATAL(idx < physical_chip_ids.size(), "Index {} out of bounds for 1D mesh.", idx);
-            TT_FATAL(physical_chip_ids[idx] == static_cast<chip_id_t>(-1), "Duplicate mapping at index {}.", idx);
-            physical_chip_ids[idx] = chip;
+        // Choose NW corner using same rule as below
+        chip_id_t first_corner = nw_corner_chip_id.value_or(topology_info.corners.front());
+        chip_id_t second_corner = (first_corner == topology_info.corners.front()) ? topology_info.corners.back()
+                                                                                  : topology_info.corners.front();
+
+        auto dist_from_first = compute_distances(first_corner, topology_info.adjacency_map);
+
+        for (const auto& [chip, distance] : dist_from_first) {
+            TT_FATAL(distance < physical_chip_ids.size(), "Distance {} out of bounds for 1D mesh", distance);
+            TT_FATAL(physical_chip_ids[distance] == static_cast<chip_id_t>(-1), "Duplicate placement at {}", distance);
+            physical_chip_ids[distance] = chip;
         }
+
+        // Ensure last position contains the second corner (reverse BFS ensures this)
+        physical_chip_ids.back() = second_corner;
+
+        // Verify completeness
+        for (size_t i = 0; i < physical_chip_ids.size(); ++i) {
+            TT_FATAL(physical_chip_ids[i] != static_cast<chip_id_t>(-1), "1D embedding incomplete at index {}.", i);
+        }
+
+        return physical_chip_ids;
     }
 
-    // Verify all chips are mapped
-    for (std::uint32_t i = 0; i < physical_chip_ids.size(); ++i) {
-        TT_FATAL(physical_chip_ids[i] != static_cast<chip_id_t>(-1), "1D mesh embedding incomplete at index {}.", i);
-    }
-
-    return physical_chip_ids;
-}
-
-std::vector<chip_id_t> convert_2d_mesh_adjacency_to_row_major_vector(
-    const IntraMeshAdjacencyMap& topology_info, std::optional<chip_id_t> nw_corner_chip_id) {
-    // Check number of corners for 2D meshes
     TT_FATAL(
-        topology_info.corners.size() == 4, "Expected 4 corners for 2D mesh, got {}.", topology_info.corners.size());
+        topology_info.corners.size() == expected_corners,
+        "Expected {} corners for {} mesh, got {}.",
+        expected_corners,
+        is_1d_mesh ? "1D" : "2D",
+        topology_info.corners.size());
 
-    // Determine the northwest corner
+    // --------------------
+    // Choose NW corner
+    // --------------------
     chip_id_t nw_corner;
     if (nw_corner_chip_id.has_value()) {
-        // Use the provided northwest corner chip ID if it's valid
-        nw_corner = nw_corner_chip_id.value();
-        // Verify that the provided chip is actually a corner
+        nw_corner = *nw_corner_chip_id;
         TT_FATAL(
             std::find(topology_info.corners.begin(), topology_info.corners.end(), nw_corner) !=
                 topology_info.corners.end(),
-            "Provided chip ID {} is not a corner chip. Expected one of: {}",
-            nw_corner,
-            [&topology_info]() {
-                std::string result;
-                for (size_t i = 0; i < topology_info.corners.size(); ++i) {
-                    if (i > 0) {
-                        result += ", ";
-                    }
-                    result += std::to_string(topology_info.corners[i]);
-                }
-                return result;
-            }());
+            "Provided chip ID {} is not a corner chip.",
+            nw_corner);
     } else {
-        // Default behavior: use the first corner found (closest to chip 0)
-        nw_corner = topology_info.corners[0];
+        // Default – first discovered corner (closest to chip 0)
+        nw_corner = topology_info.corners.front();
     }
 
-    std::vector<chip_id_t> physical_chip_ids(topology_info.ns_size * topology_info.ew_size);
-
-    // Place northwest corner at (0, 0)
-    physical_chip_ids[0] = nw_corner;
-
-    // -----------------------------------------------------------------------------
-    // Corner discovery complete: we now have four corners, NW is fixed at index 0
-    // -----------------------------------------------------------------------------
-
-    // Step 1: BFS from the NW corner to get Manhattan distances dNW[chip].
-
-    // Pre-compute signed mesh dimensions once to avoid repetitive casts.
-    const int mesh_cols = static_cast<int>(topology_info.ew_size);
-    const int mesh_rows = static_cast<int>(topology_info.ns_size);
-
-    // 1) Distances from NW corner.
+    // BFS distances from NW corner
     auto dist_from_nw = compute_distances(nw_corner, topology_info.adjacency_map);
 
-    // 2) Identify the NE corner (distance of mesh_ew_size-1 from NW) and run a second
-    //    BFS from it to obtain dNE[chip].
-    chip_id_t ne_corner = nw_corner;  // initialise
+    // --------------------
+    // Choose NE corner
+    // --------------------
+    chip_id_t ne_corner = nw_corner;  // initialise (vertical 1-D meshes fall back to this)
     bool ne_found = false;
-    for (auto corner : topology_info.corners) {
-        if (corner == nw_corner) {
-            continue;
-        }
-        auto it = dist_from_nw.find(corner);
-        if (it != dist_from_nw.end() && it->second == topology_info.ew_size - 1) {
-            ne_corner = corner;
-            ne_found = true;
-            break;
+
+    if (mesh_cols > 1) {  // horizontal extent exists – try to find true NE corner
+        for (auto corner : topology_info.corners) {
+            if (corner == nw_corner) {
+                continue;
+            }
+            auto it = dist_from_nw.find(corner);
+            if (it != dist_from_nw.end() && it->second == topology_info.ew_size - 1) {
+                ne_corner = corner;
+                ne_found = true;
+                break;
+            }
         }
     }
+
+    // Fallback if not found (square meshes, vertical 1-D, etc.)
     if (!ne_found) {
-        // Fall back: pick any other corner; grid may be square so distance == mesh_ew_size-1 may not hold.
         for (auto corner : topology_info.corners) {
             if (corner != nw_corner) {
                 ne_corner = corner;
@@ -430,25 +422,27 @@ std::vector<chip_id_t> convert_2d_mesh_adjacency_to_row_major_vector(
             }
         }
     }
-    TT_FATAL(
-        ne_found,
-        "Ethernet mesh discovered does not match expected shape {}x{}.",
-        topology_info.ew_size,
-        topology_info.ns_size);
 
-    // BFS from NE corner.
+    // For true 2-D meshes we expect NE != NW
+    if (!is_1d_mesh) {
+        TT_FATAL(ne_found, "Failed to identify NE corner for mesh shape {}x{}", mesh_cols, mesh_rows);
+    }
+
+    // BFS distances from NE corner (may coincide with NW in vertical chain)
     auto dist_from_ne = compute_distances(ne_corner, topology_info.adjacency_map);
 
-    // Step 3: compute (row, col) for every chip using the distance formulas
-    std::fill(physical_chip_ids.begin(), physical_chip_ids.end(), static_cast<chip_id_t>(-1));
+    // Result vector initialised to sentinel value
+    std::vector<chip_id_t> physical_chip_ids(
+        static_cast<size_t>(mesh_rows) * static_cast<size_t>(mesh_cols), static_cast<chip_id_t>(-1));
 
     for (const auto& [chip, d_nw] : dist_from_nw) {
         TT_FATAL(dist_from_ne.count(chip), "Mesh disconnected: chip {} missing in NE BFS.", chip);
         int d_ne = static_cast<int>(dist_from_ne.at(chip));
         int d_nw_int = static_cast<int>(d_nw);
-        // Solve the 2-equation system:
+
+        // Solve linear equations:
         //   dNW = row + col
-        //   dNE = row + (mesh_cols-1 - col)
+        //   dNE = row + (mesh_cols - 1 - col)
         int col = (mesh_cols - 1 + d_nw_int - d_ne) / 2;
         int row = d_nw_int - col;
 
@@ -462,11 +456,24 @@ std::vector<chip_id_t> convert_2d_mesh_adjacency_to_row_major_vector(
 
     TT_FATAL(physical_chip_ids[0] == nw_corner, "NW corner not at index 0 after embedding.");
 
-    for (std::uint32_t i = 0; i < physical_chip_ids.size(); ++i) {
+    // Verify completeness
+    for (std::size_t i = 0; i < physical_chip_ids.size(); ++i) {
         TT_FATAL(physical_chip_ids[i] != static_cast<chip_id_t>(-1), "Mesh embedding incomplete at index {}.", i);
     }
 
     return physical_chip_ids;
+}
+
+// -----------------------------------------------------------------------------
+// Legacy wrappers – maintained for backwards compatibility
+// -----------------------------------------------------------------------------
+std::vector<chip_id_t> convert_1d_mesh_adjacency_to_row_major_vector(const IntraMeshAdjacencyMap& topology_info) {
+    return convert_mesh_adjacency_to_row_major_vector(topology_info);
+}
+
+std::vector<chip_id_t> convert_2d_mesh_adjacency_to_row_major_vector(
+    const IntraMeshAdjacencyMap& topology_info, std::optional<chip_id_t> nw_corner_chip_id) {
+    return convert_mesh_adjacency_to_row_major_vector(topology_info, nw_corner_chip_id);
 }
 
 }  // namespace tt::tt_fabric

@@ -421,14 +421,8 @@ std::vector<chip_id_t> ControlPlane::get_mesh_physical_chip_ids(
             return get_adjacent_chips_from_ethernet_connections(chip_id, num_ports_per_side);
         }, nw_corner_chip_id);
 
-    // Handle 1D meshes (1xN or Nx1)
-    bool is_1d_mesh = (topology_info.ns_size == 1) || (topology_info.ew_size == 1);
-    if (is_1d_mesh) {
-        return convert_1d_mesh_adjacency_to_row_major_vector(topology_info);
-    }
-
-    // Handle 2D meshes
-    return convert_2d_mesh_adjacency_to_row_major_vector(topology_info, nw_corner_chip_id);
+    // Unified handling for both 1-D and 2-D meshes
+    return convert_mesh_adjacency_to_row_major_vector(topology_info, nw_corner_chip_id);
 }
 
 std::map<FabricNodeId, chip_id_t> ControlPlane::get_logical_chip_to_physical_chip_mapping(

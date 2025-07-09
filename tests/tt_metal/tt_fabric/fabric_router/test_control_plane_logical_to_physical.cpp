@@ -89,7 +89,7 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIdsWithConfigu
     auto topology_info = build_mesh_adjacency_map(
         user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); });
 
-    auto physical_chip_ids = convert_2d_mesh_adjacency_to_row_major_vector(topology_info);
+    auto physical_chip_ids = convert_mesh_adjacency_to_row_major_vector(topology_info);
 
     // Verify all chip mappings for 3x3 mesh
     verify_physical_chip_ids(
@@ -123,7 +123,7 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIds3x2Rectangl
     auto topology_info = build_mesh_adjacency_map(
         user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); });
 
-    auto physical_chip_ids = convert_2d_mesh_adjacency_to_row_major_vector(topology_info);
+    auto physical_chip_ids = convert_mesh_adjacency_to_row_major_vector(topology_info);
 
     // Verify all chip mappings for 3x2 mesh
     verify_physical_chip_ids(
@@ -189,7 +189,7 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIds4x8LargeMes
     auto topology_info = build_mesh_adjacency_map(
         user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); });
 
-    auto physical_chip_ids = convert_2d_mesh_adjacency_to_row_major_vector(topology_info);
+    auto physical_chip_ids = convert_mesh_adjacency_to_row_major_vector(topology_info);
 
     // Verify key chip mappings for 4x8 mesh (not all 32 chips for brevity)
     verify_physical_chip_ids(
@@ -242,7 +242,7 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIdsOverlapping
         {
             auto topology_info = build_mesh_adjacency_map(
                 user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); });
-            auto physical_chip_ids = convert_2d_mesh_adjacency_to_row_major_vector(topology_info);
+            auto physical_chip_ids = convert_mesh_adjacency_to_row_major_vector(topology_info);
         },
         std::exception)
         << "Expected exception due to irregular topology with overlapping connections. "
@@ -286,7 +286,7 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIdsMissingConn
         {
             auto topology_info = build_mesh_adjacency_map(
                 user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); });
-            auto physical_chip_ids = convert_2d_mesh_adjacency_to_row_major_vector(topology_info);
+            auto physical_chip_ids = convert_mesh_adjacency_to_row_major_vector(topology_info);
         },
         std::exception)
         << "Expected exception due to irregular topology with missing connection";
@@ -324,7 +324,7 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIdsMissingChip
         {
             auto topology_info = build_mesh_adjacency_map(
                 user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); });
-            auto physical_chip_ids = convert_2d_mesh_adjacency_to_row_major_vector(topology_info);
+            auto physical_chip_ids = convert_mesh_adjacency_to_row_major_vector(topology_info);
         },
         std::exception)
         << "Expected exception due to irregular topology with missing chip";
@@ -347,7 +347,7 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIds4x1Mesh) {
     auto topology_info = build_mesh_adjacency_map(
         user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); });
 
-    auto physical_chip_ids = convert_1d_mesh_adjacency_to_row_major_vector(topology_info);
+    auto physical_chip_ids = convert_mesh_adjacency_to_row_major_vector(topology_info);
 
     // Verify all chip mappings for 4x1 mesh
     verify_physical_chip_ids(
@@ -370,7 +370,7 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIds1x8Mesh) {
     auto topology_info = build_mesh_adjacency_map(
         user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); });
 
-    auto physical_chip_ids = convert_1d_mesh_adjacency_to_row_major_vector(topology_info);
+    auto physical_chip_ids = convert_mesh_adjacency_to_row_major_vector(topology_info);
 
     // Verify all chip mappings for 1x8 mesh
     verify_physical_chip_ids(
@@ -402,7 +402,7 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIdsLooped1DMes
     auto topology_info = build_mesh_adjacency_map(
         user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); });
 
-    auto physical_chip_ids = convert_1d_mesh_adjacency_to_row_major_vector(topology_info);
+    auto physical_chip_ids = convert_mesh_adjacency_to_row_major_vector(topology_info);
 
     verify_physical_chip_ids(physical_chip_ids, 4);
 }
@@ -427,7 +427,7 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIdsLooped2DMes
     auto topology_info = build_mesh_adjacency_map(
         user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); });
 
-    auto physical_chip_ids = convert_2d_mesh_adjacency_to_row_major_vector(topology_info);
+    auto physical_chip_ids = convert_mesh_adjacency_to_row_major_vector(topology_info);
 
     verify_physical_chip_ids(physical_chip_ids, 4);
 }
@@ -457,16 +457,16 @@ TEST_F(LogicalToPhysicalConversionFixture, TestGetMeshPhysicalChipIdsWithStartin
         user_chip_ids, mesh_shape, [this](chip_id_t chip_id) { return this->get_adjacent_chips(chip_id); }, 4);
 
     // Test with default northwest corner chip ID (should use chip 0)
-    auto physical_chip_ids_default = convert_2d_mesh_adjacency_to_row_major_vector(topology_info);
+    auto physical_chip_ids_default = convert_mesh_adjacency_to_row_major_vector(topology_info);
     EXPECT_EQ(physical_chip_ids_default[0], 0) << "Default northwest corner chip should be 0";
 
     // Test with custom northwest corner chip ID (chip 2)
-    auto physical_chip_ids_custom = convert_2d_mesh_adjacency_to_row_major_vector(topology_info, 2);
+    auto physical_chip_ids_custom = convert_mesh_adjacency_to_row_major_vector(topology_info, 2);
     EXPECT_EQ(physical_chip_ids_custom[0], 2) << "Custom northwest corner chip should be 2";
 
     // Test with invalid northwest corner chip ID (should throw)
     EXPECT_THROW(
-        { auto physical_chip_ids_invalid = convert_2d_mesh_adjacency_to_row_major_vector(topology_info, 99); },
+        { auto physical_chip_ids_invalid = convert_mesh_adjacency_to_row_major_vector(topology_info, 99); },
         std::exception)
         << "Should throw when northwest corner chip ID is not in mesh container";
 }

@@ -5,6 +5,7 @@ target_sources(
     fabric
     PRIVATE
         control_plane.cpp
+        ethernet_context.cpp
         routing_table_generator.cpp
         mesh_graph.cpp
         erisc_datamover_builder.cpp

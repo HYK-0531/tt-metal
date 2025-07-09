@@ -383,6 +383,10 @@ private:
     // There is a single device driver for all connected chips. It might contain multiple MMIO devices/cards.
     std::unique_ptr<tt::umd::Cluster> driver_;
 
+    // Return a reference to the driver handle so ethernet context can perform operations
+    // on the driver object.
+    tt::umd::Cluster* umd_driver() { return driver_.get(); }
+
     // Need to hold reference to cluster descriptor to detect total number of devices available in cluster
     // UMD static APIs `detect_available_device_ids` and `detect_number_of_chips` only returns number of MMIO mapped
     // devices
@@ -404,12 +408,6 @@ private:
     // Flag to tell whether we are on a TG type of system.
     // If any device has to board type of GALAXY, we are on a TG cluster.
     ClusterType cluster_type_ = ClusterType::INVALID;
-
-    // Reserves specified number of ethernet cores for fabric routers
-    void reserve_ethernet_cores_for_fabric_routers(uint8_t num_routing_planes);
-
-    // Releases all reserved ethernet cores for fabric routers
-    void release_ethernet_cores_for_fabric_routers();
 
     // Tunnels setup in cluster
     std::map<chip_id_t, std::vector<std::vector<chip_id_t>>> tunnels_from_mmio_device = {};

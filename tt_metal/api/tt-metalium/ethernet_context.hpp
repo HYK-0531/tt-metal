@@ -45,24 +45,17 @@ enum class EthRouterMode : uint32_t {
 class EthernetContext {
 
 public:
-    void reserve_ethernet_cores_for_fabric_routers(uint8_t num_routing_planes);
-    void release_ethernet_cores_for_fabric_routers();
-    void configure_ethernet_cores_for_fabric_routers();
-    std::vector<CoreCoord> get_fabric_ethernet_routers_between_src_and_dest(chip_id_t src_id, chip_id_t dst_id) const;
-    bool is_ethernet_link_up(chip_id_t chip_id, const CoreCoord& logical_core) const;
-    void set_internal_routing_info_for_ethernet_cores(
-        bool enable_internal_routing, const std::vector<chip_id_t>& target_mmio_devices = {}) const;
-    
-    bool is_external_cable(chip_id_t physical_chip_id, CoreCoord eth_core) const;
-        const std::unordered_set<CoreCoord>& get_eth_cores_with_frequent_retraining(chip_id_t chip_id) const {
-        return this->frequent_retrain_cores_.at(chip_id);
-    }
+    // Configures ethernet cores for fabric routers depending on whether fabric is enabled
+    void configure_ethernet_cores_for_fabric_routers(
+        tt_metal::FabricConfig fabric_config, std::optional<uint8_t> num_routing_planes = std::nullopt);
 
-    const std::unordered_map<CoreCoord, EthRouterMode>& get_eth_routing_info(chip_id_t chip_id) const {
-        return this->device_eth_routing_info_.at(chip_id);
-    }
 
 private:
+    void reserve_ethernet_cores_for_fabric_routers(uint8_t num_routing_planes);
+    // Releases all reserved ethernet cores for fabric routers
+    void release_ethernet_cores_for_fabric_routers();
+
+    disable_ethernet_cores_with_retrain();
     // Mapping of each devices' ethernet routing mode
     std::unordered_map<chip_id_t, std::unordered_map<CoreCoord, EthRouterMode>> device_eth_routing_info_;
 

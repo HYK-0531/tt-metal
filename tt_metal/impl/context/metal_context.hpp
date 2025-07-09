@@ -8,6 +8,7 @@
 #include <tt-metalium/dispatch_core_common.hpp>
 #include <tt-metalium/distributed_context.hpp>
 #include <tt-metalium/core_descriptor.hpp>
+#include <tt-metalium/ethernet_context.hpp>
 #include <tt-metalium/hal_types.hpp>
 #include "dev_msgs.h"
 #include <tt-metalium/allocator_types.hpp>
@@ -134,6 +135,7 @@ private:
 
     llrt::RunTimeOptions rtoptions_;
     std::unique_ptr<Cluster> cluster_;
+    std::unique_ptr<EthernetContext> ethercontext_;
     std::unique_ptr<Hal> hal_;
     std::unique_ptr<dispatch_core_manager> dispatch_core_manager_;
     std::unique_ptr<DispatchQueryManager> dispatch_query_manager_;

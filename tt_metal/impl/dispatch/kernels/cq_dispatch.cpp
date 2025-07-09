@@ -228,6 +228,8 @@ void completion_queue_push_back(uint32_t num_pages) {
         cq_write_interface.completion_fifo_wr_toggle = not cq_write_interface.completion_fifo_wr_toggle;
     }
 
+
+
     // Notify host of updated completion wr ptr
     notify_host_of_completion_queue_write_pointer();
 }
@@ -303,6 +305,9 @@ void process_write_host_h(uint32_t& block_noc_writes_to_clear, uint32_t block_ne
         noc_async_write(data_ptr, pcie_noc_xy | completion_queue_write_addr, xfer_size);
 #else
         cq_noc_async_write_with_state_any_len(data_ptr, completion_queue_write_addr, xfer_size);
+        uint32_t num_noc_packets_written = div_up(xfer_size, NOC_MAX_BURST_SIZE);
+        noc_nonposted_writes_num_issued[noc_index] += num_noc_packets_written;
+        noc_nonposted_writes_acked[noc_index] += num_noc_packets_written;
 #endif
 
         noc_async_write_barrier();
@@ -313,6 +318,8 @@ void process_write_host_h(uint32_t& block_noc_writes_to_clear, uint32_t block_ne
         // This will update the write ptr on device and host
         // We flush to ensure the ptr has been read out of l1 before we update it again
         completion_queue_push_back(npages);
+        noc_nonposted_writes_num_issued[noc_index] += 1;
+        noc_nonposted_writes_acked[noc_index] += 1;
 
         length -= xfer_size;
         data_ptr += xfer_size;

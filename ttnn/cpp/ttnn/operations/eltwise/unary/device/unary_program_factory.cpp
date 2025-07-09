@@ -54,11 +54,19 @@ UnaryProgramFactory::cached_program_t UnaryProgramFactory::create(
     auto cb_src0 = tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_src0_config);
 
     uint32_t tmp0_cb_index = tt::CBIndex::c_1;  // temporary buffer for intermediate results
-    if (ops_chain[0].op_type == UnaryOpType::HARDSHRINK) {
+    if (ops_chain[0].op_type == UnaryOpType::HARDSHRINK || ops_chain[0].op_type == UnaryOpType::SOFTSHRINK) {
         tt::tt_metal::CircularBufferConfig cb_tmp0_config =
             tt::tt_metal::CircularBufferConfig(num_input_tiles * single_tile_size, {{tmp0_cb_index, cb_data_format}})
                 .set_page_size(tmp0_cb_index, single_tile_size);
         auto cb_tmp0 = tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_tmp0_config);
+    }
+
+    uint32_t tmp1_cb_index = tt::CBIndex::c_3;  // temporary buffer for intermediate results
+    if (ops_chain[0].op_type == UnaryOpType::SOFTSHRINK) {
+        tt::tt_metal::CircularBufferConfig cb_tmp1_config =
+            tt::tt_metal::CircularBufferConfig(num_input_tiles * single_tile_size, {{tmp1_cb_index, cb_data_format}})
+                .set_page_size(tmp1_cb_index, single_tile_size);
+        auto cb_tmp1 = tt::tt_metal::CreateCircularBuffer(program, all_cores, cb_tmp1_config);
     }
 
     uint32_t output_cb_index = tt::CBIndex::c_2;
@@ -98,6 +106,7 @@ UnaryProgramFactory::cached_program_t UnaryProgramFactory::create(
     if (args.preserve_fp32_precision) {
         unpack_to_dest_mode[src0_cb_index] = UnpackToDestMode::UnpackToDestFp32;
         unpack_to_dest_mode[tmp0_cb_index] = UnpackToDestMode::UnpackToDestFp32;
+        unpack_to_dest_mode[tmp1_cb_index] = UnpackToDestMode::UnpackToDestFp32;
     }
 
     bool math_approx_mode = std::all_of(

@@ -148,6 +148,7 @@ class RMSNorm(LightweightModule):
         tt_stats = ttnn.rms_norm_pre_all_gather(inp, compute_kernel_config=compute_kernel_config, dtype=ttnn.bfloat16)
         # AllGather stats
         print("start rmsnorm 150")
+        ttnn.synchronize_device(self.device, sub_device_ids=[self.tt_ccl.worker_sub_device_id])
         tt_stats = ttnn.experimental.all_gather_async(
             tt_stats,
             dim=3,
@@ -157,6 +158,7 @@ class RMSNorm(LightweightModule):
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
             subdevice_id=self.tt_ccl.worker_sub_device_id,
         )
+        ttnn.synchronize_device(self.device, sub_device_ids=[self.tt_ccl.worker_sub_device_id])
         print("end rmsnorm 150")
         # Run distributed rmsnorm part 2
         tt_out = ttnn.rms_norm_post_all_gather(

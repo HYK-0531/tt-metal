@@ -92,6 +92,7 @@ def tt_all_reduce(
             input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.L1_MEMORY_CONFIG)
             input_tensor_sharded.deallocate(True)
         print("start ccl 94")
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         reduced = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
             dim=dim,
@@ -101,6 +102,7 @@ def tt_all_reduce(
             topology=topology,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         print("end ccl 94")
         input_tensor.deallocate(True)
         return reduced
@@ -118,6 +120,7 @@ def tt_all_reduce(
 
     if not use_composite:
         print("start ccl 120")
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         gathered_tensor = ttnn.experimental.all_gather_async(
             input_tensor,
             dim,
@@ -129,6 +132,7 @@ def tt_all_reduce(
             memory_config=ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         print("end ccl 120")
 
         if sharded:
@@ -145,6 +149,7 @@ def tt_all_reduce(
     else:
         input_mem_cfg = input_tensor.memory_config()
         print("start ccl 147")
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         reduced_tensor = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
             dim=dim,
@@ -156,9 +161,11 @@ def tt_all_reduce(
             topology=topology,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         print("end ccl 147")
 
         print("start ccl 161")
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         reduced_tensor = ttnn.experimental.all_gather_async(
             reduced_tensor,
             dim,
@@ -170,6 +177,7 @@ def tt_all_reduce(
             memory_config=input_mem_cfg,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         print("end ccl 161")
 
     # Reshape the reduced tensor to the original shape
@@ -206,6 +214,7 @@ def tt_all_gather(
 
     if cluster_axis is None:
         print("start ccl 208")
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         gathered = ttnn.experimental.all_gather_async(
             input_tensor,
             dim,
@@ -215,9 +224,11 @@ def tt_all_gather(
             memory_config=memory_config,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         print("end ccl 208")
     else:
         print("start ccl 220")
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         gathered = ttnn.experimental.all_gather_async(
             input_tensor,
             dim,
@@ -229,6 +240,7 @@ def tt_all_gather(
             memory_config=memory_config,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         print("end ccl 220")
     input_tensor.deallocate(True)
     return gathered
@@ -272,6 +284,7 @@ def tt_sharded_distributed_rmsnorm(
 
     # All gather stats
     print("start ccl 274")
+    ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
     tt_stats = ttnn.experimental.all_gather_async(
         tt_stats,
         3,
@@ -283,6 +296,7 @@ def tt_sharded_distributed_rmsnorm(
         memory_config=ln_sharded_stats_memcfg,
         subdevice_id=tt_ccl.worker_sub_device_id,
     )
+    ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
     print("end ccl 274")
 
     # Run distributed rmsnorm part 2

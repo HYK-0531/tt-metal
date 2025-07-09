@@ -146,6 +146,7 @@ class MLP(LightweightModule):
             if self.dim == 8192 or mode == "prefill":
                 input_mem_cfg = w1_out.memory_config()
                 print("start mlp 148")
+                ttnn.synchronize_device(self.mesh_device, sub_device_ids=[self.tt_ccl.worker_sub_device_id])
                 w1_out = ttnn.experimental.reduce_scatter_minimal_async(
                     w1_out,
                     dim=3,
@@ -157,9 +158,11 @@ class MLP(LightweightModule):
                     topology=ttnn.Topology.Linear,
                     subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )
+                ttnn.synchronize_device(self.mesh_device, sub_device_ids=[self.tt_ccl.worker_sub_device_id])
                 print("end mlp 148")
 
                 print("start mlp 162")
+                ttnn.synchronize_device(self.mesh_device, sub_device_ids=[self.tt_ccl.worker_sub_device_id])
                 w3_out = ttnn.experimental.reduce_scatter_minimal_async(
                     w3_out,
                     dim=3,
@@ -171,6 +174,7 @@ class MLP(LightweightModule):
                     topology=ttnn.Topology.Linear,
                     subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )
+                ttnn.synchronize_device(self.mesh_device, sub_device_ids=[self.tt_ccl.worker_sub_device_id])
                 print("end mlp 162")
             else:
                 w1_out = tt_all_reduce(
@@ -211,6 +215,7 @@ class MLP(LightweightModule):
 
         if TG and (self.dim == 8192 or mode == "prefill"):
             print("start mlp 209")
+            ttnn.synchronize_device(self.mesh_device, sub_device_ids=[self.tt_ccl.worker_sub_device_id])
             w2_in = ttnn.experimental.all_gather_async(
                 w2_in,
                 3,
@@ -222,6 +227,7 @@ class MLP(LightweightModule):
                 memory_config=input_mem_cfg,
                 subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
+            ttnn.synchronize_device(self.mesh_device, sub_device_ids=[self.tt_ccl.worker_sub_device_id])
             print("end mlp 209")
 
             if mode == "decode":

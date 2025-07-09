@@ -34,13 +34,13 @@ SortDeviceOperation::program_factory_t SortDeviceOperation::select_program_facto
             index_dtype,
             sort::program::SortProgramFactoryHybrid::HybridSortSlicingStrategy::USE_AS_MANY_CORES);
 
-    if (Wt <= WT_THRESHOLD) {
-        // Single-core implementation
-        return sort::program::SortProgramFactorySingleRowSingleCore{};
-    } else if (Wt <= total_number_of_tiles_for_hybrid_approach) {
-        // Hybrid implementation
-        return sort::program::SortProgramFactoryHybrid{};
-    }
+    // if (Wt <= WT_THRESHOLD) {
+    //     // Single-core implementation
+    //     return sort::program::SortProgramFactorySingleRowSingleCore{};
+    // } else if (Wt <= total_number_of_tiles_for_hybrid_approach) {
+    // Hybrid implementation
+    return sort::program::SortProgramFactoryHybrid{};
+    // }
     // DRAM implementation
     return sort::program::SortProgramFactorySingleRowMultiCore{};
 }

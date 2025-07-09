@@ -28,7 +28,7 @@ class TtConv2dParameters:
 
     @classmethod
     def from_torch(
-        cls, torch_conv: torch.nn.Module, *, dtype: ttnn.DataType | None = None, device, activation="", act_block_h=None
+        cls, torch_conv: torch.nn.Module, *, dtype: ttnn.DataType | None = None, device, activation="", act_block_h=32
     ) -> TtConv2dParameters:
         weight = torch_conv.state_dict()["weight"]
         bias = torch_conv.state_dict()["bias"]

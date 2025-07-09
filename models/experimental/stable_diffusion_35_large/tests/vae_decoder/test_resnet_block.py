@@ -20,7 +20,7 @@ def print_stats(label, data: torch.Tensor, device=None):
         data_ = ttnn.to_torch(
             data, mesh_composer=ttnn.ConcatMesh2dToTensor(device, mesh_shape=tuple(device.shape), dims=(0, 1))
         )
-    return f"{label}: mean:{data_.mean()} , std:{data_.std()} , range:[{data_.max()}, {data_.min()}]"
+    return f"{label}: mean:{data_.mean()} , std:{data_.std()} , range:[{data_.min()}, {data_.max()}]"
 
 
 # @pytest.mark.parametrize("device_params", [{"trace_region_size": 40960}], indirect=True)
@@ -30,7 +30,8 @@ def print_stats(label, data: torch.Tensor, device=None):
 @pytest.mark.parametrize(
     ("batch", "in_channels", "out_channels", "height", "width", "num_groups", "num_out_blocks", "cores_y", "cores_x"),
     [
-        (1, 3, 32, 480, 640, 32, 2, 8, 8),
+        (1, 256, 256, 32, 32, 32, 2, 8, 8),
+        # (1, 256, 256, 32, 32, 32, 2, 8, 8),
         # (512, 256, 256, 32),
         # (256, 512, 512, 32),
         # (512, 512, 512, 32),
@@ -68,25 +69,10 @@ def test_resnet_block(
         num_out_blocks=num_out_blocks,
     )
 
+    # inp = torch.randn(batch, in_channels, height, width)
     inp = torch.normal(1, 2, (batch, in_channels, height, width))
-    torch_input_tensor = torch.nn.functional.pad(
-        torch_input_tensor.permute(0, 2, 3, 1), (0, 5)
-    )  # channel dimension is padded to 8
 
-    memory_config = ttnn.create_sharded_memory_config(
-        [4800, 8],
-        core_grid=device.core_grid,
-        strategy=ttnn.ShardStrategy.HEIGHT,
-        use_height_and_width_as_shard_shape=True,
-    )
-
-    tt_inp = ttnn.from_torch(
-        inp.permute(0, 2, 3, 1),
-        dtype=ttnn_dtype,
-        layout=ttnn.ROW_MAJOR_LAYOUT,
-        device=device,
-        memory_config=ttnn.DRAM_MEMORY_CONFIG,
-    )
+    tt_inp = ttnn.from_torch(inp.permute(0, 2, 3, 1), dtype=ttnn_dtype, device=device)
 
     logger.info(print_stats("torch_input", inp))
     logger.info(print_stats("tt_input", tt_inp, device=device))

@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING
 import ttnn
 
 # from .conv2d import TtConv2d, TtConv2dParameters
-from .fun_conv2d import vae_conv2d_, TtConv2dParameters
-from .group_norm import TtGroupNormParameters
+from .fun_conv2d import vae_conv2d, TtConv2dParameters
+from .fun_group_norm import vae_group_norm, TtGroupNormParameters
 from ..parallel_config import StableDiffusionParallelManager
 
 if TYPE_CHECKING:
@@ -36,14 +36,32 @@ class TtResnetBlock2DParameters:
         dtype: ttnn.DataType | None = None,
         num_out_blocks: int,
         core_grid,
-        device: ttnn.MeshDevice,
+        device,
     ) -> TtResnetBlock2DParameters:
         return cls(
-            norm1=None,  # TtGroupNormParameters.from_torch(resnet_block.norm1.state_dict(), device=device,num_channels=resnet_block.norm1.num_channels,num_groups=resnet_block.norm1.num_groups,core_grid=core_grid,num_out_blocks=num_out_blocks),
-            norm2=None,  # TtGroupNormParameters.from_torch(resnet_block.norm2.state_dict(), device=device,num_channels=resnet_block.norm2.num_channels,num_groups=resnet_block.norm2.num_groups,core_grid=core_grid,num_out_blocks=num_out_blocks),
-            conv1=TtConv2dParameters.from_torch(resnet_block.conv1, dtype=dtype, device=device),
-            conv2=None,  # TtConv2dParameters.from_torch(resnet_block.conv2.state_dict(), dtype=dtype, device=device),
-            conv_shortcut=None,  # TtConv2dParameters.from_torch(substate(resnet_block.state_dict(), "conv_shortcut"), dtype=dtype, device=device) if has_substate(resnet_block.state_dict(), "conv_shortcut") else None,
+            norm1=TtGroupNormParameters.from_torch(
+                resnet_block.norm1.state_dict(),
+                device=device,
+                num_channels=resnet_block.norm1.num_channels,
+                num_groups=resnet_block.norm1.num_groups,
+                core_grid=core_grid,
+                num_out_blocks=num_out_blocks,
+            ),
+            norm2=TtGroupNormParameters.from_torch(
+                resnet_block.norm2.state_dict(),
+                device=device,
+                num_channels=resnet_block.norm2.num_channels,
+                num_groups=resnet_block.norm2.num_groups,
+                core_grid=core_grid,
+                num_out_blocks=num_out_blocks,
+            ),
+            conv1=TtConv2dParameters.from_torch(
+                resnet_block.conv1, dtype=dtype, device=device
+            ),  # TODO: Add Silu, Add act_block_h
+            conv2=TtConv2dParameters.from_torch(resnet_block.conv2, dtype=dtype, device=device),
+            conv_shortcut=TtConv2dParameters.from_torch(resnet_block.conv_shortcut, dtype=dtype, device=device)
+            if resnet_block.conv_shortcut
+            else None,
         )
 
     @property
@@ -54,8 +72,15 @@ class TtResnetBlock2DParameters:
 def resnet_block(
     x_in: ttnn.Tensor, parameters: TtResnetBlock2DParameters, parallel_manager: StableDiffusionParallelManager | None
 ) -> ttnn.Tensor:
-    # x = group_norm(x_in, parameters.norm1)
-    # x = ttnn.silu(x)
-    x = vae_conv2d_(x_in, parameters.conv1)
-
-    return x
+    residual = x_in
+    x = vae_group_norm(x_in, parameters.norm1)
+    x = ttnn.silu(x)
+    x = vae_conv2d(x, parameters.conv1)
+    x = vae_group_norm(x, parameters.norm2)
+    x = ttnn.silu(x)
+    x = vae_conv2d(x, parameters.conv2)
+    if parameters.conv_shortcut is not None:
+        residual = vae_conv2d(residual, parameters.conv_shortcut)
+    x = ttnn.to_layout(x, ttnn.TILE_LAYOUT)
+    residual = ttnn.to_layout(residual, ttnn.TILE_LAYOUT)
+    return x + residual

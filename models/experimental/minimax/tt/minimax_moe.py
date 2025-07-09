@@ -4,8 +4,9 @@ from torch import nn
 import ttnn
 
 from models.helper_funcs import Linear as TTLinear
+from models.utility_functions import torch_to_tt_tensor_rm
 
-from .mlp import TTMiniMaxM1BlockSparseTop2MLP
+from .minimax_mlp import TTMiniMaxM1BlockSparseTop2MLP
 
 BLOCK = 256
 
@@ -22,14 +23,14 @@ class TTMiniMaxM1SparseMoeBlock(nn.Module):
         self.jitter_noise = config.router_jitter_noise
 
         # Gating
-        self.tt_gate_weight = ttnn.from_torch(state_dict[f"{base_address}.gate.weight"], device=self.device)
+        self.tt_gate_weight = torch_to_tt_tensor_rm(state_dict[f"{base_address}.gate.weight"], self.device)
         self.tt_gate = TTLinear(
             self.tt_gate_weight.padded_shape[-1], self.tt_gate_weight.padded_shape[-2], self.tt_gate_weight
         )
 
         self.experts = nn.ModuleList(
             [
-                TTMiniMaxM1BlockSparseTop2MLP(config, state_dict, f"{base_address}.experts.{i}")
+                TTMiniMaxM1BlockSparseTop2MLP(config, state_dict, f"{base_address}.experts.{i}", device=device)
                 for i in range(self.num_experts)
             ]
         )

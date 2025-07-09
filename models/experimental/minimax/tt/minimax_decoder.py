@@ -5,11 +5,12 @@ import ttnn
 from typing import Optional, Tuple
 
 from models.helper_funcs import Linear as TTLinear
+from models.utility_functions import torch_to_tt_tensor_rm
 
 from .minimax_norm import TTMiniMaxM1RMSNorm
-from .minimax_attention import TTMiniMaxM1LightningAttention
-from .mlp import TTMiniMaxM1MLP
-from .moe import TTMiniMaxM1SparseMoeBlock
+from .minimax_attention import TTMiniMaxM1LightningAttention, TTMiniMaxM1Attention
+from .minimax_mlp import TTMiniMaxM1MLP
+from .minimax_moe import TTMiniMaxM1SparseMoeBlock
 
 BLOCK = 256
 
@@ -54,7 +55,7 @@ class TTMiniMaxM1DecoderLayer(nn.Module):
             self.shared_moe = True
             self.shared_mlp = TTMiniMaxM1MLP(config, state_dict, f"{base_address}.shared_mlp")
 
-            self.tt_coefficient_weight = ttnn.from_torch(state_dict[f"{base_address}.coefficient.weight"])
+            self.tt_coefficient_weight = torch_to_tt_tensor_rm(state_dict[f"{base_address}.coefficient.weight"], device)
             self.tt_coefficient = TTLinear(
                 self.tt_coefficient_weight.padded_shape[-1],
                 self.tt_coefficient_weight.padded_shape[-2],
@@ -64,6 +65,9 @@ class TTMiniMaxM1DecoderLayer(nn.Module):
     def build_attn(self, config, state_dict, base_address, layer_idx):
         if config.attention_type == 0:
             Attention_module = TTMiniMaxM1LightningAttention
+        else:
+            # Ideally this will be replaced with TTMiniMaxM1FlashAttention2 later
+            Attention_module = TTMiniMaxM1Attention
         return Attention_module(
             config, state_dict, f"{base_address}.self_attn", layer_idx=layer_idx, device=self.device
         )

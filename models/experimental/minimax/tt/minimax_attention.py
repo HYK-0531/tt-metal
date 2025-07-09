@@ -30,18 +30,20 @@ class TTMiniMaxM1LightningAttention(nn.Module):
         self.act = get_activation_fn(config.hidden_act)
         self.norm = TTMiniMaxM1RMSNorm(config, state_dict, f"{base_address}.norm", device)
 
-        self.tt_out_proj_weight = ttnn.from_torch(state_dict[f"{base_address}.out_proj.weight"], self.device)
+        self.tt_out_proj_weight = torch_to_tt_tensor_rm(state_dict[f"{base_address}.out_proj.weight"], self.device)
         self.tt_out_proj = TTLinear(
             self.tt_out_proj_weight.padded_shape[-1], self.tt_out_proj_weight.padded_shape[-2], self.tt_out_proj_weight
         )
 
         # W_qkv: (hidden_size, 3 * head_dim * num_heads)
-        self.tt_qkv_proj_weight = ttnn.from_torch(state_dict[f"{base_address}.qkv_proj.weight"], self.device)
+        self.tt_qkv_proj_weight = torch_to_tt_tensor_rm(state_dict[f"{base_address}.qkv_proj.weight"], self.device)
         self.tt_qkv_proj = TTLinear(
             self.tt_qkv_proj_weight.padded_shape[-1], self.tt_qkv_proj_weight.padded_shape[-2], self.tt_qkv_proj_weight
         )
 
-        self.tt_output_gate_weight = ttnn.from_torch(state_dict[f"{base_address}.output_gate.weight"], self.device)
+        self.tt_output_gate_weight = torch_to_tt_tensor_rm(
+            state_dict[f"{base_address}.output_gate.weight"], self.device
+        )
         self.tt_output_gate = TTLinear(
             self.tt_output_gate_weight.padded_shape[-1],
             self.tt_output_gate_weight.padded_shape[-2],
@@ -275,7 +277,7 @@ class TTMiniMaxM1Attention(nn.Module):
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Cache] = None,
+        past_key_value=None,
         output_attentions: bool = False,
         use_cache: bool = False,
         **kwargs,

@@ -3,6 +3,7 @@ from torch import nn
 import ttnn
 
 from models.helper_funcs import Linear as TTLinear
+from models.utility_functions import torch_to_tt_tensor_rm
 
 
 class TTglu(nn.Module):
@@ -10,8 +11,8 @@ class TTglu(nn.Module):
         super(TTglu, self).__init__()
         self.device = device
 
-        self.linear_1_weight = ttnn.from_torch(state_dict[f"{base_address}.l1.weight"], self.device)
-        self.linear_1_bias = ttnn.from_torch(state_dict[f"{base_address}.l1.bias"], self.device)
+        self.linear_1_weight = torch_to_tt_tensor_rm(state_dict[f"{base_address}.l1.weight"], self.device)
+        self.linear_1_bias = torch_to_tt_tensor_rm(state_dict[f"{base_address}.l1.bias"], self.device)
         self.linear1 = TTLinear(
             self.linear_1_weight.padded_shape[-1],
             self.linear_1_weight.padded_shape[-2],
@@ -19,8 +20,8 @@ class TTglu(nn.Module):
             self.linear_1_bias,
         )
 
-        self.linear_2_weight = ttnn.from_torch(state_dict[f"{base_address}.l2.weight"], self.device)
-        self.linear_2_bias = ttnn.from_torch(state_dict[f"{base_address}.l2.bias"], self.device)
+        self.linear_2_weight = torch_to_tt_tensor_rm(state_dict[f"{base_address}.l2.weight"], self.device)
+        self.linear_2_bias = torch_to_tt_tensor_rm(state_dict[f"{base_address}.l2.bias"], self.device)
         self.linear2 = TTLinear(
             self.linear_2_weight.padded_shape[-1],
             self.linear_2_weight.padded_shape[-2],

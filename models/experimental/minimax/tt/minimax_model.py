@@ -4,18 +4,15 @@ import torch
 from torch import nn
 
 import ttnn
-from models.utility_functions import (
-    tt_to_torch_tensor,
-)
+from models.helper_funcs import Linear as TTLinear
+from models.utility_functions import tt_to_torch_tensor, torch_to_tt_tensor_rm
 
 from .minimax_config import TTMiniMaxM1Config
 from .minimax_norm import TTMiniMaxM1RMSNorm
 from .minimax_decoder import TTMiniMaxM1DecoderLayer
 
 from transformers.modeling_utils import PreTrainedModel
-from transformers.modeling_outputs import (
-    MoeModelOutputWithPast,
-)
+from transformers.modeling_outputs import MoeModelOutputWithPast, MoeCausalLMOutputWithPast
 
 
 class TTMiniMaxM1PreTrainedModel(PreTrainedModel):
@@ -174,5 +171,94 @@ class TTMiniMaxM1Model(TTMiniMaxM1PreTrainedModel):
             past_key_values=next_cache,
             hidden_states=all_hidden_states,
             attentions=all_attns,
+            router_logits=None,
+        )
+
+
+class TTMiniMaxM1ForCausalLM(nn.Module):
+    def __init__(
+        self,
+        config,
+        state_dict,
+        base_address: str,
+        device=None,
+    ):
+        super().__init__()
+        self.config = config
+
+        # Instantiate decoder
+        self.tt_model = TTMiniMaxM1Model(config, state_dict, f"{base_address}.model", device=device)
+        self.tt_lm_wc = torch_to_tt_tensor_rm(state_dict[f"{base_address}.lm_head.weight"], device)
+
+        self.tt_lm_head = TTLinear(
+            self.tt_lm_wc.padded_shape[-1],
+            self.tt_lm_wc.padded_shape[-2],
+            self.tt_lm_wc,
+        )
+        self.router_aux_loss_coef = config.router_aux_loss_coef
+        self.num_experts = config.num_local_experts
+        self.num_experts_per_tok = config.num_experts_per_tok
+
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        position_ids=None,
+        past_key_values=None,
+        inputs_embeds=None,
+        labels=None,
+        use_cache=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        output_router_logits=None,
+        return_dict=None,
+    ):
+        # forward through TT decoder
+        tt_inputs = {
+            {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "position_ids": position_ids,
+                "past_key_values": past_key_values,
+                "inputs_embeds": inputs_embeds,
+                "use_cache": use_cache,
+                "output_attentions": output_attentions,
+                "output_hidden_states": output_hidden_states,
+                "output_router_logits": output_router_logits,
+                "return_dict": return_dict,
+            }
+        }
+        tt_hidden, tt_past, tt_hidden_states, tt_attns = self.tt_model(**tt_inputs)
+        tt_logits = self.tt_lm_head(tt_hidden)
+        # Convert to torch to compute loss
+        logits = tt_to_torch_tensor(tt_logits).float()
+
+        loss = None
+        if labels is not None:
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            loss_fct = nn.CrossEntropyLoss()
+            loss = loss_fct(
+                shift_logits.view(-1, self.config.vocab_size), shift_labels.view(-1).to(shift_logits.device)
+            )
+
+        aux_loss = None
+        if output_router_logits:
+            # TT router logits not supported yet
+            aux_loss = None
+
+        if not return_dict:
+            outputs = (logits,)
+            if loss is not None:
+                outputs = (loss,) + outputs
+            return outputs
+
+        return MoeCausalLMOutputWithPast(
+            loss=loss,
+            aux_loss=aux_loss,
+            logits=logits,
+            past_key_values=tt_past,
+            hidden_states=tt_hidden_states,
+            attentions=tt_attns,
             router_logits=None,
         )

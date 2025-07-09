@@ -1,6 +1,24 @@
 import ttnn
 
 
+# TT repeat_kv: TT-equivalent of torch.repeat_interleave for KV heads
+def repeat_kv(hidden_states, n_rep: int):
+    """
+    Repeats key/value heads in a TT tensor.
+    Args:
+        hidden_states: TT Tensor with shape [batch, num_kv_heads, seq_len, head_dim]
+        n_rep: number of repetitions per KV head
+    Returns:
+        TT Tensor with shape [batch, num_kv_heads * n_rep, seq_len, head_dim]
+    """
+    if n_rep == 1:
+        return hidden_states
+    batch, num_kv_heads, seq_len, head_dim = hidden_states.shape
+    hs = ttnn.reshape(hidden_states, (batch, num_kv_heads, 1, seq_len, head_dim))
+    hs = ttnn.concat([hs] * n_rep, dim=2)
+    return ttnn.reshape(hs, (batch, num_kv_heads * n_rep, seq_len, head_dim))
+
+
 def get_activation_fn(activation):
     """
     Returns appropriate ttnn activation function; defaults to identity if requested function not found.

@@ -168,7 +168,7 @@ std::shared_ptr<Program> create_program_multi_core_rta(
     return program;
 }
 
-TEST_F(CommandQueueMultiDeviceFixture, TestProgramReuseSanity) {
+TEST_F(UnitMeshCQMultiDeviceFixture, TestProgramReuseSanity) {
     // Sanity test: Create a program with Semaphores, CBs, RTAs, Core Coords, and Kernel Binaries.
     // Enqueue Program across all devices.
     // Read L1 directly to ensure that all program attributes are correctly present.
@@ -214,7 +214,10 @@ TEST_F(CommandQueueMultiDeviceFixture, TestProgramReuseSanity) {
     uint32_t rta_base_addr = devices_[0]->allocator()->get_base_allocator_addr(HalMemType::L1);
     auto program = create_program_multi_core_rta(
         rta_program_config, sem_program_config, dummy_cr0_args, dummy_cr1_args, dummy_sems, cb_config, rta_base_addr);
-
+    distributed::MeshWorkload workload;
+    distributed::MeshCoordinate zero_coord = distributed::MeshCoordinate::zero_coordinate(devices_[0]->shape().dims());
+    distributed::MeshCoordinateRange device_range = distributed::MeshCoordinateRange(zero_coord, zero_coord);
+    distributed::AddProgramToMeshWorkload(workload, std::move(*program), device_range);
     constexpr uint32_t coordinate_readback_size = 2 * 3 * sizeof(uint32_t);  // (X,Y) x (Virtual, Logical, Relative) = 6
     // Below addresses are copied from create_program_multi_core_rta
     uint32_t rta_base_dm0 = rta_base_addr;
@@ -228,10 +231,14 @@ TEST_F(CommandQueueMultiDeviceFixture, TestProgramReuseSanity) {
     uint32_t semaphore_buffer_size = dummy_sems.size() * MetalContext::instance().hal().get_alignment(HalMemType::L1);
     uint32_t cb_config_buffer_size =
         NUM_CIRCULAR_BUFFERS * UINT32_WORDS_PER_LOCAL_CIRCULAR_BUFFER_CONFIG * sizeof(uint32_t);
-    for (auto device : devices_) {
-        log_info(LogTest, "Running test on {}", device->id());
-        EnqueueProgram(device->command_queue(), *program, false);
-        Finish(device->command_queue());
+
+    for (auto mesh_device : devices_) {
+        log_info(LogTest, "Running test on {}", mesh_device->id());
+        distributed::EnqueueMeshWorkload(mesh_device->mesh_command_queue(), workload, false);
+        distributed::Finish(mesh_device->mesh_command_queue());
+
+        // UnitMesh should only have one device
+        auto device = mesh_device->get_devices()[0];
         tt::tt_metal::MetalContext::instance().get_cluster().l1_barrier(device->id());
 
         for (const CoreCoord& core_coord : cr0) {
@@ -307,7 +314,7 @@ TEST_F(CommandQueueMultiDeviceFixture, TestProgramReuseSanity) {
         std::vector<uint32_t> semaphore_vals;
         for (const CoreCoord& core_coord : sem_cr_range) {
             uint32_t expected_sem_idx = 0;
-            uint32_t sem_base_addr = program->get_sem_base_addr(devices_[0], core_coord, CoreType::WORKER);
+            uint32_t sem_base_addr = workload.get_sem_base_addr(mesh_device, core_coord, CoreType::WORKER);
             detail::ReadFromDeviceL1(device, core_coord, sem_base_addr, semaphore_buffer_size, semaphore_vals);
             for (uint32_t i = 0; i < semaphore_vals.size();
                  i += (MetalContext::instance().hal().get_alignment(HalMemType::L1) / sizeof(uint32_t))) {
@@ -320,7 +327,7 @@ TEST_F(CommandQueueMultiDeviceFixture, TestProgramReuseSanity) {
             detail::ReadFromDeviceL1(
                 device,
                 core_coord,
-                program->get_cb_base_addr(device, core_coord, CoreType::WORKER),
+                workload.get_cb_base_addr(mesh_device, core_coord, CoreType::WORKER),
                 cb_config_buffer_size,
                 cb_config_vector);
             uint32_t cb_addr = device->allocator()->get_base_allocator_addr(HalMemType::L1);
@@ -338,7 +345,7 @@ TEST_F(CommandQueueMultiDeviceFixture, TestProgramReuseSanity) {
     }
 }
 
-TEST_F(CommandQueueMultiDeviceFixture, TestDataCopyComputeProgramReuse) {
+TEST_F(UnitMeshCQMultiDeviceFixture, TestDataCopyComputeProgramReuse) {
     // End to End full-grid test. Creates a Program with the same kernel running on the full logical grid.
     // Each core reads from a buffer, performs a simple math operation on each datum in the buffer, and writes
     // outputs in dedicated DRAM memory.
@@ -347,19 +354,23 @@ TEST_F(CommandQueueMultiDeviceFixture, TestDataCopyComputeProgramReuse) {
         GTEST_SKIP();
     }
     CoreCoord worker_grid_size = this->devices_[0]->compute_with_storage_grid_size();
-    std::vector<std::shared_ptr<Buffer>> input_buffers = {};
-    std::vector<std::shared_ptr<Buffer>> output_buffers = {};
+    std::vector<std::shared_ptr<distributed::MeshBuffer>> input_buffers = {};
+    std::vector<std::shared_ptr<distributed::MeshBuffer>> output_buffers = {};
     uint32_t single_tile_size = detail::TileSize(DataFormat::Float16_b);
 
     uint32_t num_tiles = 1;
     uint32_t dram_buffer_size = single_tile_size * num_tiles;
-    for (auto device : this->devices_) {
-        InterleavedBufferConfig dram_config{
-            .device = device, .size = dram_buffer_size, .page_size = dram_buffer_size, .buffer_type = BufferType::DRAM};
+
+    distributed::ReplicatedBufferConfig replicated_config{.size = dram_buffer_size};
+    distributed::DeviceLocalBufferConfig device_config{.page_size = dram_buffer_size, .buffer_type = BufferType::DRAM};
+
+    for (auto mesh_device : this->devices_) {
         for (std::size_t col_idx = 0; col_idx < worker_grid_size.x; col_idx++) {
             for (std::size_t row_idx = 0; row_idx < worker_grid_size.y; row_idx++) {
-                input_buffers.push_back(CreateBuffer(dram_config));
-                output_buffers.push_back(CreateBuffer(dram_config));
+                input_buffers.push_back(
+                    distributed::MeshBuffer::create(replicated_config, device_config, mesh_device.get()));
+                output_buffers.push_back(
+                    distributed::MeshBuffer::create(replicated_config, device_config, mesh_device.get()));
             }
         }
     }
@@ -380,6 +391,7 @@ TEST_F(CommandQueueMultiDeviceFixture, TestDataCopyComputeProgramReuse) {
         CircularBufferConfig(dram_buffer_size, {{src0_cb_index, DataFormat::Float16_b}})
             .set_page_size(src0_cb_index, single_tile_size);
 
+    distributed::MeshCoordinate zero_coord = distributed::MeshCoordinate::zero_coordinate(devices_[0]->shape().dims());
     uint32_t add_factor = 64;
     for (std::size_t col_idx = 0; col_idx < worker_grid_size.x; col_idx++) {
         for (std::size_t row_idx = 0; row_idx < worker_grid_size.y; row_idx++) {
@@ -401,13 +413,18 @@ TEST_F(CommandQueueMultiDeviceFixture, TestDataCopyComputeProgramReuse) {
         }
     }
 
+    distributed::MeshWorkload workload;
+    distributed::MeshCoordinateRange device_range = distributed::MeshCoordinateRange(zero_coord, zero_coord);
+    distributed::AddProgramToMeshWorkload(workload, std::move(program), device_range);
+
     std::vector<uint32_t> src_vec = create_constant_vector_of_bfloat16(dram_buffer_size, 1);
     std::size_t buffer_idx = 0;
     // Write constant inputs once
-    for (auto device : devices_) {
+    for (auto mesh_device : devices_) {
         for (std::size_t col_idx = 0; col_idx < worker_grid_size.x; col_idx++) {
             for (std::size_t row_idx = 0; row_idx < worker_grid_size.y; row_idx++) {
-                EnqueueWriteBuffer(device->command_queue(), input_buffers.at(buffer_idx), src_vec, false);
+                distributed::EnqueueWriteMeshBuffer(
+                    mesh_device->mesh_command_queue(), input_buffers[buffer_idx], src_vec, false);
                 buffer_idx++;
             }
         }
@@ -421,16 +438,20 @@ TEST_F(CommandQueueMultiDeviceFixture, TestDataCopyComputeProgramReuse) {
                 rtas[core.x][core.y].at(4) = ((iter % 2) + 1) * add_factor;
             }
         }
-        for (auto device : devices_) {
-            EnqueueProgram(device->command_queue(), program, false);
+
+        for (auto mesh_device : devices_) {
+            distributed::EnqueueMeshWorkload(mesh_device->mesh_command_queue(), workload, false);
         }
 
         buffer_idx = 0;
-        for (auto device : devices_) {
+        for (auto mesh_device : devices_) {
             for (std::size_t col_idx = 0; col_idx < worker_grid_size.x; col_idx++) {
                 for (std::size_t row_idx = 0; row_idx < worker_grid_size.y; row_idx++) {
                     std::vector<bfloat16> dst_vec = {};
-                    EnqueueReadBuffer(device->command_queue(), output_buffers.at(buffer_idx), dst_vec, true);
+                    distributed::MeshCoordinate zero_coord =
+                        distributed::MeshCoordinate::zero_coordinate(mesh_device->shape().dims());
+                    distributed::ReadShard(
+                        mesh_device->mesh_command_queue(), dst_vec, output_buffers[buffer_idx], zero_coord, true);
                     buffer_idx++;
                     for (int i = 0; i < dst_vec.size(); i++) {
                         float ref_val = std::pow(2, (iter % 2) + 1);

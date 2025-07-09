@@ -206,7 +206,7 @@ void DispatchKernel::GenerateStaticConfigs() {
     } else {
         TT_FATAL(false, "DispatchKernel must be one of (or both) H and D variants");
     }
-    static_config_.scratch_buffer = 
+    static_config_.scratch_buffer =
         my_dispatch_constants.get_device_command_queue_addr(CommandQueueDeviceAddrType::SCRATCH_BUFFER);
 }
 
@@ -524,7 +524,8 @@ void DispatchKernel::CreateKernel() {
         {"TO_MESH_ID", std::to_string(dependent_config_.to_mesh_id.value_or(0))},
         {"TO_DEV_ID", std::to_string(dependent_config_.to_dev_id.value_or(0))},
         {"ROUTER_DIRECTION", std::to_string(dependent_config_.router_direction.value_or(0))},
-        {"WORKER_MCAST_GRID", std::to_string( device_->get_noc_multicast_encoding(noc_selection_.downstream_noc, virtual_core_range))},
+        {"WORKER_MCAST_GRID",
+         std::to_string(device_->get_noc_multicast_encoding(noc_selection_.downstream_noc, virtual_core_range))},
         {"NUM_WORKER_CORES_TO_MCAST", std::to_string(device_worker_cores.size())},
         {"SCRATCH_BUFFER", std::to_string(static_config_.scratch_buffer.value())},
         {"IS_D_VARIANT", std::to_string(static_config_.is_d_variant.value())},

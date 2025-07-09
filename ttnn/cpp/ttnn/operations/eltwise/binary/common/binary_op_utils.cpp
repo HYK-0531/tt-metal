@@ -316,7 +316,11 @@ std::map<std::string, std::string> get_defines_fp32(
             new_defines.merge(get_defines(UnaryOpType::SQUARE, std::nullopt, "0", idst1));
             break;
         case BinaryOpType::LOGICAL_AND:
-            op_name = "mul_binary_tile";
+            if (input_a_dtype == DataType::UINT16 && input_b_dtype == DataType::UINT16) {
+                op_name = "mul_uint16_tile";
+            } else {
+                op_name = "mul_binary_tile";
+            }
             new_defines.merge(get_defines(UnaryOpType::NEZ, std::nullopt, "0", idst1, input_a_dtype));
             break;
         case BinaryOpType::BIAS_GELU:
@@ -341,6 +345,8 @@ std::map<std::string, std::string> get_defines_fp32(
             new_defines.merge(get_defines(UnaryOpType::NEZ, std::nullopt, "PRE_IN1_0", "0", input_b_dtype));
             if (input_a_dtype == DataType::INT32 && input_b_dtype == DataType::INT32) {
                 op_name = "sub_int32_tile";
+            } else if (input_a_dtype == DataType::UINT16 && input_b_dtype == DataType::UINT16) {
+                op_name = "sub_uint16_tile";
             } else {
                 op_name = "sub_binary_tile";
             }

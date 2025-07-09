@@ -565,8 +565,28 @@ def test_fmod_ttnn(input_shapes, scalar, device):
     ),
 )
 def test_binary_logical_and__ttnn(input_shapes, device):
-    in_data1, input_tensor1 = data_gen_with_range(input_shapes, -150, 150, device)
-    in_data2, input_tensor2 = data_gen_with_range(input_shapes, -100, 100, device)
+    num_elements = max(int(torch.prod(torch.tensor(input_shapes)).item()), 1)
+    in_data1 = torch.linspace(-150, 150, num_elements, dtype=torch.bfloat16)
+    in_data1 = in_data1[:num_elements].reshape(input_shapes).nan_to_num(0.0)
+    in_data2 = torch.linspace(-100, 100, num_elements, dtype=torch.bfloat16)
+    in_data2 = in_data2[:num_elements].reshape(input_shapes).nan_to_num(0.0)
+
+    input_tensor1 = ttnn.from_torch(
+        in_data1,
+        dtype=ttnn.bfloat16,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+    )
+
+    input_tensor2 = ttnn.from_torch(
+        in_data2,
+        dtype=ttnn.bfloat16,
+        device=device,
+        layout=ttnn.TILE_LAYOUT,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
+    )
+
     ttnn.logical_and_(input_tensor1, input_tensor2)
     golden_function = ttnn.get_golden_function(ttnn.logical_and_)
     golden_tensor = golden_function(in_data1, in_data2)

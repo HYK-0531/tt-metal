@@ -394,6 +394,7 @@ target_link_libraries(
     PUBLIC
         umd::device
         magic_enum::magic_enum
+        FlatBuffers::FlatBuffers
         fmt::fmt-header-only
         TracyClient
         nlohmann_json::nlohmann_json
@@ -412,7 +413,6 @@ target_link_libraries(
         fabric
         HAL::wormhole
         HAL::blackhole
-        FlatBuffers::FlatBuffers
         TT::Metalium::Logging
 )
 

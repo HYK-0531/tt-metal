@@ -94,7 +94,12 @@ jobs:
 
       - name: Update submodule
         id: update-submodule
+        env:
+          GH_TOKEN: ${{ secrets.TEMP_METAL_PAT }}
         run: |
+          # Configure git credentials globally for this step
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
           cd ${{ env.SUBMODULE_PATH }}
           OLD_SHA=$(git rev-parse --short=7 HEAD)
           echo "old-sha=$OLD_SHA" >> $GITHUB_OUTPUT
@@ -114,6 +119,9 @@ jobs:
             echo "has-changes=true" >> $GITHUB_OUTPUT
             echo "✅ Changes detected: $OLD_SHA -> $NEW_SHA"
           fi
+
+          # Clean up git configuration for security
+          git config --global --unset url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf || true
 
       - name: Analyze changes and generate PR body
         id: analyze-changes

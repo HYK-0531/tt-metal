@@ -91,6 +91,7 @@ def tt_all_reduce(
             input_tensor_sharded = input_tensor
             input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.L1_MEMORY_CONFIG)
             input_tensor_sharded.deallocate(True)
+        print("start ccl 94")
         reduced = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
             dim=dim,
@@ -100,6 +101,7 @@ def tt_all_reduce(
             topology=topology,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        print("end ccl 94")
         input_tensor.deallocate(True)
         return reduced
 
@@ -115,6 +117,7 @@ def tt_all_reduce(
         input_tensor = ttnn.to_memory_config(input_tensor, ttnn.DRAM_MEMORY_CONFIG)
 
     if not use_composite:
+        print("start ccl 120")
         gathered_tensor = ttnn.experimental.all_gather_async(
             input_tensor,
             dim,
@@ -126,6 +129,7 @@ def tt_all_reduce(
             memory_config=ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        print("end ccl 120")
 
         if sharded:
             gathered_tensor = ttnn.to_memory_config(gathered_tensor, ttnn.L1_MEMORY_CONFIG)
@@ -140,6 +144,7 @@ def tt_all_reduce(
         gathered_tensor.deallocate(True)
     else:
         input_mem_cfg = input_tensor.memory_config()
+        print("start ccl 147")
         reduced_tensor = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
             dim=dim,
@@ -151,7 +156,9 @@ def tt_all_reduce(
             topology=topology,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        print("end ccl 147")
 
+        print("start ccl 161")
         reduced_tensor = ttnn.experimental.all_gather_async(
             reduced_tensor,
             dim,
@@ -163,6 +170,7 @@ def tt_all_reduce(
             memory_config=input_mem_cfg,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        print("end ccl 161")
 
     # Reshape the reduced tensor to the original shape
     reduced_tensor = ttnn.reshape(reduced_tensor, original_shape)
@@ -197,6 +205,7 @@ def tt_all_gather(
             input_tensor = ttnn.to_memory_config(input_tensor, memory_config, dtype)  # to sharded
 
     if cluster_axis is None:
+        print("start ccl 208")
         gathered = ttnn.experimental.all_gather_async(
             input_tensor,
             dim,
@@ -206,7 +215,9 @@ def tt_all_gather(
             memory_config=memory_config,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        print("end ccl 208")
     else:
+        print("start ccl 220")
         gathered = ttnn.experimental.all_gather_async(
             input_tensor,
             dim,
@@ -218,6 +229,7 @@ def tt_all_gather(
             memory_config=memory_config,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
+        print("end ccl 220")
     input_tensor.deallocate(True)
     return gathered
 
@@ -259,6 +271,7 @@ def tt_sharded_distributed_rmsnorm(
     tt_stats = ttnn.rms_norm_pre_all_gather(inp, program_config=ln_sharded_progcfg)
 
     # All gather stats
+    print("start ccl 274")
     tt_stats = ttnn.experimental.all_gather_async(
         tt_stats,
         3,
@@ -270,6 +283,7 @@ def tt_sharded_distributed_rmsnorm(
         memory_config=ln_sharded_stats_memcfg,
         subdevice_id=tt_ccl.worker_sub_device_id,
     )
+    print("end ccl 274")
 
     # Run distributed rmsnorm part 2
     tt_out = ttnn.rms_norm_post_all_gather(

@@ -326,6 +326,7 @@ class Transformer(LightweightModule):
         # Gather the output across all devices and untilize the tensor (for argmax)
         if self.args.num_devices > 1:
             if self.args.is_galaxy:
+                print("start model 329")
                 tt_logits = ttnn.experimental.all_gather_async(
                     tt_logits,
                     dim=3,
@@ -336,7 +337,9 @@ class Transformer(LightweightModule):
                     topology=self.args.ccl_topology(),
                     subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )
+                print("end model 329")
             else:
+                print("start model 342")
                 tt_logits = ttnn.experimental.all_gather_async(
                     tt_logits,
                     dim=3,
@@ -345,6 +348,7 @@ class Transformer(LightweightModule):
                     topology=self.args.ccl_topology(),
                     subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )
+                print("end model 342")
         tt_logits = ttnn.untilize(tt_logits, use_multicore=True)
 
         if argmax_on_device:

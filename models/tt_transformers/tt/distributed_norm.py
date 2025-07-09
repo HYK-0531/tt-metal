@@ -73,6 +73,7 @@ class DistributedNorm(LightweightModule):
 
         # Distributed norm already performs a gather
         if self.args.is_multichip and not self.args.is_distributed_norm(mode):
+            print("start distributed_norm 76")
             x = ttnn.experimental.all_gather_async(
                 x,
                 dim=3,
@@ -82,6 +83,7 @@ class DistributedNorm(LightweightModule):
                 memory_config=input_mem_cfg,
                 subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
+            print("end distributed_norm 76")
         else:
             x = ttnn.to_memory_config(x, input_mem_cfg)
 
@@ -89,6 +91,7 @@ class DistributedNorm(LightweightModule):
 
         # Distributed norm requires a gather
         if self.args.is_distributed_norm(mode):
+            print("start distributed_norm 94")
             x = ttnn.experimental.all_gather_async(
                 x,
                 dim=3,
@@ -97,5 +100,6 @@ class DistributedNorm(LightweightModule):
                 topology=self.args.ccl_topology(),
                 subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
+            print("end distributed_norm 94")
 
         return x

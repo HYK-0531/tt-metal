@@ -538,6 +538,7 @@ class Attention(LightweightModule):
             attn_output_cat = ttnn.to_memory_config(
                 attn_output_cat, self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"]
             )
+            print("start attention 541")
             _, dense_out_sharded = ttnn.experimental.all_gather_matmul_async(
                 attn_output_cat,
                 self.wo,
@@ -551,6 +552,7 @@ class Attention(LightweightModule):
                 memory_config_ag=self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"],
                 memory_config_mm=self.model_config["DECODE_RESIDUAL_MEMCFG"],
             )
+            print("end attention 541")
             ttnn.deallocate(attn_output_cat)
             dense_out_sharded = ttnn.to_memory_config(dense_out_sharded, self.model_config["DECODE_RESIDUAL_MEMCFG"])
             return dense_out_sharded
@@ -822,6 +824,7 @@ class Attention(LightweightModule):
 
         # Non fused All Gather Matmul
         if self.use_fused_all_gather_matmul:  # is true for Ring topology
+            print("start attention 825")
             attn_output_11SH = ttnn.experimental.all_gather_async(
                 attn_output_11SH,
                 3,
@@ -831,6 +834,7 @@ class Attention(LightweightModule):
                 memory_config=ttnn.DRAM_MEMORY_CONFIG,
                 subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
+            print("end attention 825")
 
         output_11SH = ttnn.linear(
             attn_output_11SH,

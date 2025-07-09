@@ -436,7 +436,9 @@ def prepare_generator_args(
     ids=["performance", "accuracy"],
 )
 @pytest.mark.parametrize(
-    "device_params", [{"fabric_config": True, "trace_region_size": 25000000, "num_command_queues": 1}], indirect=True
+    "device_params",
+    [{"fabric_config": FABRIC_1D_RING, "trace_region_size": 25000000, "num_command_queues": 1}],
+    indirect=True,
 )
 @pytest.mark.parametrize(
     "mesh_device",

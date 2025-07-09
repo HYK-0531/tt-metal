@@ -9,7 +9,7 @@
 #include "ttnn/operations/ccl/kernel_common/worker_sync_utils.hpp"
 #include <cstdint>
 #include <utility>
-
+#include "dprint.h"
 using address_t = uint32_t;
 using tt::tt_metal::BufferType;
 
@@ -36,7 +36,7 @@ void kernel_main() {
     ///////////////////////////////////////////////////
     // ARGS
     ///////////////////////////////////////////////////
-
+    DPRINT << "Started\n";
     uint32_t arg_idx = 0;
     // Load the input tensor spec
     address_t input_tensor_address = get_arg_val<address_t>(arg_idx++);
@@ -73,6 +73,7 @@ void kernel_main() {
 
     arg_idx += input_rt_increment;
 #else
+    DPRINT << "Setting up addrgen\n";
     constexpr uint32_t ct_offset = 0;
 
     constexpr bool input_tensor_is_dram = input_buffer_type == tt::tt_metal::BufferType::DRAM;
@@ -101,17 +102,20 @@ void kernel_main() {
 
     arg_idx += intermediate_rt_increment;
 #else
+    DPRINT << "Setting intermediate addrgen\n";
     constexpr bool intermediate_tensor_is_dram = intermediate_buffer_type == tt::tt_metal::BufferType::DRAM;
     auto intermediate_tensor_addrgen = InterleavedAddrGenFast<intermediate_tensor_is_dram>{
         .bank_base_address = intermediate_tensor_address,
         .page_size = input_tensor_page_size,
         .data_format = get_dataformat(cb_input_id)};
 #endif
+    DPRINT << "Addrgens done\n";
 
     ReduceScatterOpReceiver matmul_receiver;
     if constexpr (fuse_op) {
         matmul_receiver = ReduceScatterOpReceiver(arg_idx);
     }
+    DPRINT << "Signaler done\n";
 
     constexpr uint32_t batch_num_pages = batch_slice_num_pages * ring_size;
     for (uint32_t b = 0; b < num_batches; b++) {
@@ -120,7 +124,7 @@ void kernel_main() {
         }
         int slice_idx = direction ? my_chip_id - 1 : my_chip_id + 1;
         uint32_t batch_offset = batch_num_pages * b;
-
+        DPRINT << "Got a batch\n";
         // Loop over the slices, starting from the furthest, and working backwards until we get to ourselves
         // Read our local slice at this slice idx into cb_input_id or cb_output_id
         // If we are not the first slice, then read intermediate into the cb_intermediate_id
@@ -128,6 +132,7 @@ void kernel_main() {
         // If slices_forwarded in writer is 7, we don't forward anymore and write it to output_buffer
         // Otherwise, the writer will write cb_output_id to the next chip in the forward direction
         for (uint32_t i = 0; i < ring_size; ++i) {
+            DPRINT << "Doing iteration" << i << "\n";
             const bool do_reduce = i != 0;
             uint32_t cb_in0 = do_reduce ? cb_input_id : cb_reader_output_id;
 

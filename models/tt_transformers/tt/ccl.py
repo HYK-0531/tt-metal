@@ -91,6 +91,7 @@ def tt_all_reduce(
             input_tensor_sharded = input_tensor
             input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.L1_MEMORY_CONFIG)
             input_tensor_sharded.deallocate(True)
+        breakpoint()
         print("start ccl 94")
         ttnn.synchronize_device(mesh_device, sub_device_ids=[tt_ccl.worker_sub_device_id])
         reduced = ttnn.experimental.reduce_scatter_minimal_async(

@@ -224,6 +224,8 @@ void kernel_main() {
                                     l1_read_addr,
                                     intermediate_page_size,
                                     intermediate_page_size);
+                                tiles_read += 2;
+                                tiles_read_in_current_direction += 2;
                                 break;
                             }
 #endif
@@ -245,11 +247,11 @@ void kernel_main() {
                                     fabric_direction_connection,
                                     l1_read_addr,
                                     intermediate_page_size);
+                                tiles_read++;
+                                tiles_read_in_current_direction++;
                                 break;
                             }
                         }
-                        tiles_read += tiles_to_put_in_current_packet;
-                        tiles_read_in_current_direction += tiles_to_put_in_current_packet;
                     }
                     cb_pop_front(cb_output_id, tile_granularity);
 

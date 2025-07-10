@@ -7,6 +7,7 @@
 #include <tt-metalium/core_coord.hpp>
 #include <tt-metalium/buffer.hpp>
 #include <tt-metalium/fabric.hpp>
+#include <tt-metalium/hal.hpp>
 #include "ttnn/tensor/tensor_impl.hpp"
 #include "ttnn/operations/experimental/ccl/all_gather_async/device/all_gather_async_op.hpp"
 #include "ttnn/operations/ccl/shared_with_host/hetergeneous_data_structs.hpp"
@@ -165,12 +166,11 @@ tt::tt_metal::operation::ProgramWithCallbacks all_gather_async_minimal_default_h
     const size_t packet_size_bytes = tt::tt_fabric::get_tt_fabric_channel_buffer_size_bytes();
     uint32_t l1_scratch_cb_page_size_bytes = page_size;
 
-    // scatter-write currently only supports 2 distinct noc addresses
-#ifdef ARCH_WORMHOLE
-    uint32_t max_target_noc_addresses_per_packet = 2;
-#else
+    // scatter-write currently only supports 2 distinct noc addresses, and is only supported for wormhole
     uint32_t max_target_noc_addresses_per_packet = 1;
-#endif
+    if (tt::tt_metal::hal::get_arch() == tt::ARCH::WORMHOLE_B0) {
+        max_target_noc_addresses_per_packet = 2;
+    }
 
     // for bfloat8_b, tile_num_per_link=6, we would need to send 2 packages, but they can be of size 3 instead of 4
     uint32_t num_pages_per_packet = packet_size_bytes / l1_scratch_cb_page_size_bytes;

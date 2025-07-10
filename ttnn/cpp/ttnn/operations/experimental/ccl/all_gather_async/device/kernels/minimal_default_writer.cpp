@@ -177,6 +177,7 @@ void kernel_main() {
                                 output_page_size);
                         }
                     }
+                    tiles_read += 2;
                     break;
                 }
 #endif
@@ -205,10 +206,10 @@ void kernel_main() {
                                 remote_noc0_dest_noc_addr, pkt_hdr, fabric_connection, l1_read_addr, output_page_size);
                         }
                     }
+                    tiles_read++;
                     break;
                 }
             }
-            tiles_read += tiles_to_put_in_current_packet;
             cb_pop_front(cb_output_id, num_tiles_to_write_per_packet);
         }
 
@@ -349,6 +350,7 @@ void kernel_main() {
                                 output_page_size,
                                 output_page_size);
                         }
+                        tiles_read += 2;
                         break;
                     }
 #endif
@@ -371,10 +373,10 @@ void kernel_main() {
                             write_for_fabric_write_forward(
                                 remote_noc0_dest_noc_addr, pkt_hdr, fabric_connection, l1_read_addr, output_page_size);
                         }
+                        tiles_read++;
                         break;
                     }
                 }
-                tiles_read += tiles_to_put_in_current_packet;
                 cb_pop_front(cb_output_id, num_tiles_to_write_per_packet);
             }
 

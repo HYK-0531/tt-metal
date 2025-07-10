@@ -76,10 +76,24 @@ public:
     uint32_t get_global_sync_region_size() { return sender_memory_map_.get_global_sync_region_size(); }
     uint32_t get_local_sync_address() { return sender_memory_map_.get_local_sync_address(); }
     uint32_t get_local_sync_region_size() { return sender_memory_map_.get_local_sync_region_size(); }
+    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>
+    get_outgoing_traffic_through_device_boundary();
 
 private:
     void add_traffic_config(const TestTrafficConfig& traffic_config);
     void initialize_memory_maps();
+    void trace_traffic_path(
+        const FabricNodeId& src_node_id,
+        const TestTrafficSenderConfig& config,
+        std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic);
+    void trace_ring_traffic_path(
+        const FabricNodeId& src_node_id,
+        const TestTrafficSenderConfig& config,
+        std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic);
+    void trace_regular_traffic_path(
+        const FabricNodeId& src_node_id,
+        const TestTrafficSenderConfig& config,
+        std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic);
 
     // Track sync cores for each device
     std::unordered_map<FabricNodeId, CoreCoord> device_global_sync_cores_;
@@ -284,6 +298,133 @@ void TestContext::validate_results() {
 }
 
 void TestContext::close_devices() { fixture_->close_devices(); }
+
+std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>
+TestContext::get_outgoing_traffic_through_device_boundary() {
+    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>> outgoing_traffic;
+
+    // Initialize outgoing traffic counts for all devices
+    for (const auto& node_id : fixture_->get_all_node_ids()) {
+        outgoing_traffic[node_id] = {};
+    }
+
+    log_info(tt::LogTest, "Calculating outgoing traffic through device boundaries");
+
+    // Process each test device and its sender configurations
+    for (const auto& [device_coord, test_device] : test_devices_) {
+        const auto& src_node_id = test_device.get_node_id();
+
+        // Process regular senders only (ignore sync senders)
+        for (const auto& [core_coord, sender] : test_device.get_senders()) {
+            for (const auto& [config, fabric_conn_idx] : sender.get_configs()) {
+                trace_traffic_path(src_node_id, config, outgoing_traffic);
+            }
+        }
+    }
+
+    // Log the results for debugging (sorted for readability)
+    std::vector<FabricNodeId> sorted_devices;
+    for (const auto& [node_id, device_traffic] : outgoing_traffic) {
+        if (!device_traffic.empty()) {
+            sorted_devices.push_back(node_id);
+        }
+    }
+    std::sort(sorted_devices.begin(), sorted_devices.end(), [](const FabricNodeId& a, const FabricNodeId& b) {
+        return a.chip_id < b.chip_id;
+    });
+
+    for (const auto& node_id : sorted_devices) {
+        const auto& device_traffic = outgoing_traffic[node_id];
+
+        // Sort directions for consistent output
+        std::vector<std::pair<RoutingDirection, uint32_t>> sorted_directions;
+        for (const auto& [direction, count] : device_traffic) {
+            if (count > 0) {
+                sorted_directions.emplace_back(direction, count);
+            }
+        }
+        std::sort(sorted_directions.begin(), sorted_directions.end(), [](const auto& a, const auto& b) {
+            return static_cast<int>(a.first) < static_cast<int>(b.first);
+        });
+
+        for (const auto& [direction, count] : sorted_directions) {
+            log_info(tt::LogTest, "Device {} Direction {} Traffic Count: {}", node_id.chip_id, direction, count);
+        }
+    }
+
+    return outgoing_traffic;
+}
+
+void TestContext::trace_traffic_path(
+    const FabricNodeId& src_node_id,
+    const TestTrafficSenderConfig& config,
+    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic) {
+    const auto& hops = config.hops;
+
+    // Use proper topology detection from fixture
+    if (fixture_->get_topology() == Topology::Ring) {
+        // Ring topology - use ring traversal logic with boundary turning
+        trace_ring_traffic_path(src_node_id, config, outgoing_traffic);
+    } else {
+        // Regular hop-based tracing for linear/mesh topologies
+        trace_regular_traffic_path(src_node_id, config, outgoing_traffic);
+    }
+}
+
+void TestContext::trace_ring_traffic_path(
+    const FabricNodeId& src_node_id,
+    const TestTrafficSenderConfig& config,
+    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic) {
+    const auto& hops = config.hops;
+
+    // Find the initial direction and total hops for ring traversal
+    for (const auto& [initial_direction, hop_count] : hops) {
+        if (hop_count == 0) {
+            continue;
+        }
+
+        // Use the shared ring traversal helper from fixture
+        auto ring_path = fixture_->trace_wrap_around_mesh_ring_path(src_node_id, initial_direction, hop_count);
+
+        log_info(tt::LogTest, "src_node_id {} ring_path {}", src_node_id, ring_path);
+
+        // Count traffic at each device boundary
+        // ring_path contains (destination_node, direction_to_reach_it)
+        // We need to record traffic from the SOURCE node that sent in that direction
+        FabricNodeId source_node = src_node_id;
+        for (const auto& [destination_node, direction] : ring_path) {
+            outgoing_traffic[source_node][direction]++;
+            source_node = destination_node;  // Move to next source for the next hop
+        }
+    }
+}
+
+void TestContext::trace_regular_traffic_path(
+    const FabricNodeId& src_node_id,
+    const TestTrafficSenderConfig& config,
+    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic) {
+    const auto& hops = config.hops;
+
+    // Regular hop-based tracing for linear/mesh topologies
+    // Trace the path based on hops in each direction
+    for (const auto& [direction, hop_count] : hops) {
+        if (hop_count == 0) {
+            continue;
+        }
+
+        // Trace the path in this direction for the specified number of hops
+        FabricNodeId current_node = src_node_id;
+
+        for (uint32_t hop = 0; hop < hop_count; hop++) {
+            // Increment traffic count for current device boundary
+            outgoing_traffic[current_node][direction]++;
+
+            // Move to next node in this direction
+            FabricNodeId next_node = fixture_->get_neighbor_node_id(current_node, direction);
+            current_node = next_node;
+        }
+    }
+}
 
 void TestContext::process_traffic_config(TestConfig& config) {
     this->allocator_->allocate_resources(config);
@@ -516,6 +657,8 @@ int main(int argc, char** argv) {
 
             log_info(tt::LogTest, "Launching programs");
             test_context.launch_programs();
+
+            test_context.get_outgoing_traffic_through_device_boundary();
 
             test_context.wait_for_prorgams();
             log_info(tt::LogTest, "Test {} Finished.", built_test.name);

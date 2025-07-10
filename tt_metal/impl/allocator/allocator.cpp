@@ -164,7 +164,6 @@ void Allocator::deallocate_buffers() {
 }
 
 const std::unordered_set<Buffer*>& Allocator::get_allocated_buffers() const {
-    std::lock_guard<std::mutex> lock(mutex_);
     return allocated_buffers_;
 }
 
@@ -240,12 +239,10 @@ const std::vector<uint32_t>& Allocator::get_bank_ids_from_logical_core(
 }
 
 const AllocatorConfig& Allocator::get_config() const {
-    std::lock_guard<std::mutex> lock(mutex_);
     return config_;
 }
 
 uint32_t Allocator::get_alignment(BufferType buffer_type) const {
-    std::lock_guard<std::mutex> lock(mutex_);
     switch (buffer_type) {
         case BufferType::DRAM:
         case BufferType::TRACE: return config_.dram_alignment;
@@ -258,7 +255,6 @@ uint32_t Allocator::get_alignment(BufferType buffer_type) const {
 }
 
 DeviceAddr Allocator::get_base_allocator_addr(const HalMemType& mem_type) const {
-    std::lock_guard<std::mutex> lock(mutex_);
     switch (mem_type) {
         case HalMemType::DRAM: return config_.dram_unreserved_base;
         case HalMemType::L1: return config_.l1_unreserved_base;
@@ -369,7 +365,6 @@ void AllocatorConfig::reset() {
 }
 
 Allocator::~Allocator() {
-    std::lock_guard<std::mutex> lock(mutex_);
     bank_id_to_dram_channel_.clear();
     dram_channel_to_bank_ids_.clear();
     bank_id_to_logical_core_.clear();
@@ -382,7 +377,6 @@ Allocator::~Allocator() {
     l1_small_manager_->clear();
     trace_buffer_manager_->clear();
     allocated_buffers_.clear();
-    config_.reset();
 }
 
 }  // namespace tt_metal

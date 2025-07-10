@@ -79,6 +79,7 @@ SubDeviceManager::~SubDeviceManager() {
         if (allocator) {
             // Clear the bank managers, this makes subsequent buffer deallocations fast
             allocator->clear();
+            auto lock = allocator->lock();
             // Deallocate all buffers
             // This is done to set buffer object status to Deallocated
             const auto& allocated_buffers = allocator->get_allocated_buffers();

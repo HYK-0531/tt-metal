@@ -38,6 +38,8 @@ public:
     void deallocate_buffer(Buffer* buffer);
     void deallocate_buffers();
 
+    std::unique_lock<std::mutex> lock() { return std::unique_lock<std::mutex>(mutex_); }
+    // lock must be held while using the returned reference
     const std::unordered_set<Buffer*>& get_allocated_buffers() const;
 
     uint32_t get_num_banks(const BufferType& buffer_type) const;
@@ -84,7 +86,7 @@ protected:
 private:
     void verify_safe_allocation() const;
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
 
     // Set to true if allocating a buffer is unsafe. This happens when a live trace on device can corrupt
     // memory allocated by the user (memory used by trace is not tracked in the allocator once the trace is captured).
@@ -100,7 +102,7 @@ private:
     std::unordered_map<BufferType, std::unordered_map<CoreCoord, std::vector<uint32_t>>> logical_core_to_bank_ids_;
     std::unordered_set<Buffer*> allocated_buffers_;
 
-    AllocatorConfig config_;
+    const AllocatorConfig config_;
 };
 
 }  // namespace tt_metal

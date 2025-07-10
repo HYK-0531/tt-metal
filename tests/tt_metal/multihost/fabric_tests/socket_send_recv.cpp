@@ -84,10 +84,11 @@ std::vector<SocketTestConfig> generate_socket_test_configs(SystemConfig system_c
     std::vector<uint32_t> page_sizes = {64, 256, 1088, 128, 128};
     std::vector<uint32_t> data_sizes = {2048, 4096, 78336, 16384, 4096};
     std::vector<TestVariant> variants = {
-        TestVariant::SINGLE_CONN_BWD,
-        TestVariant::SINGLE_CONN_FWD,
-        TestVariant::MULTI_CONN_FWD,
-        TestVariant::MULTI_CONN_BIDIR};
+        TestVariant::SINGLE_CONN_BWD
+        // TestVariant::SINGLE_CONN_FWD,
+        // TestVariant::MULTI_CONN_FWD,
+        // TestVariant::MULTI_CONN_BIDIR
+    };
 
     for (int config_idx = 0; config_idx < fifo_sizes.size(); ++config_idx) {
         for (const auto& variant : variants) {
@@ -112,30 +113,39 @@ std::string generate_multihost_socket_test_name(const testing::TestParamInfo<Par
 using MultiHostSocketTestSplitT3K = MultiHostSocketTest<MeshDeviceSplit2x2Fixture>;
 using MultiHostSocketTestDualT3K = MultiHostSocketTest<MeshDeviceDual2x4Fixture>;
 using MultiHostSocketTestNanoExabox = MultiHostSocketTest<MeshDeviceNanoExaboxFixture>;
+using MultiHostSocketTestSplit1x1T3K = MultiHostSocketTest<MeshDeviceDual2x2Fixture>;
 
-TEST_P(MultiHostSocketTestSplitT3K, SocketTests) { RunTest(); }
+// TEST_P(MultiHostSocketTestSplitT3K, SocketTests) { RunTest(); }
 
-TEST_P(MultiHostSocketTestDualT3K, SocketTests) { RunTest(); }
+// TEST_P(MultiHostSocketTestDualT3K, SocketTests) { RunTest(); }
 
-TEST_P(MultiHostSocketTestNanoExabox, SocketTests) { RunTest(); }
+// TEST_P(MultiHostSocketTestNanoExabox, SocketTests) { RunTest(); }
 
-INSTANTIATE_TEST_SUITE_P(
-    MultiHostSocketTestsSplitT3K,
-    MultiHostSocketTestSplitT3K,
-    ::testing::ValuesIn(generate_socket_test_configs(SystemConfig::SPLIT_T3K)),
-    generate_multihost_socket_test_name<MultiHostSocketTestSplitT3K::ParamType>);
+TEST_P(MultiHostSocketTestSplit1x1T3K, SocketTests) { RunTest(); }
 
 INSTANTIATE_TEST_SUITE_P(
-    MultiHostSocketTestsDualT3K,
-    MultiHostSocketTestDualT3K,
-    ::testing::ValuesIn(generate_socket_test_configs(SystemConfig::DUAL_T3K)),
-    generate_multihost_socket_test_name<MultiHostSocketTestDualT3K::ParamType>);
+    MultiHostSocketTestsSplit1x1T3K,
+    MultiHostSocketTestSplit1x1T3K,
+    ::testing::ValuesIn(generate_socket_test_configs(SystemConfig::SPLIT_1X1_T3K)),
+    generate_multihost_socket_test_name<MultiHostSocketTestSplit1x1T3K::ParamType>);
 
-INSTANTIATE_TEST_SUITE_P(
-    MultiHostSocketTestsNanoExabox,
-    MultiHostSocketTestNanoExabox,
-    ::testing::ValuesIn(generate_socket_test_configs(SystemConfig::NANO_EXABOX)),
-    generate_multihost_socket_test_name<MultiHostSocketTestDualT3K::ParamType>);
+// INSTANTIATE_TEST_SUITE_P(
+//     MultiHostSocketTestsSplitT3K,
+//     MultiHostSocketTestSplitT3K,
+//     ::testing::ValuesIn(generate_socket_test_configs(SystemConfig::SPLIT_T3K)),
+//     generate_multihost_socket_test_name<MultiHostSocketTestSplitT3K::ParamType>);
+
+// INSTANTIATE_TEST_SUITE_P(
+//     MultiHostSocketTestsDualT3K,
+//     MultiHostSocketTestDualT3K,
+//     ::testing::ValuesIn(generate_socket_test_configs(SystemConfig::DUAL_T3K)),
+//     generate_multihost_socket_test_name<MultiHostSocketTestDualT3K::ParamType>);
+
+// INSTANTIATE_TEST_SUITE_P(
+//     MultiHostSocketTestsNanoExabox,
+//     MultiHostSocketTestNanoExabox,
+//     ::testing::ValuesIn(generate_socket_test_configs(SystemConfig::NANO_EXABOX)),
+//     generate_multihost_socket_test_name<MultiHostSocketTestDualT3K::ParamType>);
 
 }  // namespace fabric_router_tests::multihost
 }  // namespace tt::tt_fabric

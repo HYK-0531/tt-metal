@@ -28,6 +28,7 @@ std::string get_system_config_name(SystemConfig system_config) {
         case SystemConfig::SPLIT_T3K: return "SplitT3K";
         case SystemConfig::DUAL_T3K: return "DualT3K";
         case SystemConfig::NANO_EXABOX: return "NanoExabox";
+        case SystemConfig::SPLIT_1X1_T3K: return "Split1x1T3K";
         default: return "Unknown";
     }
 }
@@ -149,8 +150,10 @@ void test_socket_send_recv(
                     MeshCoordinateRange(connection.sender_core.device_coord));
             }
             // Run workload performing Data Movement over the socket
+            std::cout << "Running sender workload on rank: " << *distributed_context->rank() << std::endl;
             EnqueueMeshWorkload(mesh_device_->mesh_command_queue(), sender_mesh_workload, false);
             Finish(mesh_device_->mesh_command_queue());
+            std::cout << "Done running sender workload on rank:: " << *distributed_context->rank() << std::endl;
         } else {
             auto recv_virtual_coord = mesh_device_->worker_core_from_logical_core(recv_core);
             auto recv_data_shard_params =
@@ -211,6 +214,7 @@ void test_socket_send_recv(
                     MeshCoordinateRange(connection.receiver_core.device_coord));
             }
             // Run receiver workload using the created socket
+            std::cout << "Running receiver workload on rank: " << *distributed_context->rank() << std::endl;
             EnqueueMeshWorkload(mesh_device_->mesh_command_queue(), recv_mesh_workload, false);
             for (const auto& connection : socket.get_config().socket_connection_config) {
                 std::vector<uint32_t> recv_data_readback;
@@ -221,6 +225,7 @@ void test_socket_send_recv(
                     connection.receiver_core.device_coord);
                 EXPECT_EQ(src_vec, recv_data_readback);
             }
+            std::cout << "Done running receiver workload on rank: " << *distributed_context->rank() << std::endl;
         }
         // Increment the source vector for the next iteration
         // This is to ensure that the data is different for each transaction
@@ -239,6 +244,9 @@ std::vector<uint32_t> get_neighbor_host_ranks(SystemConfig system_config) {
     } else if (system_config == SystemConfig::SPLIT_T3K || system_config == SystemConfig::DUAL_T3K) {
         // Only a single recv node is needed for the dual host configurations.
         recv_ranks = {0};
+    } else if (system_config == SystemConfig::SPLIT_1X1_T3K) {
+        std::cout << "Using Split 1x1 T3K configuration for multi-mesh single connection test." << std::endl;
+        recv_ranks = {1, 2};
     } else {
         TT_THROW("Unsupported system configuration for multi-mesh single connection test.");
     }
@@ -269,36 +277,32 @@ void test_multi_mesh_single_conn_bwd(
         .fifo_size = socket_fifo_size,
     };
 
-    constexpr uint32_t sender_rank = 1;
+    constexpr uint32_t sender_rank = 0;
     constexpr uint32_t num_iterations = 50;
 
     if (*distributed_context->rank() == sender_rank) {
         std::unordered_map<uint32_t, MeshSocket> sockets;
         std::vector<uint32_t> recv_node_ranks = get_neighbor_host_ranks(system_config);
-
-        for (const auto& recv_rank : recv_node_ranks) {
-            SocketConfig socket_config = {
-                .socket_connection_config = {socket_connection},
-                .socket_mem_config = socket_mem_config,
-                .sender_rank = distributed_context->rank(),
-                .receiver_rank = tt::tt_metal::distributed::multihost::Rank{recv_rank}};
-            sockets.emplace(recv_rank, MeshSocket(mesh_device, socket_config));
-        }
-
         for (int i = 0; i < num_iterations; i++) {
-            for (auto& [recv_node, socket] : sockets) {
+            for (const auto& recv_rank : recv_node_ranks) {
+                SocketConfig socket_config = {
+                    .socket_connection_config = {socket_connection},
+                    .socket_mem_config = socket_mem_config,
+                    .sender_rank = distributed_context->rank(),
+                    .receiver_rank = tt::tt_metal::distributed::multihost::Rank{recv_rank}};
+                auto socket = MeshSocket(mesh_device, socket_config);
                 test_socket_send_recv(mesh_device, socket, data_size, socket_page_size);
             }
         }
 
     } else {
-        SocketConfig socket_config = {
-            .socket_connection_config = {socket_connection},
-            .socket_mem_config = socket_mem_config,
-            .sender_rank = tt::tt_metal::distributed::multihost::Rank{sender_rank},
-            .receiver_rank = distributed_context->rank()};
-        auto socket = MeshSocket(mesh_device, socket_config);
         for (int i = 0; i < num_iterations; i++) {
+            SocketConfig socket_config = {
+                .socket_connection_config = {socket_connection},
+                .socket_mem_config = socket_mem_config,
+                .sender_rank = tt::tt_metal::distributed::multihost::Rank{sender_rank},
+                .receiver_rank = distributed_context->rank()};
+            auto socket = MeshSocket(mesh_device, socket_config);
             test_socket_send_recv(mesh_device, socket, data_size, socket_page_size);
         }
     }

@@ -133,6 +133,7 @@ protected:
         if (config_.fabric_config != FabricConfig::DISABLED) {
             tt::tt_metal::detail::SetFabricConfig(config_.fabric_config);
         }
+
         mesh_device_ = MeshDevice::create(
             MeshDeviceConfig(get_mesh_shape(*mesh_device_type)),
             0,

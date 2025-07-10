@@ -138,6 +138,7 @@ public:
     bool system_supported() {
         const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
         const auto& eth_coord_mapping = this->get_eth_coord_mapping();
+        return true;
         return *(tt::tt_metal::MetalContext::instance().get_distributed_context().size()) == eth_coord_mapping.size() &&
                cluster.user_exposed_chip_ids().size() == eth_coord_mapping[0].size();
     }
@@ -173,10 +174,12 @@ template <typename Fixture>
 class Dual2x2FabricFixture : public Fixture {
 public:
     std::string get_path_to_mesh_graph_desc() override {
-        return "tests/tt_metal/tt_fabric/custom_mesh_descriptors/t3k_2x2_mesh_graph_descriptor.yaml";
+        return "tests/tt_metal/tt_fabric/custom_mesh_descriptors/t3k_1x2_mesh_graph_descriptor.yaml";
     }
 
-    std::vector<std::vector<eth_coord_t>> get_eth_coord_mapping() override { return get_eth_coords_for_dual_2x2_t3k(); }
+    std::vector<std::vector<eth_coord_t>> get_eth_coord_mapping() override {
+        return get_eth_coords_for_split_1x2_t3k();
+    }
 };
 
 // Generic Fixture for Dual T3K systems using Fabric

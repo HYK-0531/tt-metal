@@ -68,6 +68,7 @@ class TtLlamaCrossAttentionTransformerText(LightweightModule):
         self.norm = DistributedNorm(
             RMSNorm(
                 device=mesh_device,
+                tt_ccl=self.tt_ccl,
                 dim=configuration.dim,
                 state_dict=state_dict,
                 state_dict_prefix=configuration.get_state_dict_prefix("", None),

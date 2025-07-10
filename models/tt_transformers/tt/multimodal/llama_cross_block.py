@@ -54,6 +54,7 @@ class TtLlamaCrossAttentionTransformerBlock(LightweightModule):
         self.attention_norm = DistributedNorm(
             RMSNorm(
                 device=mesh_device,
+                tt_ccl=self.tt_ccl,
                 dim=self.hidden_size,
                 state_dict=state_dict,
                 state_dict_prefix=state_dict_prefix,
@@ -89,6 +90,7 @@ class TtLlamaCrossAttentionTransformerBlock(LightweightModule):
         self.ffn_norm = DistributedNorm(
             RMSNorm(
                 device=mesh_device,
+                tt_ccl=self.tt_ccl,
                 dim=self.hidden_size,
                 state_dict=state_dict,
                 state_dict_prefix=state_dict_prefix,

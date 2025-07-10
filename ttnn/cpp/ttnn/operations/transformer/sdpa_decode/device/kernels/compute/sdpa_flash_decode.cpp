@@ -149,7 +149,6 @@ void MAIN {
         tilize_uninit(cb_q_rm, cb_q_in);
         cb_push_back(cb_q_in, q_chunk_tiles);
         cb_pop_front(cb_q_rm, q_chunk_tiles);
-
         mm_init_short(cb_q_in, cb_k_in);
     } else {
         mm_init(cb_q_in, cb_k_in, cb_qk_im);
@@ -344,8 +343,11 @@ void MAIN {
 
                 if (k_chunk < k_chunk_end - 1 || do_reduce) {
                     // Set cb_prev_sum and cb_prev_max
+                    cb_wait_front(cb_cur_max, Sq_chunk_t);
+                    cb_wait_front(cb_cur_sum, Sq_chunk_t);
                     std::swap(cb_cur_max, cb_prev_max);
                     std::swap(cb_cur_sum, cb_prev_sum);
+
                 } else {
                     // Write o, m, l into cb_out
                     reconfig_data_format_srca(cb_out_accumulate_im);

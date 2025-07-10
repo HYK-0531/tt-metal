@@ -68,10 +68,11 @@ void DumpDeviceProfileResults(
  *
  * Return value: void
  *
- * | Argument      | Description                                       | Type | Valid Range               | Required |
- * |---------------|---------------------------------------------------|--------------------------------------------------------------|---------------------------|----------|
- * | device        | The device holding the program being profiled.    | Device * |                           | True |
- * | satate        | Dumpprofiler various states                       | ProfilerDumpState |                  | False |
+ * | Argument      | Description                                       | Type              | Valid Range      | Required
+ * |
+ * |---------------|---------------------------------------------------|-------------------|------------------|----------|
+ * | device_id     | The device id holding the program being profiled. | chip_id_t         |                  | True |
+ * | trace_id      | Id of the trace replaying                         | uint32_t          |                  | True |
  * */
 void ShareTraceIDwithProfiler(chip_id_t device_id, uint32_t trace_id);
 

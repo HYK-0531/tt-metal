@@ -198,7 +198,6 @@ void JitBuildEnv::init(
             pofiler_options |= PROFILER_OPT_DO_TRACE_ONLY;
         }
         this->defines_ += "-DPROFILE_KERNEL=" + std::to_string(pofiler_options) + " ";
-        std::cout << "-DPROFILE_KERNEL=" + std::to_string(pofiler_options) + " " << std::endl;
     }
     if (rtoptions.get_profiler_noc_events_enabled()) {
         // force profiler on if noc events are being profiled

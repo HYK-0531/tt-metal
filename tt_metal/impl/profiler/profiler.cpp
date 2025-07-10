@@ -481,12 +481,15 @@ void DeviceProfiler::readRiscProfilerResults(
     ZoneScoped;
 
     const std::vector<uint32_t>& control_buffer = core_control_buffers.at(worker_core);
+    const auto& rtoptions = tt::tt_metal::MetalContext::instance().rtoptions();
 
-    // if ((control_buffer[kernel_profiler::HOST_BUFFER_END_INDEX_BR_ER] == 0) &&
-    //(control_buffer[kernel_profiler::HOST_BUFFER_END_INDEX_NC] == 0)) {
-    // ZoneScopedN("EARLY_RETURN");
-    // return;
-    //}
+    if (!rtoptions.get_profiler_trace_profiler()) {
+        if ((control_buffer[kernel_profiler::HOST_BUFFER_END_INDEX_BR_ER] == 0) &&
+            (control_buffer[kernel_profiler::HOST_BUFFER_END_INDEX_NC] == 0)) {
+            ZoneScopedN("EARLY_RETURN_NO_DATA_ON_DRAM");
+            return;
+        }
+    }
 
     chip_id_t device_id = device->id();
 
@@ -518,12 +521,17 @@ void DeviceProfiler::readRiscProfilerResults(
             bufferEndIndex = control_buffer[riscEndIndex + kernel_profiler::DEVICE_BUFFER_END_INDEX_BR_ER];
         }
         uint32_t riscType;
-        if (CoreType == HalProgrammableCoreType::TENSIX) {
-            riscType = riscEndIndex;
+
+        if (rtoptions.get_profiler_trace_profiler()) {
+            riscType = 6;
         } else {
-            riscType = 5;
+            if (CoreType == HalProgrammableCoreType::TENSIX) {
+                riscType = riscEndIndex;
+            } else {
+                riscType = 5;
+            }
         }
-        riscType = 6;
+
         if (bufferEndIndex > 0) {
             uint32_t bufferRiscShift = riscEndIndex * PROFILER_FULL_HOST_VECTOR_SIZE_PER_RISC + startIndex;
             if (data_source == ProfilerDataBufferSource::L1) {
@@ -1371,10 +1379,13 @@ void DeviceProfiler::populateZoneSrcLocations(
         std::getline(ss, source_file, ',');
         std::getline(ss, line_num_str, ',');
 
-        if (zone_name.find("FW") != std::string::npos) {
-            zone_name = "TRACE-FW";
-        } else if (zone_name.find("KERNEL") != std::string::npos) {
-            zone_name = "TRACE-KERNEL";
+        const auto& rtoptions = tt::tt_metal::MetalContext::instance().rtoptions();
+        if (rtoptions.get_profiler_trace_profiler()) {
+            if (zone_name.find("FW") != std::string::npos) {
+                zone_name = "TRACE-FW";
+            } else if (zone_name.find("KERNEL") != std::string::npos) {
+                zone_name = "TRACE-KERNEL";
+            }
         }
 
         ZoneDetails details(zone_name, source_file, std::stoull(line_num_str));

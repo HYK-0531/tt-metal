@@ -34,6 +34,12 @@ class TT_CCL:
             }
         )
 
+        # EXTRACTING SHAPES
+        self.ag_output_pb_keys = set()
+        self.rs_intermediate_pb_keys = set()
+        self.rs_output_pb_keys = set()
+        # EXTRACTING SHAPES
+
         self.ag_semaphores_idx = 0
         self.ag_semaphore_handles = [[], []]
 
@@ -77,7 +83,13 @@ class TT_CCL:
         ring_size = list(self.mesh_device.shape)[cluster_axis]
         output_shape = list(input_shape)
         output_shape[dim] *= ring_size
-        return self.PBKey(shape=tuple(output_shape), dtype=dtype, memory_config=memory_config)
+        pb_key = self.PBKey(shape=tuple(output_shape), dtype=dtype, memory_config=memory_config)
+
+        # EXTRACTING SHAPES
+        self.ag_output_pb_keys.add(pb_key)
+        # EXTRACTING SHAPES
+
+        return pb_key
 
     def create_ag_persistent_output_buffers(self):
         # output buffer must match the config expected in the model
@@ -102,7 +114,13 @@ class TT_CCL:
         intermediate_shape = list(input_shape)
         num_batches = intermediate_shape[0]
         intermediate_shape[2] //= num_batches
-        return self.PBKey(shape=tuple(intermediate_shape), dtype=dtype, memory_config=memory_config)
+        pb_key = self.PBKey(shape=tuple(intermediate_shape), dtype=dtype, memory_config=memory_config)
+
+        # EXTRACTING SHAPES
+        self.rs_intermediate_pb_keys.add(pb_key)
+        # EXTRACTING SHAPES
+
+        return pb_key
 
     # Buffers for QwQ
     def create_rs_persistent_intermediate_buffers(self):
@@ -163,7 +181,13 @@ class TT_CCL:
         ring_size = list(self.mesh_device.shape)[cluster_axis]
         rs_output_shape = list(input_shape)
         rs_output_shape[dim] //= ring_size
-        return self.PBKey(shape=tuple(rs_output_shape), dtype=dtype, memory_config=memory_config)
+        pb_key = self.PBKey(shape=tuple(rs_output_shape), dtype=dtype, memory_config=memory_config)
+
+        # EXTRACTING SHAPES
+        self.rs_output_pb_keys.add(pb_key)
+        # EXTRACTING SHAPES
+
+        return pb_key
 
     def create_rs_persistent_output_buffers(self):
         # output buffer must match the config expected in the model
@@ -192,6 +216,21 @@ class TT_CCL:
         )
 
     def close(self):
+        print("----------------")
+        print("AG OUTPUT SHAPES")
+        for e in self.ag_output_pb_keys:
+            print(e)
+
+        print("----------------")
+        print("RS INTERMEDIATE SHAPES")
+        for e in self.rs_intermediate_pb_keys:
+            print(e)
+
+        print("----------------")
+        print("RS OUTPUT SHAPES")
+        for e in self.rs_output_pb_keys:
+            print(e)
+
         self.mesh_device.reset_sub_device_stall_group()
 
 

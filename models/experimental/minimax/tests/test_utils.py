@@ -23,7 +23,7 @@ def get_minimax_tokenizer_and_config_and_state_dict():
         model = AutoModelForCausalLM.from_pretrained(
             "MiniMaxAI/MiniMax-M1-80k",
             torch_dtype=torch.bfloat16,
-            device_map=None,  # automatically shards experts across GPUst
+            device_map="auto",  # automatically shards experts across GPUs
             offload_folder="offload",  # optional: offload to CPU/NVMe if you run out of GPU RAM
             offload_state_dict=True,
             trust_remote_code=True,

@@ -423,6 +423,9 @@ FabricEriscDatamoverConfig::FabricEriscDatamoverConfig(
     FabricEriscDatamoverConfig(topology) {
     this->sender_txq_id = 0;
     this->receiver_txq_id = 0;
+    if (tt::tt_metal::MetalContext::instance().hal().get_arch() == tt::ARCH::BLACKHOLE) {
+        this->receiver_txq_id = 1;
+    }
     this->channel_buffer_size_bytes = channel_buffer_size_bytes;
     this->num_used_sender_channels = get_sender_channel_count(topology);
     this->num_used_receiver_channels = FabricEriscDatamoverConfig::num_receiver_channels;

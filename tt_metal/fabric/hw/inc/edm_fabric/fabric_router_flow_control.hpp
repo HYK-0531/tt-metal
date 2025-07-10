@@ -13,11 +13,13 @@ struct ReceiverChannelCounterBasedResponseCreditSender {
     ReceiverChannelCounterBasedResponseCreditSender(size_t receiver_channel_index) :
         completion_counter_ptr(
             reinterpret_cast<volatile uint32_t*>(local_receiver_completion_counter_ptrs[receiver_channel_index])),
-        ack_counter_ptr(reinterpret_cast<volatile uint32_t*>(local_receiver_ack_counter_ptrs[receiver_channel_index])) {
-    }
+        ack_counter_ptr(reinterpret_cast<volatile uint32_t*>(local_receiver_ack_counter_ptrs[receiver_channel_index])),
+        completion_counter(0),
+        ack_counter(0) {}
 
     FORCE_INLINE void send_completion_credit(uint8_t src_id) {
-        *completion_counter_ptr++;
+        completion_counter++;
+        *completion_counter_ptr = completion_counter;
         internal_::eth_send_packet_bytes_unsafe(
             receiver_txq_id,
             reinterpret_cast<uint32_t>(this->completion_counter_ptr),
@@ -27,7 +29,8 @@ struct ReceiverChannelCounterBasedResponseCreditSender {
 
     // Assumes !eth_txq_is_busy() -- PLEASE CHECK BEFORE CALLING
     FORCE_INLINE void send_ack_credit(uint8_t src_id) {
-        *ack_counter_ptr++;
+        ack_counter++;
+        *ack_counter_ptr = ack_counter;
         internal_::eth_send_packet_bytes_unsafe(
             receiver_txq_id,
             reinterpret_cast<uint32_t>(this->ack_counter_ptr),
@@ -35,8 +38,11 @@ struct ReceiverChannelCounterBasedResponseCreditSender {
             ETH_WORD_SIZE_BYTES);
     }
 
-    volatile uint32_t* completion_counter_ptr;
-    volatile uint32_t* ack_counter_ptr;
+    volatile tt_l1_ptr uint32_t* completion_counter_ptr;
+    volatile tt_l1_ptr uint32_t* ack_counter_ptr;
+    // Local memory copy to save an L1 load
+    uint32_t completion_counter;
+    uint32_t ack_counter;
 };
 
 struct ReceiverChannelStreamRegisterFreeSlotsBasedCreditSender {

@@ -1098,7 +1098,9 @@ void run_receiver_channel_step_impl(
         if (unsent_completions) {
             // completion ptr incremented in callee
             auto receiver_buffer_index = wr_flush_counter.get_buffer_index();
-            receiver_send_completion_ack(receiver_channel_response_credit_sender, receiver_buffer_index);
+            receiver_send_completion_ack(
+                receiver_channel_response_credit_sender,
+                receiver_channel_pointers.get_src_chan_id(receiver_buffer_index));
             completion_counter.increment();
         }
     } else {
@@ -1114,7 +1116,9 @@ void run_receiver_channel_step_impl(
             can_send_completion = can_send_completion && !internal_::eth_txq_is_busy(DEFAULT_ETH_TXQ);
         }
         if (can_send_completion) {
-            receiver_send_completion_ack(receiver_channel_response_credit_sender, receiver_buffer_index);
+            receiver_send_completion_ack(
+                receiver_channel_response_credit_sender,
+                receiver_channel_pointers.get_src_chan_id(receiver_buffer_index));
             receiver_channel_trid_tracker.clear_trid_at_buffer_slot(receiver_buffer_index);
             completion_counter.increment();
         }

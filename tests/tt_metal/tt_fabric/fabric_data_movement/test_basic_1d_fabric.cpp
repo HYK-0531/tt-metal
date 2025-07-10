@@ -12,6 +12,7 @@
 #include <array>
 #include <cstddef>
 #include <map>
+#include <string>
 #include <optional>
 #include <utility>
 #include <variant>

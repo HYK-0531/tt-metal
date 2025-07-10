@@ -594,11 +594,16 @@ class TtFalconAttention:
         dim = 3
         ag_output_shape = list(attn_output.shape)
         ag_output_shape[dim] *= self.mesh_device.get_num_devices()
+        print("ag_output_shape: ", ag_output_shape)
+        print("attn_output.shape: ", attn_output.shape)
+        print("attn_output.dtype: ", attn_output.dtype)
+        print("attn_output.memory_config: ", attn_output.memory_config())
+        print("num links: ", self.model_config["ALL_GATHER_NUM_LINKS"])
         attn_output = ttnn.experimental.all_gather_async(
             attn_output,
-            persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
-                ag_output_shape, self.model_config["ATTN_ALL_GATHER_OUTPUT_MEMCFG"], attn_output.dtype, PBType.OUTPUT
-            ),
+            # persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
+            # ag_output_shape, self.model_config["ATTN_ALL_GATHER_OUTPUT_MEMCFG"], attn_output.dtype, PBType.OUTPUT
+            # ),
             dim=3,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=self.model_config["ALL_GATHER_NUM_LINKS"],

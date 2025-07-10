@@ -285,7 +285,7 @@ class TtFalconDecoderLayer:
             memory_config=self.model_config["DROPOUT_ADD_OUTPUT_MEMCFG"],
             # output_tensor=output,
         )
-        mlp_output.deallocate(True)
+        # mlp_output.deallocate(True)
 
         if use_cache:
             outputs = (output,) + outputs

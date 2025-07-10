@@ -46,7 +46,7 @@ class TT_CCL:
         self.intermediary_buffers = {}
         self.output_buffers = {}
 
-        # self.initialize_persistent_buffers()
+        self.initialize_persistent_buffers()
 
         for i in range(2):
             for _ in range(2):
@@ -196,8 +196,13 @@ class TT_CCL:
         buffer_dict = getattr(self, buffer_dict_name)
         specs_set = getattr(self, specs_set_name)
 
+        # if buffer_spec in buffer_dict: assert buffer_dict[buffer_spec].is_allocated(), (
+        #     f"Buffer {buffer_spec} already exists but is not allocated."
+        # )
+
         if buffer_spec not in buffer_dict or not buffer_dict[buffer_spec].is_allocated():
-            # print(f"adding {buffer_type.value} buffer_spec: ", buffer_spec)
+            if buffer_spec not in specs_set:
+                print(f"adding {buffer_type.value} buffer_spec: ", buffer_spec)
             buffer_dict[buffer_spec] = self.create_persistent_buffer(list(shape), mem_config, dtype, distributed)
             # Overwrite json file storing different buffer specs
             if buffer_spec not in specs_set:

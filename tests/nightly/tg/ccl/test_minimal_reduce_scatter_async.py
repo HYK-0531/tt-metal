@@ -7,7 +7,7 @@ import ttnn
 from tests.nightly.t3000.ccl.test_minimal_reduce_scatter_async import run_reduce_scatter_impl
 
 
-@pytest.mark.parametrize("num_links", [3], ids=["3links"])
+@pytest.mark.parametrize("num_links", [1, 2, 3, 4], ids=["1link", "2links", "3links", "4links"])
 @pytest.mark.parametrize(
     "num_devices, rs_input_shape, dim, layout, rs_input_dtype",
     [
@@ -47,10 +47,11 @@ from tests.nightly.t3000.ccl.test_minimal_reduce_scatter_async import run_reduce
 @pytest.mark.parametrize(
     "device_params, rs_topology",
     [
-        ({"fabric_config": ttnn.FabricConfig.FABRIC_1D, "trace_region_size": 90112}, ttnn.Topology.Linear),
+        ({"fabric_config": ttnn.FabricConfig.FABRIC_1D, "trace_region_size": 200000}, ttnn.Topology.Linear),
+        ({"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING, "trace_region_size": 200000}, ttnn.Topology.Ring),
     ],
     indirect=["device_params"],
-    ids=["fabric_linear"],
+    ids=["fabric_linear", "fabric_ring"],
 )
 @pytest.mark.parametrize("mesh_device", [(8, 4)], indirect=True)
 def test_reduce_scatter_async(
@@ -67,8 +68,8 @@ def test_reduce_scatter_async(
     num_iters,
     rs_topology,
 ):
-    submesh_device = mesh_device.create_submesh(ttnn.MeshShape((num_devices, 1)))
-    cluster_axis = 0
+    submesh_device = mesh_device.create_submesh(ttnn.MeshShape((1, num_devices)))
+    cluster_axis = 1
     run_reduce_scatter_impl(
         submesh_device,
         num_devices,

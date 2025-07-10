@@ -75,9 +75,6 @@ typedef union {
 } ETH_TXQ_CTRL_reg_u;
 
 static void eth_enable_packet_mode(uint32_t qnum) {
-    // Initializing the rx queue to enable packet mode
-    //   eth_rxq_init(qnum, (TMP_8K_BUF_ADDR + MAX_ETH_PACKET_SIZE) >> 4, MAX_ETH_PACKET_SIZE >> 4, false,  true);
-
     // enable packet resend
     ETH_TXQ_CTRL_reg_u txq_ctrl_reg;
     txq_ctrl_reg.f.packet_resend_mode_active = 1;

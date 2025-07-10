@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include "dispatch_core_common.hpp"
+#include "hostdevcommon/common_values.hpp"
 #include "tt-metalium/bfloat16.hpp"
 #include "tt-metalium/shape.hpp"
 #include <tt_stl/small_vector.hpp>
@@ -55,7 +57,12 @@ namespace ttnn {
 class DeviceGetter {
 public:
     static ttnn::MeshDevice* getInstance() {
-        static std::shared_ptr<ttnn::MeshDevice> instance = ::ttnn::MeshDevice::create_unit_mesh(0, 1 << 15);
+        static std::shared_ptr<ttnn::MeshDevice> instance = ::ttnn::MeshDevice::create_unit_mesh(
+            0,
+            1 << 15,
+            DEFAULT_TRACE_REGION_SIZE,
+            1,
+            tt::tt_metal::DispatchCoreConfig{tt::tt_metal::DispatchCoreType::ETH});
 
         return instance.get();
     }

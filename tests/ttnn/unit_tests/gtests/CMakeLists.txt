@@ -193,5 +193,10 @@ target_link_libraries(
 # unit_tests_ttnn_emitc
 
 add_executable(unit_tests_ttnn_emitc)
-target_sources(unit_tests_ttnn_emitc PRIVATE emitc/test_sanity.cpp)
+target_sources(
+    unit_tests_ttnn_emitc
+    PRIVATE
+        emitc/conv_test_repro.cpp
+        emitc/test_sanity.cpp
+)
 setup_ttnn_test_target(unit_tests_ttnn_emitc)

@@ -212,6 +212,7 @@ void kernel_main() {
 
         // Do the final reduction. Synchronize with other direction.
         if constexpr (do_final_reduction) {
+            uint32_t fwd_sync_cnt = 0;
             chunk_count = 0;
             DeviceZoneScopedN("final_reduction");
             bool accumulate_output =
@@ -225,9 +226,6 @@ void kernel_main() {
                  */
                 accumulate_output = true;
                 reduction_input_addrgen = output_tensor_addrgen;
-                // Wait for FWD writer to signal that it has done its final reduction
-                // noc_semaphore_wait_min(reinterpret_cast<volatile tt_l1_ptr uint32_t*>(fwd_bwd_sem_addr), 1);
-                // noc_semaphore_set(reinterpret_cast<volatile tt_l1_ptr uint32_t*>(fwd_bwd_sem_addr), 0);
             }
 
             /**
@@ -282,6 +280,13 @@ void kernel_main() {
 
                 cb_reserve_back(cb_in0, tile_granularity);
 
+                // Wait for FWD writer to signal that it has done its final reduction
+                if constexpr (sync_with_other_direction && !is_forward) {
+                    fwd_sync_cnt++;
+                    noc_semaphore_wait_min(
+                        reinterpret_cast<volatile tt_l1_ptr uint32_t*>(fwd_bwd_sem_addr), fwd_sync_cnt);
+                }
+
                 read_tiles<input_tensor_is_dram>(
                     cb_in0,
                     num_pages_to_read,
@@ -299,6 +304,7 @@ void kernel_main() {
                     DeviceZoneScopedN("wait_sem");
                     noc_semaphore_wait_min(reinterpret_cast<volatile tt_l1_ptr uint32_t*>(out_ready_sem), sem_target++);
                 }
+
                 chunk_count++;
                 // read the next intermediate slice out of the intermediate buffer, and put it in intermediate CB
                 cb_reserve_back(cb_intermediate_id, tile_granularity);

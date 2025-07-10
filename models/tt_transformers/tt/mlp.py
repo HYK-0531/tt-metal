@@ -149,7 +149,7 @@ class MLP(LightweightModule):
                 peristent_intermediate_buffer_key = self.tt_ccl.create_rs_persistent_intermediate_buffer_key(
                     w1_out.shape,
                     w1_out.dtype,
-                    self.model_config["FF1_OUT_REDUCE_SCATTER_MEMCFG"] if mode == "decode" else None,
+                    ttnn.L1_MEMORY_CONFIG,
                     3,
                     cluster_axis,
                 )
@@ -175,7 +175,7 @@ class MLP(LightweightModule):
                 peristent_intermediate_buffer_key = self.tt_ccl.create_rs_persistent_intermediate_buffer_key(
                     w3_out.shape,
                     w3_out.dtype,
-                    self.model_config["FF1_OUT_REDUCE_SCATTER_MEMCFG"] if mode == "decode" else None,
+                    ttnn.L1_MEMORY_CONFIG,
                     3,
                     cluster_axis,
                 )

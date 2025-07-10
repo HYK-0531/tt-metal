@@ -214,7 +214,7 @@ def tt_all_reduce(
             input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.L1_MEMORY_CONFIG)
             input_tensor_sharded.deallocate(True)
         peristent_intermediate_buffer_key = tt_ccl.create_rs_persistent_intermediate_buffer_key(
-            input_tensor.shape, input_tensor.dtype, memory_config, dim
+            input_tensor.shape, input_tensor.dtype, ttnn.L1_MEMORY_CONFIG, dim
         )
         peristent_output_buffer_key = tt_ccl.create_rs_persistent_output_buffer_key(
             input_tensor.shape, input_tensor.dtype, memory_config, dim
@@ -278,7 +278,7 @@ def tt_all_reduce(
         peristent_intermediate_buffer_key = tt_ccl.create_rs_persistent_intermediate_buffer_key(
             input_tensor.shape,
             input_tensor.dtype,
-            ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
+            ttnn.L1_MEMORY_CONFIG,
             dim,
             cluster_axis,
         )

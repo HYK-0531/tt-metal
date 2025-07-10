@@ -120,9 +120,12 @@ void forward_data(
 
 void kernel_main() {
     // clear out memory map
+
+    zero_l1_buf(reinterpret_cast<tt_l1_ptr uint32_t*>(termination_signal_address), 16);
+
     zero_l1_buf(
-        reinterpret_cast<tt_l1_ptr uint32_t*>(memory_map_start_address),
-        memory_map_end_address - memory_map_start_address);
+        reinterpret_cast<tt_l1_ptr uint32_t*>(connection_handshake_base_address),
+        (NUM_FULL_SIZE_CHANNELS + NUM_HEADER_ONLY_CHANNELS) * 16 * 3);
 
     auto status_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(status_address);
     status_ptr[0] = tt::tt_fabric::FabricMuxStatus::STARTED;

@@ -10,7 +10,7 @@
 
 namespace tt::tt_fabric {
 
-static constexpr uint8_t edm_to_local_chip_noc = 1;
+static constexpr uint8_t edm_to_local_chip_noc = 0;
 
 enum EDM_IO_BLOCKING_MODE { FLUSH_BLOCKING, BLOCKING, NON_BLOCKING };
 

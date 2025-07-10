@@ -102,6 +102,8 @@ struct NocUnicastInlineWriteCommandHeader {
     uint32_t value;
 };
 struct NocUnicastAtomicIncCommandHeader {
+    NocUnicastAtomicIncCommandHeader() = default;
+
     NocUnicastAtomicIncCommandHeader(uint64_t noc_address, uint16_t val, uint16_t wrap, bool flush = true) :
         noc_address(noc_address), wrap(wrap), val(val), flush(flush) {}
 
@@ -111,6 +113,8 @@ struct NocUnicastAtomicIncCommandHeader {
     bool flush;
 };
 struct NocUnicastAtomicIncFusedCommandHeader {
+    NocUnicastAtomicIncFusedCommandHeader() = default;
+
     NocUnicastAtomicIncFusedCommandHeader(
         uint64_t noc_address, uint64_t semaphore_noc_address, uint16_t val, uint16_t wrap, bool flush = true) :
         noc_address(noc_address), semaphore_noc_address(semaphore_noc_address), wrap(wrap), val(val), flush(flush) {}
@@ -198,8 +202,8 @@ struct PacketHeaderBase {
 
     inline Derived& to_noc_unicast_write(
         const NocUnicastCommandHeader& noc_unicast_command_header, size_t payload_size_bytes) {
-#if defined(KERNEL_BUILD) || defined(FW_BUILD)
         this->noc_send_type = NOC_UNICAST_WRITE;
+#if defined(KERNEL_BUILD) || defined(FW_BUILD)
         auto noc_address_components = get_noc_address_components(noc_unicast_command_header.noc_address);
         auto noc_addr = safe_get_noc_addr(
             noc_address_components.first.x,
@@ -208,12 +212,12 @@ struct PacketHeaderBase {
             edm_to_local_chip_noc);
         NocUnicastCommandHeader modified_command_header = noc_unicast_command_header;
         modified_command_header.noc_address = noc_addr;
-
         this->command_fields.unicast_write = modified_command_header;
-        this->payload_size_bytes = payload_size_bytes;
 #else
-        TT_THROW("Calling to_noc_unicast_write from host is unsupported");
+        this->command_fields.unicast_write = noc_unicast_command_header;
 #endif
+        this->payload_size_bytes = payload_size_bytes;
+
         return *static_cast<Derived*>(this);
     }
 

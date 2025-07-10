@@ -139,6 +139,8 @@ FORCE_INLINE
     switch (noc_send_type) {
         case tt::tt_fabric::NocSendType::NOC_UNICAST_WRITE: {
             const auto dest_address = header.command_fields.unicast_write.noc_address;
+            DPRINT << "NOC_UNICAST_WRITE dest_address: " << HEX() << dest_address << " payload start address: " << HEX()
+                   << payload_start_address << DEC() << ENDL();
             noc_async_write_one_packet_with_trid<false, false>(
                 payload_start_address,
                 dest_address,

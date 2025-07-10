@@ -49,13 +49,23 @@ public:
     void configure_ethernet_cores_for_fabric_routers(
         tt_metal::FabricConfig fabric_config, std::optional<uint8_t> num_routing_planes = std::nullopt);
 
+    EthernetContext(tt::umd::Cluster *driver, tt_ClusterDescriptor *clusterdesc) {
+        driver_ = driver;
+        clusterdesc_ = clusterdesc;
+    }
+
+    // Returns whether `logical_core` has an eth link to a core on a connected chip
+    // Cores that connect to another cluster will show up as connected
+    bool is_ethernet_link_up(chip_id_t chip_id, const CoreCoord& logical_core) const;    
 
 private:
+    tt::umd::Cluster *driver_;
+    tt_ClusterDescriptor *clusterdesc_;
     void reserve_ethernet_cores_for_fabric_routers(uint8_t num_routing_planes);
     // Releases all reserved ethernet cores for fabric routers
     void release_ethernet_cores_for_fabric_routers();
 
-    disable_ethernet_cores_with_retrain();
+    void disable_ethernet_cores_with_retrain();
     // Mapping of each devices' ethernet routing mode
     std::unordered_map<chip_id_t, std::unordered_map<CoreCoord, EthRouterMode>> device_eth_routing_info_;
 

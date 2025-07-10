@@ -135,7 +135,7 @@ private:
 
     llrt::RunTimeOptions rtoptions_;
     std::unique_ptr<Cluster> cluster_;
-    std::unique_ptr<EthernetContext> ethercontext_;
+    std::unique_ptr<tt_fabric::EthernetContext> ethercontext_;
     std::unique_ptr<Hal> hal_;
     std::unique_ptr<dispatch_core_manager> dispatch_core_manager_;
     std::unique_ptr<DispatchQueryManager> dispatch_query_manager_;

@@ -21,6 +21,10 @@
 #include <memory>
 #include <vector>
 
+EthernetContext::~EthernetContext() {
+    this->ethernet_sockets_.clear();
+}
+
 void EthernetContext::configure_ethernet_cores_for_fabric_routers(
     tt_metal::FabricConfig fabric_config, std::optional<uint8_t> num_routing_planes) {
     if (fabric_config != tt_metal::FabricConfig::DISABLED) {

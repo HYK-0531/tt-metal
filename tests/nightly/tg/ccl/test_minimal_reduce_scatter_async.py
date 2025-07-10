@@ -53,6 +53,9 @@ from tests.nightly.t3000.ccl.test_minimal_reduce_scatter_async import run_reduce
     indirect=["device_params"],
     ids=["fabric_linear", "fabric_ring"],
 )
+@pytest.mark.parametrize("chunks_per_sync", [2])
+@pytest.mark.parametrize("num_workers_per_link", [2])
+@pytest.mark.parametrize("num_buffers_per_channel", [8])
 @pytest.mark.parametrize("mesh_device", [(8, 4)], indirect=True)
 def test_reduce_scatter_async(
     mesh_device,
@@ -67,9 +70,12 @@ def test_reduce_scatter_async(
     enable_trace,
     num_iters,
     rs_topology,
+    chunks_per_sync,
+    num_workers_per_link,
+    num_buffers_per_channel,
 ):
-    submesh_device = mesh_device.create_submesh(ttnn.MeshShape((1, num_devices)))
-    cluster_axis = 1
+    submesh_device = mesh_device.create_submesh(ttnn.MeshShape((num_devices, 1)))
+    cluster_axis = 0
     run_reduce_scatter_impl(
         submesh_device,
         num_devices,
@@ -84,4 +90,8 @@ def test_reduce_scatter_async(
         enable_trace=enable_trace,
         num_iters=num_iters,
         cluster_axis=cluster_axis,
+        chunks_per_sync=chunks_per_sync,
+        num_workers_per_link=num_workers_per_link,
+        num_buffers_per_channel=num_buffers_per_channel,
     )
+    ttnn.DumpDeviceProfiler(submesh_device)

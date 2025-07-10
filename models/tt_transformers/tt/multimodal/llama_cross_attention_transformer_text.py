@@ -36,6 +36,7 @@ class TtLlamaCrossAttentionTransformerText(LightweightModule):
     def __init__(
         self,
         mesh_device,
+        tt_ccl,
         state_dict,
         state_dict_prefix,
         weight_cache_path,
@@ -48,6 +49,7 @@ class TtLlamaCrossAttentionTransformerText(LightweightModule):
         assert self.vocab_size > 0
         self.n_layers = configuration.n_layers
         self.mesh_device = mesh_device
+        self.tt_ccl = tt_ccl
         self.dtype = dtype
         self.model_config = configuration.get_model_config()
         self.grid_size = configuration.max_grid_size
@@ -148,6 +150,7 @@ class TtLlamaCrossAttentionTransformerText(LightweightModule):
                 xa_layer_id = self.fusion_schedule.index(layer_id)
                 block = TtLlamaCrossAttentionTransformerBlock(
                     mesh_device,
+                    self.tt_ccl,
                     state_dict,
                     f"{state_dict_prefix}cross_attention_layers.{xa_layer_id}.",
                     weight_cache_path,
@@ -339,7 +342,14 @@ class TtLlamaCrossAttentionTransformerText(LightweightModule):
             )
 
             if self.configuration.num_devices > 1:
-                output = ttnn.all_gather(output, dim=3, num_links=1, topology=ttnn.Topology.Linear)
+                output = ttnn.experimental.all_gather_async(
+                    output,
+                    dim=3,
+                    multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
+                    num_links=1,
+                    topology=ttnn.Topology.Linear,
+                    subdevice_id=self.tt_ccl.worker_sub_device_id,
+                )
             outputs.append(output)
 
         output = ttnn.concat(outputs, dim=-1)

@@ -11,6 +11,7 @@ from loguru import logger
 
 import ttnn
 from models.tt_transformers.tt.model_config import ModelArgs
+from models.tt_transformers.tt.multimodal.llama_ccl import TT_CCL
 from models.tt_transformers.tt.multimodal.llama_image_mlp import TtLlamaImageFeedForward
 from models.utility_functions import comp_allclose, comp_pcc, nearest_32, skip_for_grayskull
 
@@ -29,6 +30,7 @@ from models.utility_functions import comp_allclose, comp_pcc, nearest_32, skip_f
     ],
     indirect=True,
 )
+@pytest.mark.parametrize("device_params", [{"fabric_config": True}], indirect=True)
 def test_mlp_inference(batch, num_chunks, mesh_device, reset_seeds, ensure_gc):
     dtype = ttnn.bfloat16
 
@@ -57,8 +59,10 @@ def test_mlp_inference(batch, num_chunks, mesh_device, reset_seeds, ensure_gc):
     )
     reference_model.load_state_dict(partial_state_dict)
 
+    tt_ccl = TT_CCL(mesh_device)
     tt_model = TtLlamaImageFeedForward(
         mesh_device=mesh_device,
+        tt_ccl=tt_ccl,
         args=model_args,
         state_dict=state_dict,
         state_dict_prefix=first_layer_prefix,
@@ -84,6 +88,8 @@ def test_mlp_inference(batch, num_chunks, mesh_device, reset_seeds, ensure_gc):
 
     pcc_required = 0.99
     passing, pcc_message = comp_pcc(reference_output, tt_output_torch, pcc_required)
+
+    tt_ccl.close()
 
     logger.info(comp_allclose(reference_output, tt_output_torch))
     logger.info(f"PCC: {pcc_message}")

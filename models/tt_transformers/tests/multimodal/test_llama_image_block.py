@@ -11,6 +11,7 @@ from loguru import logger
 
 import ttnn
 from models.tt_transformers.tt.model_config import ModelArgs
+from models.tt_transformers.tt.multimodal.llama_ccl import TT_CCL
 from models.tt_transformers.tt.multimodal.llama_image_block import TtLlamaImageTransformerBlock
 from models.tt_transformers.tt.multimodal.llama_vision_encoder import mask_tile_padding, pad_seq_one_tile
 from models.utility_functions import comp_allclose, comp_pcc, skip_for_grayskull
@@ -34,6 +35,7 @@ from models.utility_functions import comp_allclose, comp_pcc, skip_for_grayskull
     ],
     indirect=True,
 )
+@pytest.mark.parametrize("device_params", [{"fabric_config": True}], indirect=True)
 def test_block_inference(batch, num_chunks, mesh_device, gated, reset_seeds, ensure_gc):
     dtype = ttnn.bfloat16
     pcc_required = 0.99
@@ -58,8 +60,10 @@ def test_block_inference(batch, num_chunks, mesh_device, gated, reset_seeds, ens
     )
     reference_model.load_state_dict(partial_state_dict)
 
+    tt_ccl = TT_CCL(mesh_device)
     tt_model = TtLlamaImageTransformerBlock(
         mesh_device,
+        tt_ccl,
         state_dict,
         state_dict_prefix=first_layer_prefix,
         weight_cache_path=model_args.weight_cache_path(dtype),
@@ -111,6 +115,8 @@ def test_block_inference(batch, num_chunks, mesh_device, gated, reset_seeds, ens
     reference_output = encoder_utils.contract_num_tokens_from_mult8(reference_output, npad)
 
     passing, pcc_message = comp_pcc(reference_output, tt_output_torch, pcc_required)
+
+    tt_ccl.close()
 
     logger.info(comp_allclose(reference_output, tt_output_torch))
     logger.info(f"PCC: {pcc_message}")

@@ -11,6 +11,7 @@ class TtLlamaCrossAttention(LightweightModule):
     def __init__(
         self,
         mesh_device,
+        tt_ccl,
         state_dict,
         state_dict_prefix,
         weight_cache_path,
@@ -26,6 +27,7 @@ class TtLlamaCrossAttention(LightweightModule):
 
         self.state_dict = state_dict
         self.mesh_device = mesh_device
+        self.tt_ccl = tt_ccl
         self.num_devices = configuration.num_devices
 
         self.dim = dim
@@ -283,13 +285,14 @@ class TtLlamaCrossAttention(LightweightModule):
 
         # All reduce
         if self.is_multichip:
-            output = ttnn.reduce_scatter(
+            output = ttnn.experimental.reduce_scatter_minimal_async(
                 output,
                 dim=3,
-                math_op=ttnn.ReduceType.Sum,
+                multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
                 num_links=1,
-                topology=self.configuration.ccl_topology(),
                 memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                topology=self.configuration.ccl_topology(),
+                subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
 
         return ttnn.to_memory_config(output, self.model_config["DECODE_RESIDUAL_MEMCFG"])
@@ -374,13 +377,14 @@ class TtLlamaCrossAttention(LightweightModule):
 
         # Reduce-scatter
         if self.is_multichip:  # TODO use_fused_all_gather_matmul
-            dense_out_reduced = ttnn.reduce_scatter(
+            dense_out_reduced = ttnn.experimental.reduce_scatter_minimal_async(
                 output,
                 dim=3,
-                math_op=ttnn.ReduceType.Sum,
+                multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
                 num_links=1,
-                topology=self.configuration.ccl_topology(),
                 memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                topology=self.configuration.ccl_topology(),
+                subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
             return dense_out_reduced
         else:

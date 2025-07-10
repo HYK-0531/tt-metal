@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: © 2023 Tenstorrent Inc.
+// SPDX-FileCopyrightText: © 2023 Tenstorrent AI ULC
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -20,10 +20,7 @@
 #include <functional>
 #include <iostream>
 #include <optional>
-#include <string_view>
-#include <thread>
 #include <type_traits>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -490,7 +487,7 @@ void WriteToDeviceSharded(Buffer& buffer, tt::stl::Span<const uint8_t> host_buff
     }
 }
 
-DeviceAddr CalculateAddressDeviceInterleavedContiguous(const Buffer& buffer, uint32_t bank_index, uint32_t page_index) {
+DeviceAddr CalculateAddressDeviceInterleavedContiguous(const Buffer& buffer, uint64_t bank_index, uint64_t page_index) {
     DeviceAddr addr = 0;
     if (buffer.is_dram()) {
         uint32_t num_banks = buffer.allocator()->get_num_banks(buffer.buffer_type());
@@ -505,23 +502,23 @@ DeviceAddr CalculateAddressDeviceInterleavedContiguous(const Buffer& buffer, uin
 }
 
 void WriteToDeviceInterleavedContiguous(const Buffer& buffer, tt::stl::Span<const uint8_t> host_buffer) {
-    uint32_t host_buffer_size_bytes = host_buffer.size();
+    size_t host_buffer_size_bytes = host_buffer.size();
     TT_FATAL(
         host_buffer_size_bytes <= buffer.size(),
         "Bounds-Error -- Attempting to write {} bytes to a {} byte buffer",
         host_buffer_size_bytes,
         buffer.size());
 
-    uint32_t page_size = buffer.page_size();
-    uint32_t num_pages = buffer.num_pages();
+    size_t page_size = buffer.page_size();
+    size_t num_pages = buffer.num_pages();
 
     auto device = buffer.device();
-    auto num_banks = device->allocator()->get_num_banks(buffer.buffer_type());
-    uint32_t bank_index = 0;
-    int data_index = 0;
+    size_t num_banks = device->allocator()->get_num_banks(buffer.buffer_type());
+    size_t bank_index = 0;
+    size_t data_index = 0;
     std::vector<uint32_t> page;
     page.resize(page_size / sizeof(uint32_t));
-    for (int page_index = 0; page_index < num_pages; page_index++) {
+    for (size_t page_index = 0; page_index < num_pages; page_index++) {
         const DeviceAddr address = CalculateAddressDeviceInterleavedContiguous(buffer, bank_index, page_index);
         std::memcpy(page.data(), host_buffer.data() + data_index, page_size);
         switch (buffer.buffer_type()) {
@@ -565,17 +562,17 @@ void WriteToBuffer(Buffer& buffer, tt::stl::Span<const uint8_t> host_buffer) {
 }
 
 void ReadFromDeviceInterleavedContiguous(const Buffer& buffer, uint8_t* host_buffer) {
-    uint32_t page_size = buffer.page_size();
-    uint32_t num_pages = buffer.num_pages();
+    size_t page_size = buffer.page_size();
+    size_t num_pages = buffer.num_pages();
 
     auto device = buffer.device();
-    auto num_banks = device->allocator()->get_num_banks(buffer.buffer_type());
+    size_t num_banks = device->allocator()->get_num_banks(buffer.buffer_type());
 
     size_t host_idx = 0;
-    uint32_t bank_index = 0;
+    size_t bank_index = 0;
     std::vector<uint32_t> page;
     page.resize(page_size / sizeof(uint32_t));
-    for (int page_index = 0; page_index < num_pages; page_index++) {
+    for (size_t page_index = 0; page_index < num_pages; page_index++) {
         const DeviceAddr address = CalculateAddressDeviceInterleavedContiguous(buffer, bank_index, page_index);
         page.clear();
         switch (buffer.buffer_type()) {
@@ -625,11 +622,8 @@ void read_pages_to_host_helper(
 }
 
 void ReadFromDeviceSharded(Buffer& buffer, uint8_t* host_buffer) {
-    TensorMemoryLayout buffer_layout = buffer.buffer_layout();
-
     auto device = buffer.device();
 
-    auto total_pages = buffer.num_dev_pages();
     uint32_t page_size = buffer.page_size();
 
     const auto& buffer_page_mapping = *buffer.get_buffer_page_mapping();
@@ -998,7 +992,7 @@ KernelHandle CreateDataMovementKernel(
         data_movement_config_status.riscv0_in_use && data_movement_config_status.riscv1_in_use;
     const bool are_both_noc_in_use = data_movement_config_status.noc0_in_use && data_movement_config_status.noc1_in_use;
 
-    string kernel_name;
+    std::string kernel_name;
     if (kernel_src.source_type_ == KernelSource::FILE_PATH) {
         kernel_name = kernel_src.source_;
     } else {
@@ -1037,7 +1031,6 @@ KernelHandle CreateEthernetKernel(
     const KernelSource& kernel_src,
     const CoreRangeSet& core_range_set,
     const EthernetConfig& config) {
-    KernelHandle kernel_handle;
     HalProgrammableCoreType eth_core_type =
         config.eth_mode == Eth::IDLE ? HalProgrammableCoreType::IDLE_ETH : HalProgrammableCoreType::ACTIVE_ETH;
     const DataMovementConfigStatus& data_movement_config_status =

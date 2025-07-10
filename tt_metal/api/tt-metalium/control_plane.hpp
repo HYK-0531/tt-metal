@@ -48,6 +48,7 @@ public:
     explicit ControlPlane(
         const std::string& mesh_graph_desc_yaml_file,
         const std::map<FabricNodeId, chip_id_t>& logical_mesh_chip_id_to_physical_chip_id_mapping);
+
     ~ControlPlane();
 
     // Printing functions
@@ -145,7 +146,8 @@ public:
 
     // Get all intermesh ethernet links in the system
     // Returns: map of chip_id -> vector of (eth_core, channel)
-    const std::unordered_map<chip_id_t, std::vector<std::pair<CoreCoord, chan_id_t>>>& get_all_intermesh_eth_links() const;
+    const std::unordered_map<chip_id_t, std::vector<std::pair<CoreCoord, chan_id_t>>>& get_all_intermesh_eth_links()
+        const;
 
     // Check if a specific ethernet core is an intermesh link
     bool is_intermesh_eth_link(chip_id_t chip_id, CoreCoord eth_core) const;
@@ -199,7 +201,11 @@ private:
     routing_plane_id_t get_routing_plane_id(
         chan_id_t eth_chan_id, const std::vector<chan_id_t>& eth_chans_in_direction) const;
 
-    std::map<FabricNodeId, chip_id_t> get_physical_chip_mapping_from_mesh_graph_desc_file(
+    std::vector<chip_id_t> get_mesh_physical_chip_ids(
+        const tt::tt_metal::distributed::MeshContainer<chip_id_t>& mesh_container,
+        std::optional<chip_id_t> nw_corner_chip_id = std::nullopt) const;
+
+    std::map<FabricNodeId, chip_id_t> get_logical_chip_to_physical_chip_mapping(
         const std::string& mesh_graph_desc_file);
 
     // Tries to get a valid downstream channel from the candidate_target_chans
@@ -220,9 +226,6 @@ private:
 
     void validate_mesh_connections(MeshId mesh_id) const;
     void validate_mesh_connections() const;
-
-    std::vector<chip_id_t> get_mesh_physical_chip_ids(
-        std::uint32_t mesh_ns_size, std::uint32_t mesh_ew_size, chip_id_t nw_chip_physical_chip_id) const;
 
     std::pair<FabricNodeId, chan_id_t> get_connected_mesh_chip_chan_ids(
         FabricNodeId fabric_node_id, chan_id_t chan_id) const;

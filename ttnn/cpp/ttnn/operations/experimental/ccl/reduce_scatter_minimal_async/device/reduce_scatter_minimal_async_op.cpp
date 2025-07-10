@@ -23,19 +23,16 @@ void ReduceScatterMinimalAsync::validate_with_output_tensors(
     TT_FATAL(input_tensor.storage_type() == StorageType::DEVICE, "Operands to all_gather need to be on device!");
     TT_FATAL(input_tensor.buffer() != nullptr, "Operands to all_gather need to be allocated in buffers on device!");
     TT_FATAL(this->num_links > 0, "Error, num_links should be more than 0 but has {}", this->num_links);
-
-    const auto& input_shape = input_tensor.get_padded_shape();
     TT_FATAL(
-        (input_shape[this->dim] / tt::constants::TILE_WIDTH) % this->ring_size == 0,
-        "Error, The number of tiles at input tensor dimension {} should be divisible by ring_size but the number of "
-        "tiles is {} and the ring_size is {}",
-        this->dim,
-        input_shape[this->dim] / tt::constants::TILE_WIDTH,
-        this->ring_size);
+        this->num_links <= input_tensor.device()->compute_with_storage_grid_size().y,
+        "Worker cores used by links are parallelizaed over rows");
 
     TT_FATAL(
-        input_tensor.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED,
-        "Unsupported memory layout {}.",
+        input_tensor.memory_config().memory_layout() == TensorMemoryLayout::INTERLEAVED ||
+            input_tensor.memory_config().memory_layout() == TensorMemoryLayout::WIDTH_SHARDED ||
+            input_tensor.memory_config().memory_layout() == TensorMemoryLayout::BLOCK_SHARDED ||
+            input_tensor.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED,
+        "Unsupported input tensor memory layout {}.",
         input_tensor.memory_config().memory_layout());
 
     if (output_tensors.size() > 0 and output_tensors[0].has_value()) {
@@ -75,10 +72,10 @@ void ReduceScatterMinimalAsync::validate_with_output_tensors(
         for (size_t i = 0; i < input_shape.size(); ++i) {
             if (i == this->dim) {
                 TT_FATAL(
-                    output_shape[i] <= input_shape[i] * this->ring_size,
+                    output_shape[i] == input_shape[i] / this->ring_size,
                     "Error, Output tensor shape at dimension {} should be {} but has {}",
                     i,
-                    input_shape[i] * this->ring_size,
+                    input_shape[i] / this->ring_size,
                     output_shape[i]);
             } else {
                 TT_FATAL(
@@ -90,11 +87,18 @@ void ReduceScatterMinimalAsync::validate_with_output_tensors(
             }
         }
 
-        // check memory layout
+        // Don't support output DRAM block sharding
+        if (output_tensor.value().memory_config().memory_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
+            TT_FATAL(
+                output_tensor.value().memory_config().buffer_type() == BufferType::L1,
+                "We don't support output DRAM block sharding");
+        }
+    }
+
+    // Don't support input DRAM block sharding
+    if (input_tensor.memory_config().memory_layout() == TensorMemoryLayout::BLOCK_SHARDED) {
         TT_FATAL(
-            output_tensor.value().memory_config().memory_layout() == input_tensor.memory_config().memory_layout(),
-            "Error, Output tensor memory layout should be same as input tensor memory layout but has {}",
-            output_tensor.value().memory_config().memory_layout());
+            input_tensor.memory_config().buffer_type() == BufferType::L1, "We don't support input DRAM block sharding");
     }
 
     // Each direction has a ready semaphore and there's a global sync semaphore, per link.
@@ -107,7 +111,6 @@ void ReduceScatterMinimalAsync::validate_with_output_tensors(
 
 std::vector<ttnn::TensorSpec> ReduceScatterMinimalAsync::compute_output_specs(
     const std::vector<Tensor>& input_tensors) const {
-    // TODO: FIXME!
     const auto& input_tensor = input_tensors[0];
     auto shape = input_tensor.get_padded_shape();  // TODO: Replace with get_logical_shape()
     shape[this->dim] *= this->ring_size;

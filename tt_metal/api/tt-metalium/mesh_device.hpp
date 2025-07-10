@@ -100,6 +100,8 @@ private:
         const std::vector<IDevice*>& root_devices() const;
     };
 
+    std::mutex api_mutex_;
+
     std::shared_ptr<ScopedDevices> scoped_devices_;
     int mesh_id_;
     std::unique_ptr<MeshDeviceView> view_;
@@ -271,6 +273,8 @@ public:
     IDevice* get_device(size_t row_idx, size_t col_idx) const;
 
     const MeshShape& shape() const;
+
+    std::unique_lock<std::mutex> lock_api() { return std::unique_lock<std::mutex>(api_mutex_); }
 
     // Reshapes the logical mesh and re-maps the physical devices to the new logical coordinates.
     // Reshaping Rules:

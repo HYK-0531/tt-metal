@@ -84,6 +84,8 @@ protected:
 private:
     void verify_safe_allocation() const;
 
+    std::mutex mutex_;
+
     // Set to true if allocating a buffer is unsafe. This happens when a live trace on device can corrupt
     // memory allocated by the user (memory used by trace is not tracked in the allocator once the trace is captured).
     bool allocations_unsafe_ = false;

@@ -36,10 +36,10 @@ class RMSNorm(LightweightModule):
     def __init__(
         self,
         device,
-        tt_ccl,
         dim,
         state_dict,
         weight_key,
+        tt_ccl=None,
         layer_num=None,
         state_dict_prefix=None,
         weight_cache_path=None,
@@ -143,6 +143,7 @@ class RMSNorm(LightweightModule):
     ):
         assert program_config is None, "Distributed RMSNorm does not support sharded inputs"
         assert memory_config is None, "Distributed RMSNorm does not support sharded outputs"
+        assert self.tt_ccl is not None, "Distributed RMSNorm requires tt_ccl"
 
         # Run distributed rmsnorm part 1
         tt_stats = ttnn.rms_norm_pre_all_gather(inp, compute_kernel_config=compute_kernel_config, dtype=ttnn.bfloat16)

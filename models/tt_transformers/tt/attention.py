@@ -252,7 +252,6 @@ class Attention(LightweightModule):
         if f"{q_norm_str}.weight" in self.state_dict:
             fn_q_norm = RMSNorm(
                 device=self.mesh_device,
-                tt_ccl=self.tt_ccl,
                 dim=self.head_dim,
                 eps=configuration.norm_eps,
                 state_dict=self.state_dict,
@@ -271,7 +270,6 @@ class Attention(LightweightModule):
         if f"{k_norm_str}.weight" in self.state_dict:
             fn_k_norm = RMSNorm(
                 device=self.mesh_device,
-                tt_ccl=self.tt_ccl,
                 dim=self.head_dim,
                 eps=configuration.norm_eps,
                 state_dict=self.state_dict,

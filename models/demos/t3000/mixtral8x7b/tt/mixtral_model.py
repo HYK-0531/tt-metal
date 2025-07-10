@@ -38,7 +38,6 @@ class TtTransformer(LightweightModule):
         ]
         self.norm = RMSNorm(
             device=mesh_device,
-            tt_ccl=self.tt_ccl,
             dim=args.dim,
             state_dict=state_dict,
             layer_num=None,

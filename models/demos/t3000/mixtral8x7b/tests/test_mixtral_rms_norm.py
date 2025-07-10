@@ -8,7 +8,6 @@ from loguru import logger
 import ttnn
 from models.common.rmsnorm import RMSNorm as TtRMSNorm
 from models.demos.t3000.mixtral8x7b.reference.model import RMSNorm as RefRMSNorm
-from models.demos.t3000.mixtral8x7b.tt.mixtral_ccl import TT_CCL
 from models.demos.t3000.mixtral8x7b.tt.model_config import TtModelArgs
 from models.utility_functions import comp_allclose, comp_pcc
 from ttnn import ConcatMeshToTensor, ReplicateTensorToMesh
@@ -26,10 +25,8 @@ def test_mixtral_rms_norm_inference(t3k_mesh_device, reset_seeds):
     reference_model = RefRMSNorm(dim=model_args.dim)
     reference_model.load_state_dict(partial_state_dict)
 
-    tt_ccl = TT_CCL(t3k_mesh_device)
     tt_model = TtRMSNorm(
         device=t3k_mesh_device,
-        tt_ccl=tt_ccl,
         dim=model_args.dim,
         state_dict=state_dict,
         layer_num=0,
@@ -55,8 +52,6 @@ def test_mixtral_rms_norm_inference(t3k_mesh_device, reset_seeds):
 
     logger.info(comp_allclose(reference_output, tt_output_torch))
     logger.info(pcc_message)
-
-    tt_ccl.close()
 
     if passing:
         logger.info("Mixtral_rms_norm Passed!")

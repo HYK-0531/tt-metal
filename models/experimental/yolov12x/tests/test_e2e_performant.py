@@ -8,6 +8,7 @@ from loguru import logger
 import ttnn
 from models.experimental.yolov12x.runner.performant_runner import YOLOv12xPerformantRunner
 from models.utility_functions import run_for_wormhole_b0
+import torch
 
 
 @pytest.mark.parametrize(
@@ -44,8 +45,9 @@ def test_e2e_performant(
     performant_runner._capture_yolov12x_trace_2cqs()
     inference_times = []
     for _ in range(10):
+        tensor = torch.randn((1, 3, 640, 640), dtype=torch.float32)
         t0 = time.time()
-        _ = performant_runner.run()
+        _ = performant_runner.run(tensor)
         t1 = time.time()
         inference_times.append(t1 - t0)
 

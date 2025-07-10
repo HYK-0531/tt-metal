@@ -37,6 +37,7 @@ class YOLOv12xPerformantRunner:
             self.input_mem_config,
         ) = self.runner_infra.setup_dram_sharded_input(device)
         self.tt_image_res = self.tt_inputs_host.to(device, sharded_mem_config_DRAM)
+        self._capture_yolov12x_trace_2cqs()
 
     def _capture_yolov12x_trace_2cqs(self):
         # Initialize the op event so we can write
@@ -96,13 +97,11 @@ class YOLOv12xPerformantRunner:
         torch_output_tensor = self.runner_infra.torch_output_tensor
         assert_with_pcc(torch_output_tensor, result_output_tensor, 0.99)
 
-    def run(self, torch_input_tensor=None, check_pcc=False):
+    def run(self, torch_input_tensor=None, check_pcc=True):
         tt_inputs_host, _ = self.runner_infra._setup_l1_sharded_input(self.device, torch_input_tensor)
         output = self._execute_yolov12x_trace_2cqs_inference(tt_inputs_host)
         if check_pcc:
-            torch_input_tensor = torch_input_tensor.reshape(n, h, w, c)
-            torch_input_tensor = torch_input_tensor.permute(0, 3, 1, 2)
-            self._validate(torch_input_tensor, output)
+            self._validate(self.runner_infra.torch_output_tensor[0], output)
 
         return output
 

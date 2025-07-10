@@ -16,6 +16,31 @@ from tests.ttnn.utils_for_testing import assert_with_pcc
 from ultralytics import YOLO
 
 
+def load_torch_model(use_weights_from_ultralytics=True):
+    state_dict = None
+
+    weights = "yolo12x.pt"
+
+    if use_weights_from_ultralytics:
+        torch_model = YOLO(weights)  # Use "yolov12x.pt" weight for detection
+        torch_model.eval()
+        state_dict = torch_model.state_dict()
+
+    model = yolov12x.YoloV12x()
+    state_dict = model.state_dict() if state_dict is None else state_dict
+
+    ds_state_dict = {k: v for k, v in state_dict.items()}
+    new_state_dict = {}
+    for (name1, parameter1), (name2, parameter2) in zip(model.state_dict().items(), ds_state_dict.items()):
+        if isinstance(parameter2, torch.FloatTensor):
+            new_state_dict[name1] = parameter2
+
+    model.load_state_dict(new_state_dict)
+    model.eval()
+
+    return model
+
+
 class YOLOv12xPerformanceRunnerInfra:
     def __init__(
         self,
@@ -38,23 +63,25 @@ class YOLOv12xPerformanceRunnerInfra:
         self.model_location_generator = model_location_generator
         self.torch_input_tensor = torch_input_tensor
 
-        self.torch_model = YOLO("yolo12x.pt")
-        state_dict = self.torch_model.state_dict()
+        self.torch_model = load_torch_model()
 
-        self.torch_model = yolov12x.YoloV12x()
+        # self.torch_model = YOLO("yolo12x.pt")
+        # state_dict = self.torch_model.state_dict()
 
-        state_dict = self.torch_model.state_dict() if state_dict is None else state_dict
+        # self.torch_model = yolov12x.YoloV12x()
 
-        ds_state_dict = {k: v for k, v in state_dict.items()}
-        new_state_dict = {}
-        for (name1, parameter1), (name2, parameter2) in zip(
-            self.torch_model.state_dict().items(), ds_state_dict.items()
-        ):
-            if isinstance(parameter2, torch.FloatTensor):
-                new_state_dict[name1] = parameter2
-        self.torch_model.load_state_dict(new_state_dict)
+        # state_dict = self.torch_model.state_dict() if state_dict is None else state_dict
 
-        self.torch_model.eval()
+        # ds_state_dict = {k: v for k, v in state_dict.items()}
+        # new_state_dict = {}
+        # for (name1, parameter1), (name2, parameter2) in zip(
+        #     self.torch_model.state_dict().items(), ds_state_dict.items()
+        # ):
+        #     if isinstance(parameter2, torch.FloatTensor):
+        #         new_state_dict[name1] = parameter2
+        # self.torch_model.load_state_dict(new_state_dict)
+
+        # self.torch_model.eval()
 
         self.torch_input_tensor = (
             torch.randn((1, 3, 640, 640), dtype=torch.float32)

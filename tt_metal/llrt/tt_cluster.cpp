@@ -55,11 +55,11 @@ static constexpr uint32_t HOST_MEM_CHANNELS_MASK = HOST_MEM_CHANNELS - 1;
 namespace {
 
 inline std::string get_soc_description_file(
-    const tt::ARCH& arch, tt::TargetDevice target_device, [[maybe_unused]] const std::string& output_dir = "") {
+    const tt::ARCH& arch, tt::TargetDevice target_device, const llrt::RunTimeOptions& rtoptions, [[maybe_unused]] const std::string& output_dir = "") {
     // Ability to skip this runtime opt, since trimmed SOC desc limits which DRAM channels are available.
     std::string path;
-    if (auto* home = getenv("TT_METAL_HOME")) {
-        path = home;
+    if (rtoptions.is_root_dir_specified()) {
+        path = rtoptions.get_root_dir();
     } else {
         path = "./";
     }
@@ -363,7 +363,7 @@ void Cluster::open_driver(const bool &skip_driver_allocs) {
         uint32_t num_host_mem_ch_per_mmio_device = std::min(HOST_MEM_CHANNELS, num_devices);
         device_driver = std::make_unique<tt::umd::Cluster>(tt::umd::ClusterOptions{
             .num_host_mem_ch_per_mmio_device = num_host_mem_ch_per_mmio_device,
-            .sdesc_path = get_soc_description_file(this->arch_, this->target_type_),
+            .sdesc_path = get_soc_description_file(this->arch_, this->target_type_, this->rtoptions_),
             .pci_target_devices = pcie_visible_devices,
         });
     } else if (this->target_type_ == TargetDevice::Simulator) {

@@ -12,9 +12,9 @@ import ttnn
 class TT_CCL:
     @dataclass(frozen=True)
     class PBKey:
-        shape: tuple
-        dtype: ttnn.dtype
-        memory_config: ttnn.MemoryConfig
+        shape: any = ()
+        dtype: any = None
+        memory_config: any = None
 
     def __init__(
         self,

@@ -2,10 +2,10 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-from dataclasses import dataclass
 
 import ttnn
 from models.tt_transformers.tt.persistent_buffers import (
+    PBKey,
     create_ag_persistent_output_buffers,
     create_rs_persistent_intermediate_buffers,
     create_rs_persistent_output_buffers,
@@ -13,12 +13,6 @@ from models.tt_transformers.tt.persistent_buffers import (
 
 
 class TT_CCL:
-    @dataclass(frozen=True)
-    class PBKey:
-        shape: any = ()
-        dtype: any = None
-        memory_config: any = None
-
     def __init__(
         self,
         mesh_device,
@@ -86,7 +80,7 @@ class TT_CCL:
         ring_size = list(self.mesh_device.shape)[cluster_axis]
         output_shape = list(input_shape)
         output_shape[dim] *= ring_size
-        pb_key = self.PBKey(shape=tuple(output_shape), dtype=dtype, memory_config=memory_config)
+        pb_key = PBKey(shape=tuple(output_shape), dtype=dtype, memory_config=memory_config)
 
         # EXTRACTING SHAPES
         self.ag_output_pb_keys.add(pb_key)
@@ -114,7 +108,7 @@ class TT_CCL:
         intermediate_shape = list(input_shape)
         num_batches = intermediate_shape[0]
         intermediate_shape[2] //= num_batches
-        pb_key = self.PBKey(shape=tuple(intermediate_shape), dtype=dtype, memory_config=memory_config)
+        pb_key = PBKey(shape=tuple(intermediate_shape), dtype=dtype, memory_config=memory_config)
 
         # EXTRACTING SHAPES
         self.rs_intermediate_pb_keys.add(pb_key)
@@ -141,7 +135,7 @@ class TT_CCL:
         ring_size = list(self.mesh_device.shape)[cluster_axis]
         rs_output_shape = list(input_shape)
         rs_output_shape[dim] //= ring_size
-        pb_key = self.PBKey(shape=tuple(rs_output_shape), dtype=dtype, memory_config=memory_config)
+        pb_key = PBKey(shape=tuple(rs_output_shape), dtype=dtype, memory_config=memory_config)
 
         # EXTRACTING SHAPES
         self.rs_output_pb_keys.add(pb_key)

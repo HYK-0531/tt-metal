@@ -2,10 +2,18 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+from dataclasses import dataclass
+
 import torch
 
 import ttnn
-from models.tt_transformers.tt.ccl import TT_CCL
+
+
+@dataclass(frozen=True)
+class PBKey:
+    shape: any = ()
+    dtype: any = None
+    memory_config: any = None
 
 
 def create_buffer(mesh_device, pb_key):
@@ -27,13 +35,13 @@ def create_ag_persistent_output_buffers(mesh_device, model):
     shape = (1, 1, 128, 256)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 256, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 32, 5120)
@@ -47,7 +55,7 @@ def create_ag_persistent_output_buffers(mesh_device, model):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 32, 5120)
@@ -61,19 +69,19 @@ def create_ag_persistent_output_buffers(mesh_device, model):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 32, 152064)
     dtype = ttnn.bfloat8_b
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 256, 256)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 32, 5120)
@@ -87,7 +95,7 @@ def create_ag_persistent_output_buffers(mesh_device, model):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 32, 5120)
@@ -101,25 +109,25 @@ def create_ag_persistent_output_buffers(mesh_device, model):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 32, 256)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 32, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 128, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     return persistent_buffers
@@ -137,31 +145,31 @@ def create_rs_persistent_intermediate_buffers(mesh_device, model):
     shape = (1, 1, 32, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 128, 5120)
     dtype = ttnn.bfloat8_b
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 128, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 256, 5120)
     dtype = ttnn.bfloat8_b
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 256, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     return persistent_buffers
@@ -183,7 +191,7 @@ def create_rs_persistent_output_buffers(mesh_device, model):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 32, 640)
@@ -197,31 +205,31 @@ def create_rs_persistent_output_buffers(mesh_device, model):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 128, 640)
     dtype = ttnn.bfloat8_b
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 128, 640)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 256, 640)
     dtype = ttnn.bfloat8_b
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     shape = (1, 1, 256, 640)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = TT_CCL.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 
     return persistent_buffers

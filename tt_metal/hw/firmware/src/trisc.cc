@@ -108,7 +108,7 @@ int main(int argc, char *argv[]) {
     my_logical_y_ = mailboxes->core_info.absolute_logical_y;
     *trisc_run = RUN_SYNC_MSG_DONE;
 
-    kernel_profiler::init_profiler();
+    DeviceProfilerInit();
     while (1) {
         WAYPOINT("W");
         while (*trisc_run != RUN_SYNC_MSG_GO) {

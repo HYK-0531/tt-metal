@@ -581,6 +581,8 @@ inline __attribute__((always_inline)) void recordEvent(uint16_t event_id) {
 
 #define DeviceZoneSetCounter(counter) kernel_profiler::set_host_counter(counter);
 
+#define DeviceProfilerInit() kernel_profiler::init_profiler();
+
 #else
 
 #define DeviceValidateProfiler(condition)
@@ -600,6 +602,8 @@ inline __attribute__((always_inline)) void recordEvent(uint16_t event_id) {
 #define DeviceTimestampedData(data_id, data)
 
 #define DeviceRecordEvent(event_id)
+
+#define DeviceProfilerInit()
 
 // null macros when noc tracing is disabled
 #define RECORD_NOC_EVENT_WITH_ADDR(type, noc_addr, num_bytes, vc)

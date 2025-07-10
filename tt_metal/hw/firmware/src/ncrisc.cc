@@ -111,7 +111,7 @@ int main(int argc, char *argv[]) {
 
     signal_ncrisc_completion();
 
-    kernel_profiler::init_profiler();
+    DeviceProfilerInit();
     while (1) {
         WAYPOINT("W");
         notify_brisc_and_wait();

@@ -69,9 +69,14 @@ class TT_CCL:
         self.rs_semaphores_idx = (self.rs_semaphores_idx + 1) % 2
         return self.rs_semaphore_handles[current_idx]
 
-    def create_ag_persistent_output_buffer_key(self, dim, input_shape, dtype, memory_config):
+    #
+    # AG Persistent Output
+    #
+
+    def create_ag_persistent_output_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=1):
+        ring_size = list(self.mesh_device.shape)[cluster_axis]
         output_shape = list(input_shape)
-        output_shape[dim] *= self.mesh_device.get_num_devices()
+        output_shape[dim] *= ring_size
         return self.PBKey(shape=tuple(output_shape), dtype=dtype, memory_config=memory_config)
 
     def create_ag_persistent_output_buffers(self):
@@ -80,12 +85,26 @@ class TT_CCL:
         # TODO
         pass
 
-    def create_rs_persistent_intermediate_buffer_key(self, input_shape, dtype, memory_config):
+    def get_ag_persistent_output_buffer(self, pb_key):
+        assert (
+            pb_key in self.ag_persistent_output_buffers
+        ), "AG persistent output buffer does not exist for key: {pb_key}"
+        return self.ag_persistent_output_buffers[pb_key]
+
+    #
+    # RS Persistent Intermediate
+    #
+
+    # TODO: Can these indices be hardcoded?, Are we indeed restricted to dim 3?
+    def create_rs_persistent_intermediate_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=1):
+        assert dim == 3, "RS dim is not 3"
+
         intermediate_shape = list(input_shape)
         num_batches = intermediate_shape[0]
         intermediate_shape[2] //= num_batches
         return self.PBKey(shape=tuple(intermediate_shape), dtype=dtype, memory_config=memory_config)
 
+    # Buffers for QwQ
     def create_rs_persistent_intermediate_buffers(self):
         # intermediate buffers can always be L1 (if we have space),
         # only the output buffers needs to match the config expected in the model
@@ -128,9 +147,22 @@ class TT_CCL:
 
         return persistent_buffers
 
-    def create_rs_persistent_intermediate_buffer_key(self, input_shape, dtype, memory_config):
+    def get_rs_persistent_intermediate_buffer(self, pb_key):
+        assert (
+            pb_key in self.rs_persistent_intermediate_buffers
+        ), "RS persistent intermediate buffer does not exist for key: {pb_key}"
+        return self.rs_persistent_intermediate_buffers[pb_key]
+
+    #
+    # RS Persistent Output
+    #
+
+    def create_rs_persistent_output_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=1):
+        assert dim == 3, "RS dim is not 3"
+
+        ring_size = list(self.mesh_device.shape)[cluster_axis]
         rs_output_shape = list(input_shape)
-        rs_output_shape[3] //= self.mesh_device.get_num_devices()
+        rs_output_shape[dim] //= ring_size
         return self.PBKey(shape=tuple(rs_output_shape), dtype=dtype, memory_config=memory_config)
 
     def create_rs_persistent_output_buffers(self):
@@ -138,6 +170,16 @@ class TT_CCL:
 
         # TODO
         pass
+
+    def get_rs_persistent_output_buffer(self, pb_key):
+        assert (
+            pb_key in self.rs_persistent_output_buffers
+        ), "RS persistent output buffer does not exist for key: {pb_key}"
+        return self.rs_persistent_output_buffers[pb_key]
+
+    #
+    # Helpers
+    #
 
     def create_buffer(self, pb_key):
         return ttnn.from_torch(

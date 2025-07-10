@@ -638,31 +638,42 @@ static Tensor to_folded_weight_layout(const Tensor& conv_weight_tensor, std::arr
         int new_h = padded_kernel_h / stride[0];
         int new_w = padded_kernel_w / stride[1];
 
-        for (auto oc = 0; oc < out_channels; oc++) {
-            for (auto ic = 0; ic < in_channels; ic++) {
-                for (auto kh = 0; kh < kernel_h; kh++) {
-                    for (auto kw = 0; kw < kernel_w; kw++) {
-                        uint32_t src_idx = ((((oc * in_channels + ic) * kernel_h) + kh) * kernel_w) + kw;
+        WeightLayoutThreader::parallel_for_channels(
+            out_channels,
+            in_channels,
+            16,  // Minimum work per thread
+            [&](uint32_t out_t,
+                uint32_t in_t,
+                uint32_t out_start,
+                uint32_t out_end,
+                uint32_t in_start,
+                uint32_t in_end) {
+                for (auto oc = out_start; oc < out_end; oc++) {
+                    for (auto ic = in_start; ic < in_end; ic++) {
+                        for (auto kh = 0; kh < kernel_h; kh++) {
+                            for (auto kw = 0; kw < kernel_w; kw++) {
+                                uint32_t src_idx = ((((oc * in_channels + ic) * kernel_h) + kh) * kernel_w) + kw;
 
-                        int sh = kh % stride[0];
-                        int sw = kw % stride[1];
+                                int sh = kh % stride[0];
+                                int sw = kw % stride[1];
 
-                        // Calculate new y,x coordinates
-                        int y = kh / stride[0];
-                        int x = kw / stride[1];
+                                // Calculate new y,x coordinates
+                                int y = kh / stride[0];
+                                int x = kw / stride[1];
 
-                        // Calculate folded input channel index
-                        int folded_ic_idx = (sh * stride[1] + sw) * in_channels + ic;
+                                // Calculate folded input channel index
+                                int folded_ic_idx = (sh * stride[1] + sw) * in_channels + ic;
 
-                        // Calculate final destination index
-                        int dst_idx = oc * in_channels * stride[0] * stride[1] * new_h * new_w +
-                                      folded_ic_idx * new_h * new_w + y * new_w + x;
+                                // Calculate final destination index
+                                int dst_idx = oc * in_channels * stride[0] * stride[1] * new_h * new_w +
+                                              folded_ic_idx * new_h * new_w + y * new_w + x;
 
-                        output_buffer[dst_idx] = input_buffer[src_idx];
+                                output_buffer[dst_idx] = input_buffer[src_idx];
+                            }
+                        }
                     }
                 }
-            }
-        }
+            });
 
         return Tensor(tt::tt_metal::HostBuffer(std::move(output_buffer)), output_shape, dtype, Layout::ROW_MAJOR);
     };

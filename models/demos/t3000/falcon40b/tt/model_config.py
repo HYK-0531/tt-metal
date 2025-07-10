@@ -355,6 +355,7 @@ def get_decode_model_config(model_config_str, input_shape, num_devices):
         )
 
         # Decoder
+        print("shard_width_hidden_dim_across_32_cores", shard_width_hidden_dim_across_32_cores)
         model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"] = ttnn.MemoryConfig(
             ttnn.TensorMemoryLayout.WIDTH_SHARDED,
             ttnn.BufferType.L1,

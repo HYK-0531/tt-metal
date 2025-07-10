@@ -316,6 +316,8 @@ class TtFalconDecoderLayer:
         dim = 3
         ag_output_shape = list(hidden_states.shape)
         ag_output_shape[dim] *= self.mesh_device.get_num_devices()
+        # print("hidden_states shape: ", hidden_states.shape)
+        # print("ag_output_shape: ", ag_output_shape)
         replicated_hidden_states = ttnn.experimental.all_gather_async(
             hidden_states,
             persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
@@ -330,6 +332,8 @@ class TtFalconDecoderLayer:
             memory_config=self.model_config["DECODER_ALL_GATHER_OUTPUT_MEMCFG"],
             subdevice_id=self.tt_ccl.worker_sub_device_id,
         )
+        # print("replicated_hidden_states shape: ", replicated_hidden_states.shape)
+        # print("ln_attn_gamma shape: ", self.ln_attn_gamma.shape)
         attn_ln_output = ttnn.layer_norm(
             replicated_hidden_states,
             epsilon=self.layernorm_eps,

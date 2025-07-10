@@ -124,19 +124,24 @@ class TtFalconMLP:
         single_batch_input_shape[2] //= rs_num_batches
         rs_output_shape = rs_input_shape[:]
         rs_output_shape[3] //= self.mesh_device.get_num_devices()
+        # print("rs_input_shape: ", rs_input_shape)
+        # print("single_batch_input_shape: ", single_batch_input_shape)
+        # print("rs_output_shape: ", rs_output_shape)
         hidden_states = ttnn.experimental.reduce_scatter_minimal_async(
             hidden_states,
             persistent_intermediate_buffer=self.tt_ccl.get_or_add_persistent_buffer(
                 single_batch_input_shape,
-                self.model_config["MLP_REDUCE_SCATTER_OUTPUT_MEMCFG"],
+                hidden_states.memory_config(),
                 hidden_states.dtype,
                 PBType.INTERMEDIARY,
+                distributed=True,
             ),
             persistent_output_buffer=self.tt_ccl.get_or_add_persistent_buffer(
                 rs_output_shape,
                 self.model_config["MLP_REDUCE_SCATTER_OUTPUT_MEMCFG"],
                 hidden_states.dtype,
                 PBType.OUTPUT,
+                distributed=True,
             ),
             dim=3,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),

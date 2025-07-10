@@ -46,7 +46,7 @@ class TT_CCL:
         self.intermediary_buffers = {}
         self.output_buffers = {}
 
-        self.initialize_persistent_buffers()
+        # self.initialize_persistent_buffers()
 
         for i in range(2):
             for _ in range(2):
@@ -73,14 +73,21 @@ class TT_CCL:
         self.rs_semaphores_idx = (self.rs_semaphores_idx + 1) % 2
         return self.rs_semaphore_handles[current_idx]
 
-    def create_persistent_buffer(self, shape, mem_config, dtype):
+    def create_persistent_buffer(self, shape, mem_config, dtype, distributed=False):
+        if distributed:
+            shape[3] *= self.mesh_device.get_num_devices()
+            cluster_shape = list(self.mesh_device.shape)
+            # print("cluster_shape: ", cluster_shape)
+            mesh_mapper = ttnn.ShardTensor2dMesh(self.mesh_device, dims=(None, 3), mesh_shape=cluster_shape)
+        else:
+            mesh_mapper = ttnn.ReplicateTensorToMesh(self.mesh_device)
         return ttnn.from_torch(
             torch.zeros(shape),
             device=self.mesh_device,
             layout=ttnn.TILE_LAYOUT,
             dtype=dtype,
             memory_config=mem_config,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+            mesh_mapper=mesh_mapper,
         )
 
     def spec_to_json(self, spec):
@@ -97,8 +104,6 @@ class TT_CCL:
         # Handle shard_spec if present
         if mem_config.shard_spec is not None:
             shard_spec = mem_config.shard_spec
-            # print(shard_spec.grid.bounding_box())
-            # print(shard_spec.grid.bounding_box().grid_size().x)
             mem_config_json["shard_spec"] = {
                 "grid": {
                     "start": {"x": 0, "y": 0},
@@ -139,7 +144,7 @@ class TT_CCL:
             mode = getattr(ttnn.ShardMode, shard_spec_json["mode"])
             shard_shape = tuple(shard_spec_json["shape"])
 
-            print(type(grid), type(shard_shape), type(orientation), type(mode))
+            # print(type(grid), type(shard_shape), type(orientation), type(mode))
             shard_spec = ttnn.ShardSpec(
                 grid=grid,
                 shard_shape=list(shard_shape),
@@ -161,7 +166,7 @@ class TT_CCL:
     def save_specs_to_file(self, specs_set, filename):
         json_data = [self.spec_to_json(spec) for spec in specs_set]
         with open(filename, "w") as f:
-            json.dump(json_data, f)
+            json.dump(json_data, f, indent=2)
 
     def load_specs_from_file(self, filename):
         with open(filename, "r") as f:
@@ -179,8 +184,11 @@ class TT_CCL:
         for shape, mem_config, dtype in self.output_buffer_specs:
             self.get_or_add_persistent_buffer(shape, mem_config, dtype, PBType.OUTPUT)
 
-    def get_or_add_persistent_buffer(self, shape, mem_config, dtype, buffer_type: PBType):
+    def get_or_add_persistent_buffer(self, shape, mem_config, dtype, buffer_type: PBType, distributed=False):
         buffer_spec = (tuple(shape), mem_config, dtype)
+
+        # if(buffer_type == PBType.INTERMEDIARY):
+        # distributed = True  # Intermediary buffers are always distributed
 
         buffer_dict_name = f"{buffer_type.value}_buffers"
         specs_set_name = f"{buffer_type.value}_buffer_specs"
@@ -189,15 +197,16 @@ class TT_CCL:
         specs_set = getattr(self, specs_set_name)
 
         if buffer_spec not in buffer_dict or not buffer_dict[buffer_spec].is_allocated():
-            print(f"{buffer_type.value} buffer_spec: ", buffer_spec)
-            specs_set.add(buffer_spec)
-            buffer_dict[buffer_spec] = self.create_persistent_buffer(shape, mem_config, dtype)
+            # print(f"adding {buffer_type.value} buffer_spec: ", buffer_spec)
+            buffer_dict[buffer_spec] = self.create_persistent_buffer(list(shape), mem_config, dtype, distributed)
             # Overwrite json file storing different buffer specs
-            self.save_specs_to_file(
-                buffer_dict.keys(), f"models/demos/t3000/falcon40b/tt/{buffer_type.value}_PB_specs.json"
-            )
-        else:
-            print(f"{buffer_type.value} buffer_spec already exists: {buffer_spec}")
+            if buffer_spec not in specs_set:
+                specs_set.add(buffer_spec)
+                self.save_specs_to_file(
+                    buffer_dict.keys(), f"models/demos/t3000/falcon40b/tt/{buffer_type.value}_PB_specs.json"
+                )
+        # else:
+        # print(f"{buffer_type.value} buffer_spec already exists: {buffer_spec}")
         return buffer_dict[buffer_spec]
 
     def close(self):

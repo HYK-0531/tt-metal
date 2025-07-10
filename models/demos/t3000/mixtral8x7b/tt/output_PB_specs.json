@@ -1,0 +1,62 @@
+[
+  {
+    "shape": [
+      1,
+      8,
+      512,
+      4096
+    ],
+    "mem_config": {
+      "memory_layout": "INTERLEAVED",
+      "buffer_type": "DRAM",
+      "created_with_nd_shard_spec": 0,
+      "shard_spec": null
+    },
+    "dtype": "BFLOAT8_B"
+  },
+  {
+    "shape": [
+      1,
+      8,
+      256,
+      4096
+    ],
+    "mem_config": {
+      "memory_layout": "INTERLEAVED",
+      "buffer_type": "DRAM",
+      "created_with_nd_shard_spec": 0,
+      "shard_spec": null
+    },
+    "dtype": "BFLOAT8_B"
+  },
+  {
+    "shape": [
+      1,
+      8,
+      32768,
+      4096
+    ],
+    "mem_config": {
+      "memory_layout": "INTERLEAVED",
+      "buffer_type": "DRAM",
+      "created_with_nd_shard_spec": 0,
+      "shard_spec": null
+    },
+    "dtype": "BFLOAT8_B"
+  },
+  {
+    "shape": [
+      1,
+      1,
+      256,
+      4096
+    ],
+    "mem_config": {
+      "memory_layout": "INTERLEAVED",
+      "buffer_type": "L1",
+      "created_with_nd_shard_spec": 0,
+      "shard_spec": null
+    },
+    "dtype": "BFLOAT8_B"
+  }
+]

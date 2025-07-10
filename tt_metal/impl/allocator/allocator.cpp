@@ -163,9 +163,7 @@ void Allocator::deallocate_buffers() {
     trace_buffer_manager_->deallocate_all();
 }
 
-const std::unordered_set<Buffer*>& Allocator::get_allocated_buffers() const {
-    return allocated_buffers_;
-}
+const std::unordered_set<Buffer*>& Allocator::get_allocated_buffers() const { return allocated_buffers_; }
 
 uint32_t Allocator::get_num_banks(const BufferType& buffer_type) const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -238,9 +236,7 @@ const std::vector<uint32_t>& Allocator::get_bank_ids_from_logical_core(
     return logical_core_to_bank_ids_.at(buffer_type).at(logical_core);
 }
 
-const AllocatorConfig& Allocator::get_config() const {
-    return config_;
-}
+const AllocatorConfig& Allocator::get_config() const { return config_; }
 
 uint32_t Allocator::get_alignment(BufferType buffer_type) const {
     switch (buffer_type) {

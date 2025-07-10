@@ -109,7 +109,7 @@ class TT_CCL:
                     "start": {"x": 0, "y": 0},
                     "end": {
                         "x": shard_spec.grid.bounding_box().grid_size().x - 1,
-                        "y": shard_spec.grid.bounding_box().grid_size().x - 1,
+                        "y": shard_spec.grid.bounding_box().grid_size().y - 1,
                     },
                 },
                 "shape": list(shard_spec.shape),
@@ -136,7 +136,7 @@ class TT_CCL:
         shard_spec = None
 
         if shard_spec_json is not None:
-            grid_start = ttnn.CoreCoord(shard_spec_json["grid"]["start"]["x"], shard_spec_json["grid"]["start"]["y"])
+            grid_start = ttnn.CoreCoord(0, 0)
             grid_end = ttnn.CoreCoord(shard_spec_json["grid"]["end"]["x"], shard_spec_json["grid"]["end"]["y"])
             grid_range = ttnn.CoreRange(grid_start, grid_end)
             grid = ttnn.CoreRangeSet({grid_range})
@@ -207,9 +207,7 @@ class TT_CCL:
             # Overwrite json file storing different buffer specs
             if buffer_spec not in specs_set:
                 specs_set.add(buffer_spec)
-                self.save_specs_to_file(
-                    buffer_dict.keys(), f"models/demos/t3000/falcon40b/tt/{buffer_type.value}_PB_specs.json"
-                )
+                self.save_specs_to_file(specs_set, f"models/demos/t3000/falcon40b/tt/{buffer_type.value}_PB_specs.json")
         # else:
         # print(f"{buffer_type.value} buffer_spec already exists: {buffer_spec}")
         return buffer_dict[buffer_spec]

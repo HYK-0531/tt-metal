@@ -441,9 +441,9 @@ void FDMeshCommandQueue::enqueue_read_shard_from_core(
 }
 
 void FDMeshCommandQueue::finish(tt::stl::Span<const SubDeviceId> sub_device_ids) {
-    auto api_lock = mesh_device_->lock_api();
     auto event = this->enqueue_record_event_to_host(sub_device_ids);
 
+    auto api_lock = mesh_device_->lock_api();
     std::unique_lock<std::mutex> lock(reads_processed_cv_mutex_);
     reads_processed_cv_.wait(lock, [this] { return num_outstanding_reads_.load() == 0; });
     auto& sub_device_cq_owner = cq_shared_state_->sub_device_cq_owner;

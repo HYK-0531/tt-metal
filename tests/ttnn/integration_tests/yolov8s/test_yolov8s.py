@@ -23,7 +23,7 @@ from models.demos.yolov8s.tt.ttnn_yolov8s import TtYolov8sModel, TtConv, TtC2f, 
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 32768}], indirect=True, ids=["0"])
 @pytest.mark.parametrize(
     "input_tensor",
-    [torch.rand((1, 3, 640, 640))],
+    [torch.rand((1, 1280, 896, 3))],
     ids=["input_tensor1"],
 )
 @pytest.mark.parametrize(
@@ -43,11 +43,11 @@ def test_yolov8s_640(device, input_tensor, use_weights_from_ultralytics):
     parameters = custom_preprocessor(device, state_dict, inp_h=inp_h, inp_w=inp_w)
     ttnn_model = TtYolov8sModel(device=device, parameters=parameters, res=(inp_h, inp_w))
 
-    n, c, h, w = input_tensor.shape
+    n, h, w, c = input_tensor.shape
     if c == 3:
         c = 16
     input_mem_config = ttnn.create_sharded_memory_config(
-        [n, c, h, w],
+        [h*w, 3],
         ttnn.CoreGrid(x=8, y=8),
         ttnn.ShardStrategy.HEIGHT,
     )

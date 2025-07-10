@@ -121,6 +121,8 @@ class TtConv:
         enable_split_reader=False,
         reshard_if_not_optimal=False,
         batch_size=1,
+        slice_type=None,
+        num_slices=None,
     ):
         self.device = device
         self.parameters = parameters
@@ -146,6 +148,9 @@ class TtConv:
         self.conv_config = self._initialize_conv_config()
         self.compute_config = self._initialize_compute_config()
         self.weights, self.bias = self.parameters[path]
+        self.slice_config = None
+        # if slice_type is not None and num_slices is not None:
+        self.slice_config = ttnn.Conv2dSliceConfig(slice_type=ttnn.Conv2dSliceWidth, num_slices=8)
 
     def _initialize_conv_config(self):
         self.output_dtype = ttnn.bfloat16
@@ -223,6 +228,7 @@ class TtConv:
             return_weights_and_bias=True,
             return_output_dim=True,
             dtype=self.output_dtype,
+            slice_config=self.slice_config,
         )
 
         if self.is_detect_cv2:
@@ -717,16 +723,44 @@ class TtDetectionModel:
         self.detect_22 = TtDetect(device, parameters, "model.22", detect_config)
 
     def __call__(self, x):
-        N, C, H, W = x.shape
+        N, H, W, C = x.shape
+        # min_channels = 16
+        # if C < min_channels:
+        #     channel_padding_needed = min_channels - C
+        #     nchw = ttnn.pad(x, ((0, 0), (0, channel_padding_needed), (0, 0), (0, 0)), value=0.0)
+        # else:
+        #     nchw = x
+        # ttnn.deallocate(x)
+        # nchw = ttnn.reallocate(nchw)
+        # shardspec = ttnn.create_sharded_memory_config_(
+        #         nchw.shape,  ttnn.CoreGrid(x=8, y=8), ttnn.ShardStrategy.WIDTH, orientation=ttnn.ShardOrientation.ROW_MAJOR
+        # )
+        # nchw = ttnn.reshard(nchw, shardspec)
+        # nchws_permuted = []
+        # for k in range(16):
+        #     for i in range(0, nchw.shape[-2], 300):
+        #         breakpoint()
+        #         nchw_temp = nchw[:, k,i:i + 300, :]
+        #         nchws_permuted.append(nchw_temp)
+        #         ttnn.deallocate(nchw_temp)
+        # input_mem_config = ttnn.create_sharded_memory_config(
+        #     [1200*896, 16],
+        #     ttnn.CoreGrid(x=8, y=8),
+        #     ttnn.ShardStrategy.WIDTH,
+        # )
+        # nhwc = ttnn.concat(nchws_permuted, dim=1, memory_config=input_mem_config)
+        # nhwc = ttnn.permute(x, (0, 2, 3, 1))  # NCHW -> NHWC
+        nhwc = x       
         min_channels = 16
         if C < min_channels:
             channel_padding_needed = min_channels - C
-            nchw = ttnn.pad(x, ((0, 0), (0, channel_padding_needed), (0, 0), (0, 0)), value=0.0)
-        else:
-            nchw = x
-        nhwc = ttnn.permute(nchw, (0, 2, 3, 1))  # NCHW -> NHWC
-        ttnn.deallocate(nchw)
+            nhwc = ttnn.pad(nhwc, ((0, 0), (0, 0), (0, 0),(0, channel_padding_needed)), value=0.0)
         ttnn.deallocate(x)
+        nhwc = ttnn.reallocate(nhwc)
+        shardspec = ttnn.create_sharded_memory_config_(
+            [H*W, min_channels],  ttnn.CoreGrid(x=8, y=8), ttnn.ShardStrategy.HEIGHT, orientation=ttnn.ShardOrientation.ROW_MAJOR
+        )
+        nhwc = ttnn.reshard(nhwc, shardspec)
         nhwc = ttnn.reallocate(nhwc)
         x = ttnn.reshape(nhwc, [1, 1, nhwc.shape[0] * nhwc.shape[1] * nhwc.shape[2], nhwc.shape[-1]])
 

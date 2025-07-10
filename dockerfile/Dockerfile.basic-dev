@@ -29,6 +29,3 @@ RUN set -eux; \
     apt-get install -f -y "$TMP_DIR/ompi.deb" && \
     rm -rf "$TMP_DIR" && \
     rm -rf /var/lib/apt/lists/*
-
-RUN mkdir -p /debians
-COPY .build/default/tt-metalium_*.deb /debians/

@@ -2,10 +2,20 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+from dataclasses import dataclass
+
+import torch
+
 import ttnn
 
 
 class TT_CCL:
+    @dataclass(frozen=True)
+    class PBKey:
+        shape: tuple
+        dtype: ttnn.dtype
+        memory_config: ttnn.MemoryConfig
+
     def __init__(
         self,
         mesh_device,
@@ -40,6 +50,10 @@ class TT_CCL:
                     ttnn.create_global_semaphore(self.mesh_device, self.sub_device_crs, 0)
                 )
 
+        self.ag_persistent_output_buffers = self.create_ag_persistent_output_buffers()
+        self.rs_persistent_intermediate_buffers = self.create_rs_persistent_intermediate_buffers()
+        self.rs_persistent_output_buffers = self.create_rs_persistent_output_buffers()
+
         worker_sub_device = ttnn.SubDevice([self.sub_device_crs])
         sub_device_manager = self.mesh_device.create_sub_device_manager([worker_sub_device], 0)
         self.mesh_device.load_sub_device_manager(sub_device_manager)
@@ -54,6 +68,86 @@ class TT_CCL:
         current_idx = self.rs_semaphores_idx
         self.rs_semaphores_idx = (self.rs_semaphores_idx + 1) % 2
         return self.rs_semaphore_handles[current_idx]
+
+    def create_ag_persistent_output_buffer_key(self, dim, input_shape, dtype, memory_config):
+        output_shape = list(input_shape)
+        output_shape[dim] *= self.mesh_device.get_num_devices()
+        return self.PBKey(shape=tuple(output_shape), dtype=dtype, memory_config=memory_config)
+
+    def create_ag_persistent_output_buffers(self):
+        # output buffer must match the config expected in the model
+
+        # TODO
+        pass
+
+    def create_rs_persistent_intermediate_buffer_key(self, input_shape, dtype, memory_config):
+        intermediate_shape = list(input_shape)
+        num_batches = intermediate_shape[0]
+        intermediate_shape[2] //= num_batches
+        return self.PBKey(shape=tuple(intermediate_shape), dtype=dtype, memory_config=memory_config)
+
+    def create_rs_persistent_intermediate_buffers(self):
+        # intermediate buffers can always be L1 (if we have space),
+        # only the output buffers needs to match the config expected in the model
+
+        persistent_buffers = {}
+
+        # Prefill
+
+        shape = (1, 1, 128, 5120)
+        dtype = ttnn.bfloat8_b
+        memory_config = ttnn.L1_MEMORY_CONFIG
+        pb_key = self.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+        persistent_buffers[pb_key] = self.create_buffer(pb_key=pb_key)
+
+        shape = (1, 1, 128, 5120)
+        dtype = ttnn.bfloat16
+        memory_config = ttnn.L1_MEMORY_CONFIG
+        pb_key = self.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+        persistent_buffers[pb_key] = self.create_buffer(pb_key=pb_key)
+
+        shape = (1, 1, 256, 5120)
+        dtype = ttnn.bfloat8_b
+        memory_config = ttnn.L1_MEMORY_CONFIG
+        pb_key = self.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+        persistent_buffers[pb_key] = self.create_buffer(pb_key=pb_key)
+
+        shape = (1, 1, 256, 5120)
+        dtype = ttnn.bfloat16
+        memory_config = ttnn.L1_MEMORY_CONFIG
+        pb_key = self.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+        persistent_buffers[pb_key] = self.create_buffer(pb_key=pb_key)
+
+        # Decode
+
+        shape = (1, 1, 32, 5120)
+        dtype = ttnn.bfloat16
+        memory_config = ttnn.L1_MEMORY_CONFIG
+        pb_key = self.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+        persistent_buffers[pb_key] = self.create_buffer(pb_key=pb_key)
+
+        return persistent_buffers
+
+    def create_rs_persistent_intermediate_buffer_key(self, input_shape, dtype, memory_config):
+        rs_output_shape = list(input_shape)
+        rs_output_shape[3] //= self.mesh_device.get_num_devices()
+        return self.PBKey(shape=tuple(rs_output_shape), dtype=dtype, memory_config=memory_config)
+
+    def create_rs_persistent_output_buffers(self):
+        # output buffer must match the config expected in the model
+
+        # TODO
+        pass
+
+    def create_buffer(self, pb_key):
+        return ttnn.from_torch(
+            torch.zeros(pb_key.shape),
+            device=self.mesh_device,
+            layout=ttnn.TILE_LAYOUT,
+            dtype=pb_key.dtype,
+            memory_config=pb_key.memory_config,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
+        )
 
     def close(self):
         self.mesh_device.reset_sub_device_stall_group()

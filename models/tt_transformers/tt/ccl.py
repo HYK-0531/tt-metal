@@ -4,9 +4,12 @@
 
 from dataclasses import dataclass
 
-import torch
-
 import ttnn
+from models.tt_transformers.tt.persistent_buffers import (
+    create_ag_persistent_output_buffers,
+    create_rs_persistent_intermediate_buffers,
+    create_rs_persistent_output_buffers,
+)
 
 
 class TT_CCL:
@@ -92,10 +95,7 @@ class TT_CCL:
         return pb_key
 
     def create_ag_persistent_output_buffers(self):
-        # output buffer must match the config expected in the model
-
-        # TODO
-        pass
+        return create_ag_persistent_output_buffers(mesh_device=self.mesh_device, model=1)
 
     def get_ag_persistent_output_buffer(self, pb_key):
         assert (
@@ -122,48 +122,8 @@ class TT_CCL:
 
         return pb_key
 
-    # Buffers for QwQ
     def create_rs_persistent_intermediate_buffers(self):
-        # intermediate buffers can always be L1 (if we have space),
-        # only the output buffers needs to match the config expected in the model
-
-        persistent_buffers = {}
-
-        # Prefill
-
-        shape = (1, 1, 128, 5120)
-        dtype = ttnn.bfloat8_b
-        memory_config = ttnn.L1_MEMORY_CONFIG
-        pb_key = self.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-        persistent_buffers[pb_key] = self.create_buffer(pb_key=pb_key)
-
-        shape = (1, 1, 128, 5120)
-        dtype = ttnn.bfloat16
-        memory_config = ttnn.L1_MEMORY_CONFIG
-        pb_key = self.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-        persistent_buffers[pb_key] = self.create_buffer(pb_key=pb_key)
-
-        shape = (1, 1, 256, 5120)
-        dtype = ttnn.bfloat8_b
-        memory_config = ttnn.L1_MEMORY_CONFIG
-        pb_key = self.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-        persistent_buffers[pb_key] = self.create_buffer(pb_key=pb_key)
-
-        shape = (1, 1, 256, 5120)
-        dtype = ttnn.bfloat16
-        memory_config = ttnn.L1_MEMORY_CONFIG
-        pb_key = self.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-        persistent_buffers[pb_key] = self.create_buffer(pb_key=pb_key)
-
-        # Decode
-
-        shape = (1, 1, 32, 5120)
-        dtype = ttnn.bfloat16
-        memory_config = ttnn.L1_MEMORY_CONFIG
-        pb_key = self.PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-        persistent_buffers[pb_key] = self.create_buffer(pb_key=pb_key)
-
-        return persistent_buffers
+        return create_rs_persistent_intermediate_buffers(mesh_device=self.mesh_device, model=1)
 
     def get_rs_persistent_intermediate_buffer(self, pb_key):
         assert (
@@ -190,10 +150,7 @@ class TT_CCL:
         return pb_key
 
     def create_rs_persistent_output_buffers(self):
-        # output buffer must match the config expected in the model
-
-        # TODO
-        pass
+        return create_rs_persistent_output_buffers(mesh_device=self.mesh_device, model=1)
 
     def get_rs_persistent_output_buffer(self, pb_key):
         assert (
@@ -204,16 +161,6 @@ class TT_CCL:
     #
     # Helpers
     #
-
-    def create_buffer(self, pb_key):
-        return ttnn.from_torch(
-            torch.zeros(pb_key.shape),
-            device=self.mesh_device,
-            layout=ttnn.TILE_LAYOUT,
-            dtype=pb_key.dtype,
-            memory_config=pb_key.memory_config,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh_device),
-        )
 
     def close(self):
         print("----------------")

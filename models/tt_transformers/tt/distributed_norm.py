@@ -73,6 +73,9 @@ class DistributedNorm(LightweightModule):
 
         # Distributed norm already performs a gather
         if self.args.is_multichip and not self.args.is_distributed_norm(mode):
+            peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
+                x.shape, x.dtype, input_mem_cfg, 3
+            )
             x = ttnn.experimental.all_gather_async(
                 x,
                 dim=3,
@@ -89,6 +92,9 @@ class DistributedNorm(LightweightModule):
 
         # Distributed norm requires a gather
         if self.args.is_distributed_norm(mode):
+            peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
+                x.shape, x.dtype, x.memory_config(), 3
+            )
             x = ttnn.experimental.all_gather_async(
                 x,
                 dim=3,

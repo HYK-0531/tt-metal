@@ -266,6 +266,12 @@ def tt_all_reduce(
             input_tensor_sharded = input_tensor
             input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.L1_MEMORY_CONFIG)
             input_tensor_sharded.deallocate(True)
+        peristent_intermediate_buffer_key = tt_ccl.create_rs_persistent_intermediate_buffer_key(
+            input_tensor.shape, input_tensor.dtype, memory_config, dim
+        )
+        peristent_output_buffer_key = tt_ccl.create_rs_persistent_output_buffer_key(
+            input_tensor.shape, input_tensor.dtype, memory_config, dim
+        )
         reduced = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
             dim=dim,
@@ -290,6 +296,13 @@ def tt_all_reduce(
         input_tensor = ttnn.to_memory_config(input_tensor, ttnn.DRAM_MEMORY_CONFIG)
 
     if not use_composite:
+        peristent_output_buffer_key = tt_ccl.create_ag_persistent_output_buffer_key(
+            input_tensor.shape,
+            input_tensor.dtype,
+            ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
+            dim,
+            cluster_axis,
+        )
         gathered_tensor = ttnn.experimental.all_gather_async(
             input_tensor,
             dim,
@@ -315,6 +328,20 @@ def tt_all_reduce(
         gathered_tensor.deallocate(True)
     else:
         input_mem_cfg = input_tensor.memory_config()
+        peristent_intermediate_buffer_key = tt_ccl.create_rs_persistent_intermediate_buffer_key(
+            input_tensor.shape,
+            input_tensor.dtype,
+            ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
+            dim,
+            cluster_axis,
+        )
+        peristent_output_buffer_key = tt_ccl.create_rs_persistent_output_buffer_key(
+            input_tensor.shape,
+            input_tensor.dtype,
+            ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
+            dim,
+            cluster_axis,
+        )
         reduced_tensor = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
             dim=dim,
@@ -327,6 +354,9 @@ def tt_all_reduce(
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
 
+        peristent_output_buffer_key = tt_ccl.create_ag_persistent_output_buffer_key(
+            reduced_tensor.shape, reduced_tensor.dtype, input_mem_cfg, dim, cluster_axis
+        )
         reduced_tensor = ttnn.experimental.all_gather_async(
             reduced_tensor,
             dim,
@@ -372,6 +402,9 @@ def tt_all_gather(
             input_tensor = ttnn.to_memory_config(input_tensor, memory_config, dtype)  # to sharded
 
     if cluster_axis is None:
+        peristent_output_buffer_key = tt_ccl.create_ag_persistent_output_buffer_key(
+            input_tensor.shape, input_tensor.dtype, memory_config, dim
+        )
         gathered = ttnn.experimental.all_gather_async(
             input_tensor,
             dim,
@@ -382,6 +415,9 @@ def tt_all_gather(
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
     else:
+        peristent_output_buffer_key = tt_ccl.create_ag_persistent_output_buffer_key(
+            input_tensor.shape, input_tensor.dtype, memory_config, dim, cluster_axis
+        )
         gathered = ttnn.experimental.all_gather_async(
             input_tensor,
             dim,
@@ -434,12 +470,16 @@ def tt_sharded_distributed_rmsnorm(
     tt_stats = ttnn.rms_norm_pre_all_gather(inp, program_config=ln_sharded_progcfg)
 
     # All gather stats
+    cluster_axis = 1
+    peristent_output_buffer_key = tt_ccl.create_ag_persistent_output_buffer_key(
+        tt_stats.shape, tt_stats.dtype, ln_sharded_stats_memcfg, 3, cluster_axis
+    )
     tt_stats = ttnn.experimental.all_gather_async(
         tt_stats,
         3,
         multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
         num_links=1,
-        cluster_axis=1,
+        cluster_axis=cluster_axis,
         mesh_device=mesh_device,
         topology=ttnn.Topology.Linear,
         memory_config=ln_sharded_stats_memcfg,

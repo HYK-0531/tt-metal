@@ -536,6 +536,12 @@ class Attention(LightweightModule):
             attn_output_cat = ttnn.to_memory_config(
                 attn_output_cat, self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"]
             )
+            peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
+                attn_output_cat.shape,
+                attn_output_cat.dtype,
+                self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"],
+                3,
+            )
             _, dense_out_sharded = ttnn.experimental.all_gather_matmul_async(
                 attn_output_cat,
                 self.wo,
@@ -820,6 +826,9 @@ class Attention(LightweightModule):
 
         # Non fused All Gather Matmul
         if self.use_fused_all_gather_matmul:  # is true for Ring topology
+            peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
+                attn_output_11SH.shape, attn_output_11SH.dtype, ttnn.DRAM_MEMORY_CONFIG, 3
+            )
             attn_output_11SH = ttnn.experimental.all_gather_async(
                 attn_output_11SH,
                 dim=3,

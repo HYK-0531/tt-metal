@@ -371,7 +371,7 @@ void FDMeshCommandQueue::enqueue_mesh_workload(MeshWorkload& mesh_workload, bool
     mesh_workload.set_last_used_command_queue_for_testing(this);
 
     if (blocking) {
-        this->finish({sub_device_id});
+        this->finish_locked({sub_device_id});
     }
 }
 
@@ -401,7 +401,7 @@ void FDMeshCommandQueue::enqueue_write_shard_to_core(
         sub_device_ids);
 
     if (blocking) {
-        this->finish(sub_device_ids);
+        this->finish_locked(sub_device_ids);
     }
 }
 
@@ -440,16 +440,20 @@ void FDMeshCommandQueue::enqueue_read_shard_from_core(
         ReadCoreDataDescriptor(dst, size_bytes), address.device_coord, blocking, sub_device_ids);
 }
 
-void FDMeshCommandQueue::finish(tt::stl::Span<const SubDeviceId> sub_device_ids) {
-    auto event = this->enqueue_record_event_to_host(sub_device_ids);
+void FDMeshCommandQueue::finish_locked(tt::stl::Span<const SubDeviceId> sub_device_ids) {
+    auto event = this->enqueue_record_event_to_host_locked(sub_device_ids);
 
-    auto api_lock = mesh_device_->lock_api();
     std::unique_lock<std::mutex> lock(reads_processed_cv_mutex_);
     reads_processed_cv_.wait(lock, [this] { return num_outstanding_reads_.load() == 0; });
     auto& sub_device_cq_owner = cq_shared_state_->sub_device_cq_owner;
     for (auto& sub_device_id : buffer_dispatch::select_sub_device_ids(mesh_device_, sub_device_ids)) {
         sub_device_cq_owner[*sub_device_id].finished(this->id_);
     }
+}
+
+void FDMeshCommandQueue::finish(tt::stl::Span<const SubDeviceId> sub_device_ids) {
+    auto lock = mesh_device_->lock_api();
+    this->finish_locked(sub_device_ids);
 }
 
 void FDMeshCommandQueue::write_shard_to_device(
@@ -541,7 +545,7 @@ void FDMeshCommandQueue::submit_memcpy_request(
     this->increment_num_entries_in_completion_queue();
 
     if (blocking) {
-        this->finish();
+        this->finish_locked();
     }
 }
 
@@ -555,7 +559,7 @@ void FDMeshCommandQueue::submit_core_data_memcpy_request(
     this->increment_num_entries_in_completion_queue();
 
     if (blocking) {
-        this->finish(sub_device_ids);
+        this->finish_locked(sub_device_ids);
     }
 }
 
@@ -606,9 +610,8 @@ MeshEvent FDMeshCommandQueue::enqueue_record_event(
     return event;
 }
 
-MeshEvent FDMeshCommandQueue::enqueue_record_event_to_host(
+MeshEvent FDMeshCommandQueue::enqueue_record_event_to_host_locked(
     tt::stl::Span<const SubDeviceId> sub_device_ids, const std::optional<MeshCoordinateRange>& device_range) {
-    auto lock = mesh_device_->lock_api();
     auto event = this->enqueue_record_event_helper(sub_device_ids, /*notify_host=*/true, device_range);
     completion_queue_reads_.push(std::make_shared<MeshCompletionReaderVariant>(
         std::in_place_type<MeshReadEventDescriptor>, ReadEventDescriptor(event.id()), event.device_range()));
@@ -619,6 +622,12 @@ MeshEvent FDMeshCommandQueue::enqueue_record_event_to_host(
         sub_device_entry.recorded_event(event.id(), event.mesh_cq_id());
     }
     return event;
+}
+
+MeshEvent FDMeshCommandQueue::enqueue_record_event_to_host(
+    tt::stl::Span<const SubDeviceId> sub_device_ids, const std::optional<MeshCoordinateRange>& device_range) {
+    auto lock = mesh_device_->lock_api();
+    return this->enqueue_record_event_to_host_locked(sub_device_ids, device_range);
 }
 
 void FDMeshCommandQueue::enqueue_wait_for_event(const MeshEvent& sync_event) {
@@ -929,11 +938,12 @@ void FDMeshCommandQueue::enqueue_trace(const MeshTraceId& trace_id, bool blockin
         expected_num_workers_completed_);
 
     if (blocking) {
-        this->finish();
+        this->finish_locked();
     }
 }
 
 void FDMeshCommandQueue::record_begin(const MeshTraceId& trace_id, const std::shared_ptr<MeshTraceDescriptor>& ctx) {
+    auto lock = mesh_device_->lock_api();
     trace_dispatch::reset_host_dispatch_state_for_trace(
         mesh_device_->num_sub_devices(),
         cq_shared_state_->worker_launch_message_buffer_state,

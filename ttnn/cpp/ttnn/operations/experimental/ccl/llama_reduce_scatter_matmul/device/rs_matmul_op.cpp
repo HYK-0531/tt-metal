@@ -79,14 +79,14 @@ std::tuple<Matmul_RS::operation_attributes_t, Matmul_RS::tensor_args_t> Matmul_R
     const std::optional<Tensor>& optional_output_tensor,                                 // default std::nullopt
     tt::tt_fabric::Topology topology,
     bool use_noc1_only,
-    const std::optional<const ttnn::Tensor>& second_input_tensor) {
+    const std::optional<const ttnn::Tensor>& second_weight_tensor) {
     LlamaReduceScatterDeviceOperation rs_struct{};
     std::optional<CoreCoord> user_core_coord;
     if (core_grid.has_value()) {
         user_core_coord = CoreCoord(core_grid->x, core_grid->y);
     }
     bool user_run_batched = ttnn::operations::matmul::detail::is_input_batched(weight_tensor.get_logical_shape());
-    if (second_input_tensor.has_value()) {
+    if (second_weight_tensor.has_value()) {
         return {
             operation_attributes_t{
                 rs_struct,

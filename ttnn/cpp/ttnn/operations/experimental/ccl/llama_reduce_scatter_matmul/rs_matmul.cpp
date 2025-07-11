@@ -19,6 +19,7 @@ std::vector<ttnn::Tensor> ExecuteLlamaReduceScatterMatmul::invoke(
     const MeshDevice& mesh_device,                  // rs 6
     const uint32_t num_links,                       // rs 7 default 1
     const tt::tt_metal::SubDeviceId& subdevice_id,
+    const std::optional<const ttnn::Tensor>& second_weight_tensor,
     tt::tt_fabric::Topology topology,
     const std::optional<ttnn::MemoryConfig>& memory_config_rs,  // rs 8 default std::nullopt
     const std::optional<ttnn::MemoryConfig>& memory_config_mm,  // mm4 used but default std::nullopt
@@ -33,8 +34,7 @@ std::vector<ttnn::Tensor> ExecuteLlamaReduceScatterMatmul::invoke(
     const std::optional<const std::string>& activation,                                  // mm7 set false
     const std::optional<const tt::tt_metal::Tile>& output_tile,                          // mm10 std::nullopt
     const std::optional<Tensor>& optional_output_tensor,                                 // mm11 std::nullopt
-    bool use_noc1_only,
-    const std::optional<const ttnn::Tensor>& second_input_tensor) {
+    bool use_noc1_only) {
     const auto& mesh_view = mesh_device.get_view();
     const uint32_t ring_devices = (cluster_axis == 0) ? mesh_view.num_rows() : mesh_view.num_cols();
     TT_FATAL(ring_devices > 1, "reduce_scatter async op will only work for ring_devices > 1, but has {}", ring_devices);
@@ -63,7 +63,7 @@ std::vector<ttnn::Tensor> ExecuteLlamaReduceScatterMatmul::invoke(
         optional_output_tensor,
         topology,
         use_noc1_only,
-        second_input_tensor);
+        second_weight_tensor);
 }
 
 }  // namespace ttnn::operations::experimental::ccl

@@ -25,6 +25,7 @@ struct ExecuteLlamaReduceScatterMatmul {
         const MeshDevice& mesh_device,                  // rs 6
         uint32_t num_links,                             // rs 7 default 1
         const tt::tt_metal::SubDeviceId& subdevice_id,
+        const std::optional<const ttnn::Tensor>& second_weight_tensor = std::nullopt,
         tt::tt_fabric::Topology topology = tt::tt_fabric::Topology::Linear,
         const std::optional<ttnn::MemoryConfig>& memory_config_rs = std::nullopt,  // rs 8 default std::nullopt
         const std::optional<ttnn::MemoryConfig>& memory_config_mm = std::nullopt,  // mm4 used but default std::nullopt
@@ -41,8 +42,7 @@ struct ExecuteLlamaReduceScatterMatmul {
         const std::optional<const std::string>& activation = std::nullopt,          // mm7 set false
         const std::optional<const tt::tt_metal::Tile>& output_tile = std::nullopt,  // mm10 std::nullopt
         const std::optional<Tensor>& optional_output_tensor = std::nullopt,         // mm11 std::nullopt
-        bool use_noc1_only = false,
-        const std::optional<const ttnn::Tensor>& second_input_tensor = std::nullopt);
+        bool use_noc1_only = false);
 };
 
 }  // namespace operations::experimental::ccl

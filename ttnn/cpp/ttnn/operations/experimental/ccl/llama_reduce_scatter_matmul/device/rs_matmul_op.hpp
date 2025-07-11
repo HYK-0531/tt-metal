@@ -103,7 +103,7 @@ struct Matmul_RS {
         const std::optional<Tensor>& optional_output_tensor = std::nullopt,
         tt::tt_fabric::Topology topology = tt::tt_fabric::Topology::Linear,
         bool use_noc1_only = false,
-        const std::optional<const ttnn::Tensor>& second_input_tensor = std::nullopt);
+        const std::optional<const ttnn::Tensor>& second_weight_tensor = std::nullopt);
 };
 
 }  // namespace ttnn::operations::experimental::ccl

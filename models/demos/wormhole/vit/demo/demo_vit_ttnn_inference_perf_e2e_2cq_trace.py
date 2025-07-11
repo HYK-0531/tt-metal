@@ -85,11 +85,13 @@ def run_trace_2cq_model(device, test_infra, num_warmup_iterations, num_measureme
         signpost(header="start")
     outputs = []
     ttnn.wait_for_event(1, first_op_event)
-    ttnn.copy_host_to_device_tensor(tt_inputs_host, tt_image_res, 1)
-    write_event = ttnn.record_event(device, 1)
+    #ttnn.copy_host_to_device_tensor(tt_inputs_host, tt_image_res, 1)
+    #write_event = ttnn.record_event(device, 1)
 
     profiler.start(f"run")
     for iter in range(0, num_measurement_iterations):
+        ttnn.copy_host_to_device_tensor(tt_inputs_host, tt_image_res, 1)
+        write_event = ttnn.record_event(device, 1)
         ttnn.wait_for_event(0, write_event)
         input_l1_tensor = ttnn.reshard(tt_image_res, input_mem_config, input_l1_tensor)
         first_op_event = ttnn.record_event(device, 0)

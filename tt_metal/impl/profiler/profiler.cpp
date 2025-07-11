@@ -1598,13 +1598,16 @@ void DeviceProfiler::updateTracyContext(std::pair<uint32_t, CoreCoord> device_co
             device_time = smallest_timestamp;
             frequency = device_core_frequency / 1000.0;
             device_sync_info = SyncInfo(cpu_time, device_time, frequency);
+            /*
             log_debug(
                 tt::LogMetal,
                 "For device {}, core {},{} default frequency was used and its zones will be out of sync",
                 device_id,
                 worker_core.x,
                 worker_core.y);
+                */
         } else {
+            /*
             log_debug(
                 tt::LogMetal,
                 "Device {}, core {},{} sync info are, frequency {} GHz,  delay {} cycles and, sync point {} seconds",
@@ -1614,6 +1617,7 @@ void DeviceProfiler::updateTracyContext(std::pair<uint32_t, CoreCoord> device_co
                 frequency,
                 device_time,
                 cpu_time);
+                */
         }
 
         TracyTTContextPopulate(tracyCtx, cpu_time, device_time, frequency);

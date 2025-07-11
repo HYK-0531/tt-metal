@@ -345,10 +345,12 @@ void MAIN {
                     // Set cb_prev_sum and cb_prev_max
                     cb_wait_front(cb_cur_max, Sq_chunk_t);
                     cb_wait_front(cb_cur_sum, Sq_chunk_t);
-                    std::swap(cb_cur_max, cb_prev_max);
-                    std::swap(cb_cur_sum, cb_prev_sum);
-                    cb_push_back(cb_prev_max, Sq_chunk_t);
-                    cb_push_back(cb_prev_sum, Sq_chunk_t);
+                    UNPACK(std::swap(cb_cur_max, cb_prev_max));
+                    UNPACK(std::swap(cb_cur_sum, cb_prev_sum));
+                    MATH(std::swap(cb_cur_max, cb_prev_max));
+                    MATH(std::swap(cb_cur_sum, cb_prev_sum));
+                    PACK(std::swap(cb_cur_max, cb_prev_max));
+                    PACK(std::swap(cb_cur_sum, cb_prev_sum));
 
                 } else {
                     // Write o, m, l into cb_out

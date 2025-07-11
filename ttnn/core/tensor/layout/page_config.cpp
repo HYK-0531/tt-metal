@@ -89,10 +89,10 @@ Alignment TilePageConfig::create_default_alignment(DataType dtype, const MemoryC
     if (memory_config.shard_spec().has_value()) {
         const auto& shard_spec = memory_config.shard_spec().value();
         auto shard_shape = shard_spec.physical_shard_shape.value_or(shard_spec.shape);
-        width_alignment = std::lcm(width_alignment, shard_shape[1]);
-    } else if (memory_config.nd_shard_spec().has_value()) {
-        const auto& nd_shard_spec = *memory_config.nd_shard_spec();
-        width_alignment = std::lcm(width_alignment, nd_shard_spec.shard_shape[-1]);
+        if (shard_spec.mode == ShardMode::LOGICAL ||
+            memory_config.memory_layout() == TensorMemoryLayout::WIDTH_SHARDED) {
+            width_alignment = std::lcm(width_alignment, shard_shape[1]);
+        }
     }
     return Alignment({height_alignment, width_alignment});
 }
@@ -138,10 +138,10 @@ Alignment RowMajorPageConfig::create_default_alignment(DataType dtype, const Mem
     if (memory_config.shard_spec().has_value()) {
         const auto& shard_spec = memory_config.shard_spec().value();
         auto shard_shape = shard_spec.physical_shard_shape.value_or(shard_spec.shape);
-        width_alignment = shard_shape[1];
-    } else if (memory_config.nd_shard_spec().has_value()) {
-        const auto& nd_shard_spec = *memory_config.nd_shard_spec();
-        width_alignment = nd_shard_spec.shard_shape[-1];
+        if (shard_spec.mode == ShardMode::LOGICAL ||
+            memory_config.memory_layout() == TensorMemoryLayout::WIDTH_SHARDED) {
+            width_alignment = shard_shape[1];
+        }
     }
     return Alignment({width_alignment});
 }

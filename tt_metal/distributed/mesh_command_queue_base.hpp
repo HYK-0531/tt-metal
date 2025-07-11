@@ -37,6 +37,15 @@ private:
     void write_sharded_buffer(const MeshBuffer& buffer, const void* src);
     void read_sharded_buffer(MeshBuffer& buffer, void* dst);
 
+    void enqueue_read_shards_locked(
+        const std::vector<ShardDataTransfer>& shard_data_transfers,
+        const std::shared_ptr<MeshBuffer>& mesh_buffer,
+        bool blocking);
+    void enqueue_write_shards_locked(
+        const std::shared_ptr<MeshBuffer>& mesh_buffer,
+        const std::vector<ShardDataTransfer>& shard_data_transfers,
+        bool blocking);
+
 public:
     MeshCommandQueueBase(MeshDevice* mesh_device, uint32_t id, std::shared_ptr<ThreadPool> dispatch_thread_pool) :
         MeshCommandQueue(mesh_device, id), dispatch_thread_pool_(std::move(dispatch_thread_pool)) {}

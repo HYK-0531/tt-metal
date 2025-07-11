@@ -205,11 +205,10 @@ void MeshCommandQueueBase::enqueue_read_mesh_buffer(
     this->read_sharded_buffer(*buffer, host_data);
 }
 
-void MeshCommandQueueBase::enqueue_write_shards(
+void MeshCommandQueueBase::enqueue_write_shards_locked(
     const std::shared_ptr<MeshBuffer>& buffer,
     const std::vector<ShardDataTransfer>& shard_data_transfers,
     bool blocking) {
-    auto lock = mesh_device_->lock_api();
     // TODO: #17215 - this API is used by TTNN, as it currently implements rich ND sharding API for multi-devices.
     // In the long run, the multi-device sharding API in Metal will change, and this will most likely be replaced.
     auto dispatch_lambda = [&shard_data_transfers, &buffer, this](uint32_t shard_idx) {
@@ -230,6 +229,14 @@ void MeshCommandQueueBase::enqueue_write_shards(
     }
 }
 
+void MeshCommandQueueBase::enqueue_write_shards(
+    const std::shared_ptr<MeshBuffer>& mesh_buffer,
+    const std::vector<ShardDataTransfer>& shard_data_transfers,
+    bool blocking) {
+    auto lock = mesh_device_->lock_api();
+    this->enqueue_write_shards_locked(mesh_buffer, shard_data_transfers, blocking);
+}
+
 void MeshCommandQueueBase::enqueue_write(
     const std::shared_ptr<MeshBuffer>& mesh_buffer, const DistributedHostBuffer& host_buffer, bool blocking) {
     auto lock = mesh_device_->lock_api();
@@ -245,14 +252,13 @@ void MeshCommandQueueBase::enqueue_write(
         }
     }
 
-    this->enqueue_write_shards(mesh_buffer, shard_data_transfers, blocking);
+    this->enqueue_write_shards_locked(mesh_buffer, shard_data_transfers, blocking);
 }
 
-void MeshCommandQueueBase::enqueue_read_shards(
+void MeshCommandQueueBase::enqueue_read_shards_locked(
     const std::vector<ShardDataTransfer>& shard_data_transfers,
     const std::shared_ptr<MeshBuffer>& buffer,
     bool blocking) {
-    auto lock = mesh_device_->lock_api();
     // TODO: #17215 - this API is used by TTNN, as it currently implements rich ND sharding API for multi-devices.
     // In the long run, the multi-device sharding API in Metal will change, and this will most likely be replaced.
     std::unordered_map<IDevice*, uint32_t> num_txns_per_device = {};
@@ -265,6 +271,14 @@ void MeshCommandQueueBase::enqueue_read_shards(
             num_txns_per_device);
     }
     this->submit_memcpy_request(num_txns_per_device, blocking);
+}
+
+void MeshCommandQueueBase::enqueue_read_shards(
+    const std::vector<ShardDataTransfer>& shard_data_transfers,
+    const std::shared_ptr<MeshBuffer>& mesh_buffer,
+    bool blocking) {
+    auto lock = mesh_device_->lock_api();
+    this->enqueue_read_shards_locked(shard_data_transfers, mesh_buffer, blocking);
 }
 
 void MeshCommandQueueBase::enqueue_read(
@@ -288,7 +302,7 @@ void MeshCommandQueueBase::enqueue_read(
         }
     }
 
-    this->enqueue_read_shards(shard_data_transfers, buffer, blocking);
+    this->enqueue_read_shards_locked(shard_data_transfers, buffer, blocking);
 }
 
 }  // namespace tt::tt_metal::distributed

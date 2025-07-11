@@ -33,47 +33,45 @@ void AllGatherMatmulAsync::validate_with_output_tensors(
     const std::vector<Tensor>& input_tensors,
     const std::vector<std::optional<const ttnn::Tensor>>& optional_input_tensors,
     const std::vector<std::optional<Tensor>>& output_tensors) const {
-    // TT_ASSERT(input_tensors.size() == 2, "AllGatherMatmulAsync requires 2 input tensors: [input, weight]");
-    // auto& input_tensor = input_tensors[0];
-    // auto& weight_tensor = input_tensors[1];
-    // auto& all_gather_output_tensor = output_tensors.at(0).value();
-    // // All Gather validate
-    // this->all_gather_async_struct.validate_with_output_tensors({input_tensor}, {all_gather_output_tensor});
-    // // Matmul validate.
-    // this->matmul_struct.validate({all_gather_output_tensor, weight_tensor}, optional_input_tensors, {});
-    // // All Gather Matmul validate
-    // TT_FATAL(
-    //     this->all_gather_async_struct.dim == 3, "AllGatherMatmulAsync requires dim=3 for the AllGather operaitons.");
-    // TT_FATAL(
-    //     input_tensor.get_padded_shape()[0] == 1 && input_tensor.get_padded_shape()[1] == 1,
-    //     "AllGatherMatmulAsync requires input tensor to have batch size of 1.");
-    // std::visit(
-    //     [&](const auto& config) {
-    //         using ProgramConfigType = std::decay_t<decltype(config)>;
-    //         if (not(std::is_same_v<
-    //                     ProgramConfigType,
-    //                     operations::matmul::MatmulMultiCoreReuseMultiCast1DProgramConfig> ||
-    //                 std::
-    //                     is_same_v<ProgramConfigType,
-    //                     operations::matmul::MatmulMultiCoreReuseMultiCastProgramConfig>)) {
-    //             TT_THROW(
-    //                 "Unsupported MatmulProgramConfig type for AllGatherMatmulAsync. Needs to be 1D or 2D
-    //                 Multicast.");
-    //         }
-    //     },
-    //     this->matmul_struct.program_config.value());
+    TT_ASSERT(input_tensors.size() == 2, "AllGatherMatmulAsync requires 2 input tensors: [input, weight]");
+    auto& input_tensor = input_tensors[0];
+    auto& weight_tensor = input_tensors[1];
+    auto& all_gather_output_tensor = output_tensors.at(0).value();
+    // All Gather validate
+    this->all_gather_async_struct.validate_with_output_tensors({input_tensor}, {all_gather_output_tensor});
+    // Matmul validate.
+    this->matmul_struct.validate({all_gather_output_tensor, weight_tensor}, optional_input_tensors, {});
+    // All Gather Matmul validate
+    TT_FATAL(
+        this->all_gather_async_struct.dim == 3, "AllGatherMatmulAsync requires dim=3 for the AllGather operaitons.");
+    TT_FATAL(
+        input_tensor.get_padded_shape()[0] == 1 && input_tensor.get_padded_shape()[1] == 1,
+        "AllGatherMatmulAsync requires input tensor to have batch size of 1.");
+    std::visit(
+        [&](const auto& config) {
+            using ProgramConfigType = std::decay_t<decltype(config)>;
+            if (not(std::is_same_v<
+                        ProgramConfigType,
+                        operations::matmul::MatmulMultiCoreReuseMultiCast1DProgramConfig> ||
+                    std::
+                        is_same_v<ProgramConfigType, operations::matmul::MatmulMultiCoreReuseMultiCastProgramConfig>)) {
+                TT_THROW(
+                    "Unsupported MatmulProgramConfig type for AllGatherMatmulAsync. Needs to be 1D or 2D Multicast.");
+            }
+        },
+        this->matmul_struct.program_config.value());
 
-    // const auto& all_gather_output_tensor_shard_spec = all_gather_output_tensor.shard_spec();
-    // if (all_gather_output_tensor_shard_spec.has_value()) {
-    //     const auto& shard_grid = all_gather_output_tensor_shard_spec->grid.bounding_box();
-    //     const auto& shard_grid_start = shard_grid.start_coord;
-    //     const auto& shard_grid_end = shard_grid.end_coord;
-    //     const uint32_t num_all_gather_output_shards =
-    //     shard_builder::get_sharding_core_count(all_gather_output_tensor); TT_FATAL(
-    //         this->all_gather_async_struct.ring_size == num_all_gather_output_shards,
-    //         "AllGatherMatmulAsync requires number of tensor slices to equal the number of output shards of the "
-    //         "all_gather.");
-    // }
+    const auto& all_gather_output_tensor_shard_spec = all_gather_output_tensor.shard_spec();
+    if (all_gather_output_tensor_shard_spec.has_value()) {
+        const auto& shard_grid = all_gather_output_tensor_shard_spec->grid.bounding_box();
+        const auto& shard_grid_start = shard_grid.start_coord;
+        const auto& shard_grid_end = shard_grid.end_coord;
+        const uint32_t num_all_gather_output_shards = shard_builder::get_sharding_core_count(all_gather_output_tensor);
+        TT_FATAL(
+            this->all_gather_async_struct.ring_size == num_all_gather_output_shards,
+            "AllGatherMatmulAsync requires number of tensor slices to equal the number of output shards of the "
+            "all_gather.");
+    }
 }
 
 std::vector<ttnn::TensorSpec> AllGatherMatmulAsync::compute_output_specs(
@@ -92,16 +90,7 @@ std::vector<ttnn::TensorSpec> AllGatherMatmulAsync::compute_output_specs(
 std::vector<Tensor> AllGatherMatmulAsync::create_output_tensors(
     const std::vector<Tensor>& input_tensors, const std::vector<std::optional<Tensor>>& optional_output_tensors) const {
     // All Gather output tensor
-    const auto& ag_input_tensor = input_tensors[0];
-    auto shape = ag_input_tensor.padded_shape();  // TODO: Replace with logical_shape()
-    shape[this->all_gather_async_struct.dim] *= this->all_gather_async_struct.ring_size;
-    auto tensor_spec = TensorSpec(
-        shape,
-        tt::tt_metal::TensorLayout(
-            ag_input_tensor.dtype(),
-            ag_input_tensor.tensor_spec().page_config(),
-            this->all_gather_async_struct.output_mem_config));
-    ttnn::Tensor all_gather_output_tensor = create_device_tensor(tensor_spec, ag_input_tensor.device());
+    auto& all_gather_output_tensor = optional_output_tensors.at(0).value();
 
     // Matmul output tensor
     ttnn::Tensor matmul_output_tensor =
@@ -215,6 +204,7 @@ namespace ccl {
 std::vector<ttnn::Tensor> all_gather_matmul_async(
     const ttnn::Tensor& input_tensor,
     const ttnn::Tensor& weight_tensor,
+    ttnn::Tensor& persistent_output_buffer,
     const uint32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
     const CoreCoord all_gather_core_grid_offset,
@@ -244,7 +234,7 @@ std::vector<ttnn::Tensor> all_gather_matmul_async(
         optional_input_tensors.push_back(std::nullopt);
     }
 
-    std::vector<std::optional<Tensor>> optional_output_tensors = {input_tensor};
+    std::vector<std::optional<Tensor>> optional_output_tensors = {persistent_output_buffer};
 
     /* AllGather setup */
     ttnn::AllGatherAsync all_gather_async_struct = ttnn::AllGatherAsync(

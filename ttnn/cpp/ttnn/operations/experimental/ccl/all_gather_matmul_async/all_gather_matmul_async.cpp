@@ -11,6 +11,7 @@ namespace operations::experimental::ccl {
 std::vector<ttnn::Tensor> ExecuteAllGatherMatmulAsync::invoke(
     const ttnn::Tensor& input_tensor,
     const ttnn::Tensor& weight_tensor,
+    ttnn::Tensor& persistent_output_buffer,
     const uint32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
     const CoreCoord all_gather_core_grid_offset,
@@ -30,6 +31,7 @@ std::vector<ttnn::Tensor> ExecuteAllGatherMatmulAsync::invoke(
     return ttnn::operations::experimental::ccl::all_gather_matmul_async(
         input_tensor,
         weight_tensor,
+        persistent_output_buffer,
         dim,
         multi_device_global_semaphore,
         all_gather_core_grid_offset,

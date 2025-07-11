@@ -17,7 +17,7 @@ from ttnn import ConcatMeshToTensor
 @pytest.mark.parametrize("mode", ["prefill", "decode"])
 def test_mixtral_moe_inference(t3k_mesh_device, reset_seeds, mode):
     pcc = 0.99
-    iterations = 1
+    iterations = 32
     dtype = ttnn.bfloat8_b
 
     model_args = ModelArgs(t3k_mesh_device)
@@ -61,14 +61,14 @@ def test_mixtral_moe_inference(t3k_mesh_device, reset_seeds, mode):
 
     all_tests_pass = True
 
-    seqlen = 1
-    batch = 32
+    seqlen = 32
+    batch = 1
 
     for i in range(iterations):
         logger.info(f"[Decoder] Generating token {i}")
 
-        pt_decode_input = (torch.rand(batch, seqlen, model_args.dim) * 2) - 1
-        breakpoint()
+        pt_decode_input = (torch.rand(batch, 1, seqlen, model_args.dim) * 2) - 1
+
         if mode == "decode":
             shard_grid = ttnn.CoreRangeSet(
                 {ttnn.CoreRange(ttnn.CoreCoord(0, 0), ttnn.CoreCoord(7, 0))}  # 8 cores: x=0 to x=7, y=0
@@ -89,7 +89,6 @@ def test_mixtral_moe_inference(t3k_mesh_device, reset_seeds, mode):
                 device=t3k_mesh_device,
                 memory_config=width_sharded_mem_config,
             )
-
         else:
             tt_decode_input = ttnn.from_torch(
                 pt_decode_input,
@@ -105,14 +104,13 @@ def test_mixtral_moe_inference(t3k_mesh_device, reset_seeds, mode):
         tt_output_torch = (
             ttnn.to_torch(tt_out, mesh_composer=ConcatMeshToTensor(t3k_mesh_device, dim=0))[0]
             .squeeze(2)
-            .view(batch, 1, -1)
+            .view(batch, 1, seqlen, model_args.dim)
         )
 
         # Reference Model Output
-        logger.info(f"Starting Reeference MOE {mode}")
+        logger.info(f"Starting Reference MOE {mode}")
         ref_output = reference_model(pt_decode_input)
         passing, pcc_message = comp_pcc(ref_output, tt_output_torch, pcc)
-
         logger.info(comp_allclose(ref_output, tt_output_torch))
         logger.info(pcc_message)
 

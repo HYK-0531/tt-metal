@@ -21,7 +21,6 @@ def test_mixtral_mlp_inference(t3k_mesh_device, use_program_cache, reset_seeds, 
     }
 
     model_args = ModelArgs(t3k_mesh_device)
-    model_args.n_layers = 32
     state_dict = model_args.load_state_dict()
 
     tt_model = TtMixtralMLP(

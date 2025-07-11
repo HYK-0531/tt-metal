@@ -10,6 +10,10 @@
 #define BCAST_LLKOP EltwiseBinaryType::ELWMUL
 #define BCAST_DIM BroadcastType::COL
 
+// #define PROFILE_AVERAGE_CALC
+// #define PROFILE_VARIANCE_CALC
+#define PROFILE_FINAL_CALC
+
 #include "compute_kernel_api/reduce.h"
 #include "compute_kernel_api/bcast.h"
 #include "compute_kernel_api/eltwise_binary.h"
@@ -271,7 +275,10 @@ void MAIN {
                 DeviceZoneScopedN("Average Calc");
 
                 // Start Local Reduce
-                cb_wait_front(cb_input_mask, block_w);
+                {
+                    DeviceZoneScopedN("cb_wait_front input_mask");
+                    cb_wait_front(cb_input_mask, block_w);
+                }
                 for (uint32_t out_block_index = 0; out_block_index < num_out_blocks_padded; out_block_index++) {
                     uint32_t out_block_h_actual, out_block_hw_actual;
                     if (extra_out_block && (out_block_index == (num_out_blocks_padded - 1))) {
@@ -281,92 +288,155 @@ void MAIN {
                         out_block_h_actual = out_block_h_normal;
                         out_block_hw_actual = out_block_hw_normal;
                     }
-                    cb_wait_front(cb_in0, out_block_hw_normal);
+                    {
+                        DeviceZoneScopedN("cb_wait_front in0");
+                        cb_wait_front(cb_in0, out_block_hw_normal);
+                    }
 
-                    index_h_offset = 0;
-                    reconfig_data_format_srcb(cb_in0, cb_input_mask);
-                    // mask input
-                    mul_tiles_init(cb_in0, cb_input_mask);
-                    cb_reserve_back(cb_x, out_block_hw_normal);
-                    for (uint32_t i = 0; i < out_block_h_actual; ++i) {
-                        index_subblock_w_offset = 0;
-                        for (uint32_t j = 0; j < num_subblocks_w; ++j) {
-                            tile_regs_acquire();
-                            for (uint32_t w = 0; w < subblock_w; ++w) {
-                                uint32_t index = w + index_subblock_w_offset + index_h_offset;
-                                uint32_t index_mask = w + index_subblock_w_offset;
-#ifdef TILIZE_IN
-                        mul_tiles(cb_in, cb_input_mask, index, index_mask, w);
-#else
-                            mul_tiles(cb_in0, cb_input_mask, index, index_mask, w);
+                    {
+#ifdef PROFILE_AVERAGE_CALC
+                        DeviceZoneScopedN("Input Masking Setup");
 #endif
+                        index_h_offset = 0;
+                        reconfig_data_format_srcb(cb_in0, cb_input_mask);
+                        // mask input
+                        mul_tiles_init(cb_in0, cb_input_mask);
+                        cb_reserve_back(cb_x, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_AVERAGE_CALC
+                        DeviceZoneScopedN("Input Masking Loop");
+#endif
+                        for (uint32_t i = 0; i < out_block_h_actual; ++i) {
+                            index_subblock_w_offset = 0;
+                            for (uint32_t j = 0; j < num_subblocks_w; ++j) {
+                                tile_regs_acquire();
+                                for (uint32_t w = 0; w < subblock_w; ++w) {
+                                    uint32_t index = w + index_subblock_w_offset + index_h_offset;
+                                    uint32_t index_mask = w + index_subblock_w_offset;
+#ifdef TILIZE_IN
+                                    mul_tiles(cb_in, cb_input_mask, index, index_mask, w);
+#else
+                                    mul_tiles(cb_in0, cb_input_mask, index, index_mask, w);
+#endif
+                                }
+                                tile_regs_commit();
+                                tile_regs_wait();
+                                for (uint32_t i = 0; i < subblock_w; ++i) {
+                                    pack_tile(i, cb_x);
+                                }
+                                tile_regs_release();
+                                index_subblock_w_offset += subblock_w;
                             }
+                            index_h_offset += block_w;
+                        }
+                    }
+                    {
+#ifdef PROFILE_AVERAGE_CALC
+                        DeviceZoneScopedN("Input Masking Cleanup");
+#endif
+#ifdef TILIZE_IN
+                        cb_pop_front(cb_in, out_block_hw_actual);
+#else
+                        cb_pop_front(cb_in0, out_block_hw_normal);
+#endif
+                        cb_push_back(cb_x, out_block_hw_normal);
+                        reconfig_data_format_srcb(cb_input_mask, cb_scaler);
+                    }
+
+                    {
+#ifdef PROFILE_AVERAGE_CALC
+                        DeviceZoneScopedN("Partial Reduction Setup");
+#endif
+                        // Partial/E[x]
+                        index_h_offset = 0;
+                        reduce_init(cb_x, cb_scaler, cb_ex_partial);
+                        cb_reserve_back(cb_ex_partial, 1);
+                        tile_regs_acquire();
+                    }
+                    {
+                        DeviceZoneScopedN("cb_wait_front scaler");
+                        cb_wait_front(cb_scaler, 1);
+                    }
+                    {
+                        DeviceZoneScopedN("cb_wait_front x");
+                        cb_wait_front(cb_x, out_block_hw_normal);
+                    }
+
+                    {
+#ifdef PROFILE_AVERAGE_CALC
+                        DeviceZoneScopedN("Partial Reduction Loop");
+#endif
+                        for (uint32_t h = 0; h < out_block_h_actual; ++h) {
+                            for (uint32_t w = 0; w < block_w; ++w) {
+                                uint32_t index = index_h_offset + w;
+                                reduce_tile(cb_x, cb_scaler, index, scaler0, dst0);
+                            }
+                            index_h_offset += block_w;
+                        }
                         tile_regs_commit();
                         tile_regs_wait();
-                        for (uint32_t i = 0; i < subblock_w; ++i) {
-                            pack_tile(i, cb_x);
-                        }
+                        pack_tile(dst0, cb_ex_partial);
                         tile_regs_release();
-                        index_subblock_w_offset += subblock_w;
-                        }
-                    index_h_offset += block_w;
                     }
-#ifdef TILIZE_IN
-                cb_pop_front(cb_in, out_block_hw_actual);
-#else
-                cb_pop_front(cb_in0, out_block_hw_normal);
+                    {
+#ifdef PROFILE_AVERAGE_CALC
+                        DeviceZoneScopedN("Partial Reduction Cleanup");
 #endif
-                cb_push_back(cb_x, out_block_hw_normal);
-                reconfig_data_format_srcb(cb_input_mask, cb_scaler);
-
-                // Partial/E[x]
-                index_h_offset = 0;
-                reduce_init(cb_x, cb_scaler, cb_ex_partial);
-                cb_reserve_back(cb_ex_partial, 1);
-                tile_regs_acquire();
-                cb_wait_front(cb_scaler, 1);
-                cb_wait_front(cb_x, out_block_hw_normal);
-
-                for (uint32_t h = 0; h < out_block_h_actual; ++h) {
-                    for (uint32_t w = 0; w < block_w; ++w) {
-                        uint32_t index = index_h_offset + w;
-                        reduce_tile(cb_x, cb_scaler, index, scaler0, dst0);
+                        cb_pop_front(cb_x, out_block_hw_normal);
+                        cb_push_back(cb_ex_partial, 1);
+                        reduce_uninit();
                     }
-                    index_h_offset += block_w;
-                }
-                tile_regs_commit();
-                tile_regs_wait();
-                pack_tile(dst0, cb_ex_partial);
-                tile_regs_release();
-                cb_pop_front(cb_x, out_block_hw_normal);
-                cb_push_back(cb_ex_partial, 1);
-                reduce_uninit();
 
-                cb_wait_front(cb_ex_partial, 1);
+                    {
+                        DeviceZoneScopedN("cb_wait_front ex_partial");
+                        cb_wait_front(cb_ex_partial, 1);
+                    }
                 }
             // End Local Redcue
             // Start Global Reduce
             if constexpr (is_mcast_sender) {
-                reduce_init(cb_ex_external, cb_scaler_global, cb_ex_global);
-                cb_reserve_back(cb_ex_global, 1);
-                if (num_cores_per_mcast_group > 1) {
-                    cb_reserve_back(cb_ex, 1);
+                {
+#ifdef PROFILE_AVERAGE_CALC
+                    DeviceZoneScopedN("Global Reduction Setup");
+#endif
+                    reduce_init(cb_ex_external, cb_scaler_global, cb_ex_global);
+                    cb_reserve_back(cb_ex_global, 1);
+                    if (num_cores_per_mcast_group > 1) {
+                        cb_reserve_back(cb_ex, 1);
+                    }
+                    tile_regs_acquire();
                 }
-                tile_regs_acquire();
-                cb_wait_front(cb_scaler_global, 1);
-                cb_wait_front(cb_ex_external, cb_ex_external_tiles_required);
-                for (uint32_t external_i = 0; external_i < cb_ex_external_tiles_required; external_i++) {
-                    reduce_tile(cb_ex_external, cb_scaler_global, external_i, scaler0, dst0);
+                {
+                    DeviceZoneScopedN("cb_wait_front scaler_global");
+                    cb_wait_front(cb_scaler_global, 1);
                 }
-                cb_pop_front(cb_ex_external, cb_ex_external_tiles_required);
-                tile_regs_commit();
-                tile_regs_wait();
-                pack_tile(dst0, cb_ex_global);
-                tile_regs_release();
-                reduce_uninit();
-                cb_push_back(cb_ex_global, 1);
-                if (num_cores_per_mcast_group > 1) {
-                    cb_push_back(cb_ex, 1);
+                {
+                    DeviceZoneScopedN("cb_wait_front ex_external");
+                    cb_wait_front(cb_ex_external, cb_ex_external_tiles_required);
+                }
+                {
+#ifdef PROFILE_AVERAGE_CALC
+                    DeviceZoneScopedN("Global Reduction Loop");
+#endif
+                    for (uint32_t external_i = 0; external_i < cb_ex_external_tiles_required; external_i++) {
+                        reduce_tile(cb_ex_external, cb_scaler_global, external_i, scaler0, dst0);
+                    }
+                    cb_pop_front(cb_ex_external, cb_ex_external_tiles_required);
+                    tile_regs_commit();
+                    tile_regs_wait();
+                    pack_tile(dst0, cb_ex_global);
+                    tile_regs_release();
+                }
+                {
+#ifdef PROFILE_AVERAGE_CALC
+                    DeviceZoneScopedN("Global Reduction Cleanup");
+#endif
+                    reduce_uninit();
+                    cb_push_back(cb_ex_global, 1);
+                    if (num_cores_per_mcast_group > 1) {
+                        cb_push_back(cb_ex, 1);
+                    }
                 }
             }
             // End Global Reduce
@@ -387,136 +457,236 @@ void MAIN {
                         out_block_hw_actual = out_block_hw_normal;
                     }
 
-                    cb_wait_front(cb_in0, out_block_hw_normal);
-                    // x - E[x]
-                    sub_tiles_bcast_scalar_init_short(cb_in0, cb_ex_global);
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("cb_wait_front in0");
+#endif
+                        cb_wait_front(cb_in0, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Mean Subtraction Setup");
+#endif
+                        // x - E[x]
+                        sub_tiles_bcast_scalar_init_short(cb_in0, cb_ex_global);
+                    }
 
                     cb_reserve_back(cb_xmm, out_block_hw_normal);
-                    cb_wait_front(cb_ex_global, 1);
-                    for (uint32_t i = 0; i < out_block_h_actual; i++) {
-                        index_subblock_w_offset = 0;
-                        for (uint32_t j = 0; j < num_subblocks_w; j++) {
-                            tile_regs_acquire();
-                            for (uint32_t w = 0; w < subblock_w; w++) {
-                                uint32_t index = w + index_subblock_w_offset;
-                                sub_tiles_bcast_scalar(cb_in0, cb_ex_global, index, 0, w);
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("cb_wait_front ex_global");
+#endif
+                        cb_wait_front(cb_ex_global, 1);
+                    }
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Mean Subtraction Loop");
+#endif
+                        for (uint32_t i = 0; i < out_block_h_actual; i++) {
+                            index_subblock_w_offset = 0;
+                            for (uint32_t j = 0; j < num_subblocks_w; j++) {
+                                tile_regs_acquire();
+                                for (uint32_t w = 0; w < subblock_w; w++) {
+                                    uint32_t index = w + index_subblock_w_offset;
+                                    sub_tiles_bcast_scalar(cb_in0, cb_ex_global, index, 0, w);
+                                }
+                                tile_regs_commit();
+                                tile_regs_wait();
+                                for (uint32_t i = 0; i < subblock_w; i++) {
+                                    pack_tile(i, cb_xmm);
+                                }
+                                tile_regs_release();
+                                index_subblock_w_offset += subblock_w;
                             }
-                            tile_regs_commit();
-                            tile_regs_wait();
-                            for (uint32_t i = 0; i < subblock_w; i++) {
-                                pack_tile(i, cb_xmm);
-                            }
-                            tile_regs_release();
-                            index_subblock_w_offset += subblock_w;
+                            cb_pop_front(cb_in0, block_w);
                         }
-                        cb_pop_front(cb_in0, block_w);
+                        if (extra_out_block && (out_block_index == (num_out_blocks_padded - 1))) {
+                            cb_pop_front(cb_in0, out_block_hw_normal - out_block_hw_last);
+                        }
+                        cb_push_back(cb_xmm, out_block_hw_normal);
                     }
-                    if (extra_out_block && (out_block_index == (num_out_blocks_padded - 1))) {
-                        cb_pop_front(cb_in0, out_block_hw_normal - out_block_hw_last);
-                    }
-                    cb_push_back(cb_xmm, out_block_hw_normal);
 
-                    // zero out the garbage values by mult mask again
-                    reconfig_data_format_srcb(cb_ex_global, cb_input_mask);
-                    mul_tiles_init(cb_xmm, cb_input_mask);
-                    cb_reserve_back(cb_x, out_block_hw_normal);
-                    cb_wait_front(cb_xmm, out_block_hw_normal);
-                    for (uint32_t i = 0; i < out_block_h_actual; i++) {
-                        index_subblock_w_offset = 0;
-                        for (uint32_t j = 0; j < num_subblocks_w; ++j) {
-                            tile_regs_acquire();
-                            for (uint32_t w = 0; w < subblock_w; ++w) {
-                                uint32_t index = w + index_subblock_w_offset;
-                                uint32_t index_mask = index;
-                                mul_tiles(cb_xmm, cb_input_mask, index, index_mask, w);
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Residual Masking Setup");
+#endif
+                        // zero out the garbage values by mult mask again
+                        reconfig_data_format_srcb(cb_ex_global, cb_input_mask);
+                        mul_tiles_init(cb_xmm, cb_input_mask);
+                        cb_reserve_back(cb_x, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("cb_wait_front xmm");
+#endif
+                        cb_wait_front(cb_xmm, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Residual Masking Loop");
+#endif
+                        for (uint32_t i = 0; i < out_block_h_actual; i++) {
+                            index_subblock_w_offset = 0;
+                            for (uint32_t j = 0; j < num_subblocks_w; ++j) {
+                                tile_regs_acquire();
+                                for (uint32_t w = 0; w < subblock_w; ++w) {
+                                    uint32_t index = w + index_subblock_w_offset;
+                                    uint32_t index_mask = index;
+                                    mul_tiles(cb_xmm, cb_input_mask, index, index_mask, w);
+                                }
+                                tile_regs_commit();
+                                tile_regs_wait();
+                                for (uint32_t i = 0; i < subblock_w; ++i) {
+                                    pack_tile(i, cb_x);
+                                }
+                                tile_regs_release();
+                                index_subblock_w_offset += subblock_w;
                             }
-                            tile_regs_commit();
-                            tile_regs_wait();
-                            for (uint32_t i = 0; i < subblock_w; ++i) {
-                                pack_tile(i, cb_x);
-                            }
-                            tile_regs_release();
-                            index_subblock_w_offset += subblock_w;
+                            cb_pop_front(cb_xmm, block_w);
                         }
-                        cb_pop_front(cb_xmm, block_w);
+                        if (extra_out_block && (out_block_index == (num_out_blocks_padded - 1))) {
+                            cb_pop_front(cb_xmm, out_block_hw_normal - out_block_hw_last);
+                        }
+                        cb_push_back(cb_x, out_block_hw_normal);
                     }
-                    if (extra_out_block && (out_block_index == (num_out_blocks_padded - 1))) {
-                        cb_pop_front(cb_xmm, out_block_hw_normal - out_block_hw_last);
-                    }
-                    cb_push_back(cb_x, out_block_hw_normal);
 
-                    reconfig_data_format_srcb(cb_input_mask, cb_x);
-                    // (x - E[x])^2
-                    index_h_offset = 0;
-                    mul_tiles_init(cb_x, cb_x);
-                    cb_reserve_back(cb_xmm, out_block_hw_normal);
-                    cb_wait_front(cb_x, out_block_hw_normal);
-                    for (uint32_t i = 0; i < out_block_h_actual; i++) {
-                        index_subblock_w_offset = 0;
-                        for (uint32_t j = 0; j < num_subblocks_w; j++) {
-                            tile_regs_acquire();
-                            for (uint32_t w = 0; w < subblock_w; w++) {
-                                uint32_t index = w + index_subblock_w_offset + index_h_offset;
-                                mul_tiles(cb_x, cb_x, index, index, w);
-                            }
-                            tile_regs_commit();
-                            tile_regs_wait();
-                            for (uint32_t i = 0; i < subblock_w; i++) {
-                                pack_tile(i, cb_xmm);
-                            }
-                            tile_regs_release();
-                            index_subblock_w_offset += subblock_w;
-                        }
-                        index_h_offset += block_w;
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Squaring Setup");
+#endif
+                        reconfig_data_format_srcb(cb_input_mask, cb_x);
+                        // (x - E[x])^2
+                        index_h_offset = 0;
+                        mul_tiles_init(cb_x, cb_x);
+                        cb_reserve_back(cb_xmm, out_block_hw_normal);
                     }
-                    cb_pop_front(cb_x, out_block_hw_normal);
-                    cb_push_back(cb_xmm, out_block_hw_normal);
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("cb_wait_front x");
+#endif
+                        cb_wait_front(cb_x, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Squaring Loop");
+#endif
+                        for (uint32_t i = 0; i < out_block_h_actual; i++) {
+                            index_subblock_w_offset = 0;
+                            for (uint32_t j = 0; j < num_subblocks_w; j++) {
+                                tile_regs_acquire();
+                                for (uint32_t w = 0; w < subblock_w; w++) {
+                                    uint32_t index = w + index_subblock_w_offset + index_h_offset;
+                                    mul_tiles(cb_x, cb_x, index, index, w);
+                                }
+                                tile_regs_commit();
+                                tile_regs_wait();
+                                for (uint32_t i = 0; i < subblock_w; i++) {
+                                    pack_tile(i, cb_xmm);
+                                }
+                                tile_regs_release();
+                                index_subblock_w_offset += subblock_w;
+                            }
+                            index_h_offset += block_w;
+                        }
+                        cb_pop_front(cb_x, out_block_hw_normal);
+                        cb_push_back(cb_xmm, out_block_hw_normal);
+                    }
 
-                    // Partial-Var(x)
-                    index_h_offset = 0;
-                    reduce_init(cb_xmm, cb_scaler, cb_ex2_partial);
-                    cb_reserve_back(cb_ex2_partial, 1);
-                    tile_regs_acquire();
-                    cb_wait_front(cb_xmm, out_block_hw_normal);
-                    cb_wait_front(cb_scaler, 1);  // TODO DELETE THIS
-                    for (uint32_t h = 0; h < out_block_h_actual; ++h) {
-                        for (uint32_t w = 0; w < block_w; ++w) {
-                            uint32_t index = index_h_offset + w;
-                            reduce_tile(cb_xmm, cb_scaler, index, scaler0, dst0);
-                        }
-                        index_h_offset += block_w;
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Partial Variance Reduction Setup");
+#endif
+                        // Partial-Var(x)
+                        index_h_offset = 0;
+                        reduce_init(cb_xmm, cb_scaler, cb_ex2_partial);
+                        cb_reserve_back(cb_ex2_partial, 1);
+                        tile_regs_acquire();
                     }
-                    tile_regs_commit();
-                    tile_regs_wait();
-                    pack_tile(dst0, cb_ex2_partial);
-                    tile_regs_release();
-                    cb_push_back(cb_ex2_partial, 1);
-                    cb_pop_front(cb_xmm, out_block_hw_normal);
-                    reduce_uninit();
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("cb_wait_front xmm");
+#endif
+                        cb_wait_front(cb_xmm, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("cb_wait_front scaler");
+#endif
+                        cb_wait_front(cb_scaler, 1);  // TODO DELETE THIS
+                    }
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Partial Variance Reduction Loop");
+#endif
+                        for (uint32_t h = 0; h < out_block_h_actual; ++h) {
+                            for (uint32_t w = 0; w < block_w; ++w) {
+                                uint32_t index = index_h_offset + w;
+                                reduce_tile(cb_xmm, cb_scaler, index, scaler0, dst0);
+                            }
+                            index_h_offset += block_w;
+                        }
+                        tile_regs_commit();
+                        tile_regs_wait();
+                        pack_tile(dst0, cb_ex2_partial);
+                        tile_regs_release();
+                    }
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Partial Variance Reduction Cleanup");
+#endif
+                        cb_push_back(cb_ex2_partial, 1);
+                        cb_pop_front(cb_xmm, out_block_hw_normal);
+                        reduce_uninit();
+                    }
                 }
                 // End Local Reduce
                 // Start Global Reduce
                 if constexpr (is_mcast_sender) {
-                    reduce_init(cb_ex_external, cb_scaler_global, cb_ex2_global);
-                    cb_reserve_back(cb_ex2_global, 1);
-                    if (num_cores_per_mcast_group > 1) {
-                        cb_reserve_back(cb_ex2, 1);
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Global Variance Reduction Setup");
+#endif
+                        reduce_init(cb_ex_external, cb_scaler_global, cb_ex2_global);
+                        cb_reserve_back(cb_ex2_global, 1);
+                        if (num_cores_per_mcast_group > 1) {
+                            cb_reserve_back(cb_ex2, 1);
+                        }
+                        tile_regs_acquire();
                     }
-                    tile_regs_acquire();
-                    cb_wait_front(cb_scaler_global, 1);
-                    cb_wait_front(cb_ex_external, cb_ex_external_tiles_required);  // TODO DELETE THIS AND ADD POP
-                    for (uint32_t external_i = 0; external_i < cb_ex_external_tiles_required; external_i++) {
-                        reduce_tile(cb_ex_external, cb_scaler_global, external_i, scaler0, dst0);
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("cb_wait_front scaler_global");
+#endif
+                        cb_wait_front(cb_scaler_global, 1);
                     }
-                    cb_pop_front(cb_ex_external, cb_ex_external_tiles_required);
-                    tile_regs_commit();
-                    tile_regs_wait();
-                    pack_tile(dst0, cb_ex2_global);
-                    tile_regs_release();
-                    reduce_uninit();
-                    cb_push_back(cb_ex2_global, 1);
-                    if (num_cores_per_mcast_group > 1) {
-                        cb_push_back(cb_ex2, 1);
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("cb_wait_front ex_external");
+#endif
+                        cb_wait_front(cb_ex_external, cb_ex_external_tiles_required);  // TODO DELETE THIS AND ADD POP
+                    }
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Global Variance Reduction Loop");
+#endif
+                        for (uint32_t external_i = 0; external_i < cb_ex_external_tiles_required; external_i++) {
+                            reduce_tile(cb_ex_external, cb_scaler_global, external_i, scaler0, dst0);
+                        }
+                        cb_pop_front(cb_ex_external, cb_ex_external_tiles_required);
+                        tile_regs_commit();
+                        tile_regs_wait();
+                        pack_tile(dst0, cb_ex2_global);
+                        tile_regs_release();
+                    }
+                    {
+#ifdef PROFILE_VARIANCE_CALC
+                        DeviceZoneScopedN("Global Variance Reduction Cleanup");
+#endif
+                        reduce_uninit();
+                        cb_push_back(cb_ex2_global, 1);
+                        if (num_cores_per_mcast_group > 1) {
+                            cb_push_back(cb_ex2, 1);
+                        }
                     }
                 }
                 // End Global Reduce
@@ -525,8 +695,14 @@ void MAIN {
             {
                 DeviceZoneScopedN("Reciprocal Calc");
                 //  global reduce results
-                cb_wait_front(cb_eps, 1);
-                cb_wait_front(cb_ex2_global, 1);
+                {
+                    DeviceZoneScopedN("cb_wait_front eps");
+                    cb_wait_front(cb_eps, 1);
+                }
+                {
+                    DeviceZoneScopedN("cb_wait_front ex2_global");
+                    cb_wait_front(cb_ex2_global, 1);
+                }
                 cb_reserve_back(cb_ex2pe, 1);
                 // (Var + eps)
                 tile_regs_acquire();
@@ -566,91 +742,151 @@ void MAIN {
                         out_block_hw_actual = out_block_hw_normal;
                     }
 
-                    cb_wait_front(cb_in0, out_block_hw_normal);
-                    // x - E[x]
-                    sub_tiles_bcast_scalar_init_short(cb_in0, cb_ex_global);
-                    cb_reserve_back(cb_xmm, out_block_hw_normal);
-                    cb_wait_front(cb_ex_global, 1);
-                    for (uint32_t i = 0; i < out_block_h_actual; i++) {
-                        index_subblock_w_offset = 0;
-                        for (uint32_t j = 0; j < num_subblocks_w; j++) {
-                            tile_regs_acquire();
-                            for (uint32_t w = 0; w < subblock_w; w++) {
-                                uint32_t index = w + index_subblock_w_offset;
-                                sub_tiles_bcast_scalar(cb_in0, cb_ex_global, index, 0, w);
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("cb_wait_front in0");
+#endif
+                        cb_wait_front(cb_in0, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("Final Mean Subtraction Setup");
+#endif
+                        // x - E[x]
+                        sub_tiles_bcast_scalar_init_short(cb_in0, cb_ex_global);
+                        cb_reserve_back(cb_xmm, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("cb_wait_front ex_global");
+#endif
+                        cb_wait_front(cb_ex_global, 1);
+                    }
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("Final Mean Subtraction Loop");
+#endif
+                        for (uint32_t i = 0; i < out_block_h_actual; i++) {
+                            index_subblock_w_offset = 0;
+                            for (uint32_t j = 0; j < num_subblocks_w; j++) {
+                                tile_regs_acquire();
+                                for (uint32_t w = 0; w < subblock_w; w++) {
+                                    uint32_t index = w + index_subblock_w_offset;
+                                    sub_tiles_bcast_scalar(cb_in0, cb_ex_global, index, 0, w);
+                                }
+                                tile_regs_commit();
+                                tile_regs_wait();
+                                for (uint32_t i = 0; i < subblock_w; i++) {
+                                    pack_tile(i, cb_xmm);
+                                }
+                                tile_regs_release();
+                                index_subblock_w_offset += subblock_w;
                             }
-                            tile_regs_commit();
-                            tile_regs_wait();
-                            for (uint32_t i = 0; i < subblock_w; i++) {
-                                pack_tile(i, cb_xmm);
-                            }
-                            tile_regs_release();
-                            index_subblock_w_offset += subblock_w;
+                            cb_pop_front(cb_in0, block_w);
                         }
-                        cb_pop_front(cb_in0, block_w);
+                        if (extra_out_block && (out_block_index == (num_out_blocks_padded - 1))) {
+                            cb_pop_front(cb_in0, out_block_hw_normal - out_block_hw_last);
+                        }
+                        cb_push_back(cb_xmm, out_block_hw_normal);
                     }
-                    if (extra_out_block && (out_block_index == (num_out_blocks_padded - 1))) {
-                        cb_pop_front(cb_in0, out_block_hw_normal - out_block_hw_last);
-                    }
-                    cb_push_back(cb_xmm, out_block_hw_normal);
 
-                    // zero out the garbage values by mult mask again
-                    reconfig_data_format_srcb(cb_ex_global, cb_input_mask);
-                    mul_tiles_init(cb_xmm, cb_input_mask);
-                    cb_reserve_back(cb_x, out_block_hw_normal);
-                    cb_wait_front(cb_xmm, out_block_hw_normal);
-                    for (uint32_t i = 0; i < out_block_h_actual; i++) {
-                        index_subblock_w_offset = 0;
-                        for (uint32_t j = 0; j < num_subblocks_w; ++j) {
-                            tile_regs_acquire();
-                            for (uint32_t w = 0; w < subblock_w; ++w) {
-                                uint32_t index = w + index_subblock_w_offset;
-                                uint32_t index_mask = index;
-                                mul_tiles(cb_xmm, cb_input_mask, index, index_mask, w);
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("Final Masking Setup");
+#endif
+                        // zero out the garbage values by mult mask again
+                        reconfig_data_format_srcb(cb_ex_global, cb_input_mask);
+                        mul_tiles_init(cb_xmm, cb_input_mask);
+                        cb_reserve_back(cb_x, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("cb_wait_front xmm");
+#endif
+                        cb_wait_front(cb_xmm, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("Final Masking Loop");
+#endif
+                        for (uint32_t i = 0; i < out_block_h_actual; i++) {
+                            index_subblock_w_offset = 0;
+                            for (uint32_t j = 0; j < num_subblocks_w; ++j) {
+                                tile_regs_acquire();
+                                for (uint32_t w = 0; w < subblock_w; ++w) {
+                                    uint32_t index = w + index_subblock_w_offset;
+                                    uint32_t index_mask = index;
+                                    mul_tiles(cb_xmm, cb_input_mask, index, index_mask, w);
+                                }
+                                tile_regs_commit();
+                                tile_regs_wait();
+                                for (uint32_t i = 0; i < subblock_w; ++i) {
+                                    pack_tile(i, cb_x);
+                                }
+                                tile_regs_release();
+                                index_subblock_w_offset += subblock_w;
                             }
-                            tile_regs_commit();
-                            tile_regs_wait();
-                            for (uint32_t i = 0; i < subblock_w; ++i) {
-                                pack_tile(i, cb_x);
-                            }
-                            tile_regs_release();
-                            index_subblock_w_offset += subblock_w;
+                            cb_pop_front(cb_xmm, block_w);
                         }
-                        cb_pop_front(cb_xmm, block_w);
+                        if (extra_out_block && (out_block_index == (num_out_blocks_padded - 1))) {
+                            cb_pop_front(cb_xmm, out_block_hw_normal - out_block_hw_last);
+                        }
+                        cb_push_back(cb_x, out_block_hw_normal);
+                        reconfig_data_format_srcb(cb_input_mask, cb_x);
                     }
-                    if (extra_out_block && (out_block_index == (num_out_blocks_padded - 1))) {
-                        cb_pop_front(cb_xmm, out_block_hw_normal - out_block_hw_last);
-                    }
-                    cb_push_back(cb_x, out_block_hw_normal);
-                    reconfig_data_format_srcb(cb_input_mask, cb_x);
 
                     // (x - Ex) * 1/[sqrt(Var + eps)]
                     index_h_offset = 0;
-                    mul_tiles_bcast_scalar_init_short(cb_x, cb_ex2pe);
-                    cb_reserve_back(cb_xmm, out_block_hw_normal);
-                    cb_wait_front(cb_ex2pe, 1);
-                    cb_wait_front(cb_x, out_block_hw_normal);
-                    for (uint32_t i = 0; i < out_block_h_actual; i++) {
-                        index_subblock_w_offset = 0;
-                        for (uint32_t j = 0; j < num_subblocks_w; j++) {
-                            tile_regs_acquire();
-                            for (uint32_t w = 0; w < subblock_w; w++) {
-                                uint32_t index = w + index_subblock_w_offset + index_h_offset;
-                                mul_tiles_bcast_scalar(cb_x, cb_ex2pe, index, 0, w);
-                            }
-                            tile_regs_commit();
-                            tile_regs_wait();
-                            for (uint32_t i = 0; i < subblock_w; i++) {
-                                pack_tile(i, cb_xmm);
-                            }
-                            tile_regs_release();
-                            index_subblock_w_offset += subblock_w;
-                        }
-                        index_h_offset += block_w;
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("Normalization Setup");
+#endif
+                        mul_tiles_bcast_scalar_init_short(cb_x, cb_ex2pe);
+                        cb_reserve_back(cb_xmm, out_block_hw_normal);
                     }
-                    cb_pop_front(cb_x, out_block_hw_normal);
-                    cb_push_back(cb_xmm, out_block_hw_normal);
-                    cb_wait_front(cb_xmm, out_block_hw_normal);
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("cb_wait_front ex2pe");
+#endif
+                        cb_wait_front(cb_ex2pe, 1);
+                    }
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("cb_wait_front x");
+#endif
+                        cb_wait_front(cb_x, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("Normalization Loop");
+#endif
+                        for (uint32_t i = 0; i < out_block_h_actual; i++) {
+                            index_subblock_w_offset = 0;
+                            for (uint32_t j = 0; j < num_subblocks_w; j++) {
+                                tile_regs_acquire();
+                                for (uint32_t w = 0; w < subblock_w; w++) {
+                                    uint32_t index = w + index_subblock_w_offset + index_h_offset;
+                                    mul_tiles_bcast_scalar(cb_x, cb_ex2pe, index, 0, w);
+                                }
+                                tile_regs_commit();
+                                tile_regs_wait();
+                                for (uint32_t i = 0; i < subblock_w; i++) {
+                                    pack_tile(i, cb_xmm);
+                                }
+                                tile_regs_release();
+                                index_subblock_w_offset += subblock_w;
+                            }
+                            index_h_offset += block_w;
+                        }
+                        cb_pop_front(cb_x, out_block_hw_normal);
+                        cb_push_back(cb_xmm, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("cb_wait_front xmm");
+#endif
+                        cb_wait_front(cb_xmm, out_block_hw_normal);
+                    }
 
                     copy_or_add = start_copy_or_add;
                     group_reset_index = start_group_reset_index;
@@ -659,94 +895,124 @@ void MAIN {
                     // add or copy with previous output results
                     uint32_t block_w_curr = index_g_offset == (per_core_N - block_w_last) ? block_w_last : block_w;
 
-                    cb_wait_front(cb_reread_out, out_block_hw_normal);
-                    cb_reserve_back(cb_reread_write_out, out_block_hw_normal);
-                    for (uint32_t w = 0; w < block_w_curr; ++w) {
-                        uint32_t index_h_offset = 0;
-                        uint32_t index_h1_offset = 0;
-
-                        if (copy_or_add == true) {
-                            copy_tile_init(cb_xmm);
-                        } else {
-                            add_tiles_init(cb_reread_out, cb_xmm);
-                        }
-
-                        for (uint32_t i = 0; i < out_block_h_actual; ++i) {
-                            tile_regs_acquire();
-                            uint32_t index_reread_out = w + index_h_offset;
-                            uint32_t index_xmm = w + index_h1_offset;
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("cb_wait_front reread_out");
+#endif
+                        cb_wait_front(cb_reread_out, out_block_hw_normal);
+                    }
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("Group Accumulation Loop");
+#endif
+                        cb_reserve_back(cb_reread_write_out, out_block_hw_normal);
+                        for (uint32_t w = 0; w < block_w_curr; ++w) {
+                            uint32_t index_h_offset_local = 0;
+                            uint32_t index_h1_offset = 0;
 
                             if (copy_or_add == true) {
-                                copy_tile(cb_xmm, index_xmm, dst0);
+                                copy_tile_init(cb_xmm);
                             } else {
-                                add_tiles(cb_reread_out, cb_xmm, index_reread_out, index_xmm, dst0);
+                                add_tiles_init(cb_reread_out, cb_xmm);
                             }
-                            tile_regs_commit();
-                            tile_regs_wait();
-                            pack_tile<true>(dst0, cb_reread_write_out, index_reread_out);
-                            tile_regs_release();
 
-                            index_h_offset += block_w_curr;
-                            index_h1_offset += block_w;
-                        }
+                            for (uint32_t i = 0; i < out_block_h_actual; ++i) {
+                                tile_regs_acquire();
+                                uint32_t index_reread_out = w + index_h_offset_local;
+                                uint32_t index_xmm = w + index_h1_offset;
 
-                        // update group tile offset
-                        if (index_block_w >= block_w_curr - 1) {
-                            index_block_w = 0;
+                                if (copy_or_add == true) {
+                                    copy_tile(cb_xmm, index_xmm, dst0);
+                                } else {
+                                    add_tiles(cb_reread_out, cb_xmm, index_reread_out, index_xmm, dst0);
+                                }
+                                tile_regs_commit();
+                                tile_regs_wait();
+                                pack_tile<true>(dst0, cb_reread_write_out, index_reread_out);
+                                tile_regs_release();
 
-                            if (group_reset_index == num_groups_per_reset - 1) {
+                                index_h_offset_local += block_w_curr;
+                                index_h1_offset += block_w;
+                            }
+
+                            // update group tile offset
+                            if (index_block_w >= block_w_curr - 1) {
+                                index_block_w = 0;
+
+                                if (group_reset_index == num_groups_per_reset - 1) {
+                                    copy_or_add = true;
+
+                                    group_reset_index = 0;
+                                } else {
+                                    copy_or_add = false;
+
+                                    group_reset_index += 1;
+                                }
+                            } else {
                                 copy_or_add = true;
-
-                                group_reset_index = 0;
-                            } else {
-                                copy_or_add = false;
-
-                                group_reset_index += 1;
+                                index_block_w += 1;
                             }
-                        } else {
-                            copy_or_add = true;
-                            index_block_w += 1;
-                        }
 
-                        bool is_past_end_of_group =
-                            (((w + index_g_offset) + 1) * TILE_WIDTH) > ((g + 1) * data_per_core_N_per_group);
-                        apply_gamma_beta[w] = !is_past_end_of_group;
+                            bool is_past_end_of_group =
+                                (((w + index_g_offset) + 1) * TILE_WIDTH) > ((g + 1) * data_per_core_N_per_group);
+                            apply_gamma_beta[w] = !is_past_end_of_group;
+                        }
+                        cb_pop_front(cb_xmm, out_block_hw_normal);
+                        cb_pop_front(cb_reread_out, out_block_hw_normal);
+                        cb_push_back(cb_reread_write_out, out_block_hw_normal);
                     }
-                    cb_pop_front(cb_xmm, out_block_hw_normal);
-                    cb_pop_front(cb_reread_out, out_block_hw_normal);
-                    cb_push_back(cb_reread_write_out, out_block_hw_normal);
 
                     // Start Optional Gamma:
                     if constexpr (do_gamma) {
                         index_h_offset = 0;
                         cb_reserve_back(cb_outgamma, out_block_hw_normal);
-                        cb_wait_front(cb_gamma, per_core_N);
-                        cb_wait_front(cb_reread_write_out, out_block_hw_normal);
-                        for (uint32_t i = 0; i < out_block_h_actual; ++i) {
-                            for (uint32_t j = 0; j < block_w_curr; ++j) {
-                                if (apply_gamma_beta[j]) {
-                                    mul_bcast_rows_init_short(cb_reread_write_out, cb_gamma);
-                                } else {
-                                    copy_tile_init(cb_reread_write_out);
-                                }
-                                tile_regs_acquire();
-                                uint32_t index = j + index_h_offset;
-                                uint32_t index_gamma = j + index_g_offset;
-                                if (apply_gamma_beta[j]) {
-                                    mul_tiles_bcast_rows(cb_reread_write_out, cb_gamma, index, index_gamma, dst0);
-                                } else {
-                                    copy_tile(cb_reread_write_out, index, dst0);
-                                }
-                                tile_regs_commit();
-                                tile_regs_wait();
-                                pack_tile(dst0, cb_outgamma);
-                                tile_regs_release();
-                            }
-                            index_h_offset += block_w_curr;
+                        {
+#ifdef PROFILE_FINAL_CALC
+                            DeviceZoneScopedN("cb_wait_front gamma");
+#endif
+                            cb_wait_front(cb_gamma, per_core_N);
                         }
-                        cb_push_back(cb_outgamma, out_block_hw_normal);
-                        cb_pop_front(cb_reread_write_out, out_block_hw_normal);
-                        cb_wait_front(cb_outgamma, out_block_hw_normal);
+                        {
+#ifdef PROFILE_FINAL_CALC
+                            DeviceZoneScopedN("cb_wait_front reread_write_out");
+#endif
+                            cb_wait_front(cb_reread_write_out, out_block_hw_normal);
+                        }
+                        {
+#ifdef PROFILE_FINAL_CALC
+                            DeviceZoneScopedN("Gamma Application Loop");
+#endif
+                            for (uint32_t i = 0; i < out_block_h_actual; ++i) {
+                                for (uint32_t j = 0; j < block_w_curr; ++j) {
+                                    if (apply_gamma_beta[j]) {
+                                        mul_bcast_rows_init_short(cb_reread_write_out, cb_gamma);
+                                    } else {
+                                        copy_tile_init(cb_reread_write_out);
+                                    }
+                                    tile_regs_acquire();
+                                    uint32_t index = j + index_h_offset;
+                                    uint32_t index_gamma = j + index_g_offset;
+                                    if (apply_gamma_beta[j]) {
+                                        mul_tiles_bcast_rows(cb_reread_write_out, cb_gamma, index, index_gamma, dst0);
+                                    } else {
+                                        copy_tile(cb_reread_write_out, index, dst0);
+                                    }
+                                    tile_regs_commit();
+                                    tile_regs_wait();
+                                    pack_tile(dst0, cb_outgamma);
+                                    tile_regs_release();
+                                }
+                                index_h_offset += block_w_curr;
+                            }
+                            cb_push_back(cb_outgamma, out_block_hw_normal);
+                            cb_pop_front(cb_reread_write_out, out_block_hw_normal);
+                        }
+                        {
+#ifdef PROFILE_FINAL_CALC
+                            DeviceZoneScopedN("cb_wait_front outgamma");
+#endif
+                            cb_wait_front(cb_outgamma, out_block_hw_normal);
+                        }
                     }
                     // End Optional Gamma
                     //
@@ -754,46 +1020,71 @@ void MAIN {
                     if constexpr (do_beta) {
                         index_h_offset = 0;
                         cb_reserve_back(cb_outbeta, out_block_hw_normal);
-                        cb_wait_front(cb_beta, per_core_N);
-                        for (uint32_t i = 0; i < out_block_h_actual; ++i) {
-                            for (uint32_t j = 0; j < block_w_curr; ++j) {
-                                if (apply_gamma_beta[j]) {
-                                    add_bcast_rows_init_short(cb_inbeta, cb_beta);
-                                } else {
-                                    copy_tile_init(cb_inbeta);
-                                }
-                                tile_regs_acquire();
-                                uint32_t index = j + index_h_offset;
-                                uint32_t index_beta = j + index_g_offset;
-                                if (apply_gamma_beta[j]) {
-                                    add_tiles_bcast_rows(cb_inbeta, cb_beta, index, index_beta, dst0);
-                                } else {
-                                    copy_tile(cb_inbeta, index, dst0);
-                                }
-                                tile_regs_commit();
-                                tile_regs_wait();
-                                pack_tile(dst0, cb_outbeta);
-                                tile_regs_release();
-                            }
-                            index_h_offset += block_w_curr;
+                        {
+#ifdef PROFILE_FINAL_CALC
+                            DeviceZoneScopedN("cb_wait_front beta");
+#endif
+                            cb_wait_front(cb_beta, per_core_N);
                         }
-                        cb_push_back(cb_outbeta, out_block_hw_normal);
-                        cb_pop_front(cb_inbeta, out_block_hw_normal);
-                        cb_wait_front(cb_outbeta, out_block_hw_normal);
+                        {
+#ifdef PROFILE_FINAL_CALC
+                            DeviceZoneScopedN("Beta Application Loop");
+#endif
+                            for (uint32_t i = 0; i < out_block_h_actual; ++i) {
+                                for (uint32_t j = 0; j < block_w_curr; ++j) {
+                                    if (apply_gamma_beta[j]) {
+                                        add_bcast_rows_init_short(cb_inbeta, cb_beta);
+                                    } else {
+                                        copy_tile_init(cb_inbeta);
+                                    }
+                                    tile_regs_acquire();
+                                    uint32_t index = j + index_h_offset;
+                                    uint32_t index_beta = j + index_g_offset;
+                                    if (apply_gamma_beta[j]) {
+                                        add_tiles_bcast_rows(cb_inbeta, cb_beta, index, index_beta, dst0);
+                                    } else {
+                                        copy_tile(cb_inbeta, index, dst0);
+                                    }
+                                    tile_regs_commit();
+                                    tile_regs_wait();
+                                    pack_tile(dst0, cb_outbeta);
+                                    tile_regs_release();
+                                }
+                                index_h_offset += block_w_curr;
+                            }
+                            cb_push_back(cb_outbeta, out_block_hw_normal);
+                            cb_pop_front(cb_inbeta, out_block_hw_normal);
+                        }
+                        {
+#ifdef PROFILE_FINAL_CALC
+                            DeviceZoneScopedN("cb_wait_front outbeta");
+#endif
+                            cb_wait_front(cb_outbeta, out_block_hw_normal);
+                        }
                     }
                     // End Optional Beta
 
 #ifdef UNTILIZE_OUT
                     // untilize
                     untilize_init_short(cb_untilize_in);
-                    cb_wait_front(cb_untilize_in, per_core_MN);
-                    for (uint32_t m = 0; m < per_core_M; ++m) {
-                        cb_reserve_back(cb_untilize_out, per_core_N);
-                        untilize_block(cb_untilize_in, per_core_N, cb_untilize_out);
-                        cb_push_back(cb_untilize_out, per_core_N);
-                        cb_pop_front(cb_untilize_in, per_core_N);
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("cb_wait_front untilize_in");
+#endif
+                        cb_wait_front(cb_untilize_in, per_core_MN);
                     }
-                untilize_uninit(cb_untilize_in);
+                    {
+#ifdef PROFILE_FINAL_CALC
+                        DeviceZoneScopedN("Untilize Loop");
+#endif
+                        for (uint32_t m = 0; m < per_core_M; ++m) {
+                            cb_reserve_back(cb_untilize_out, per_core_N);
+                            untilize_block(cb_untilize_in, per_core_N, cb_untilize_out);
+                            cb_push_back(cb_untilize_out, per_core_N);
+                            cb_pop_front(cb_untilize_in, per_core_N);
+                        }
+                        untilize_uninit(cb_untilize_in);
+                    }
 #endif
                 }
             }

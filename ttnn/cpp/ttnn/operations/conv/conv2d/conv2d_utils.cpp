@@ -718,7 +718,6 @@ std::tuple<ttnn::Tensor, ParallelConfig, ParallelConfig> shard_or_reshard_tensor
                         input_tensor_sharded_memory_config_to_layout.with_shard_spec(tt::tt_metal::ShardSpec(
                             input_tensor_sharded_memory_config.shard_spec().value().grid,
                             input_tensor_sharded_memory_config.shard_spec().value().shape,
-                            input_tensor_sharded_memory_config.shard_spec().value().shape,
                             input_tensor_sharded_memory_config.shard_spec().value().orientation));
                 }
                 Tensor resharded_input_tensor =

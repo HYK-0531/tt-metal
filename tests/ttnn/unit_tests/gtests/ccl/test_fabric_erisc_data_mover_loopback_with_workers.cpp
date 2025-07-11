@@ -232,8 +232,7 @@ TEST(WorkerCclCommandProcessingKernelLocalMode, MultiInputReader_MultiPage0_Shar
         ShardSpec(
             CoreRangeSet{std::set<CoreRange>{CoreRange{CoreCoord{0, 0}, CoreCoord{0, 0}}}},
             {tensor_shape[0] * tensor_shape[1] * tensor_shape[2], tensor_shape[3]},
-            ShardOrientation::ROW_MAJOR,
-            ShardMode::LOGICAL));
+            ShardOrientation::ROW_MAJOR));
     auto pass = RunMultiInputReaderTestPropagateFullTensorIn(
         tensor_shape,
         Layout::TILE,
@@ -252,8 +251,7 @@ TEST(WorkerCclCommandProcessingKernelLocalMode, MultiInputReader_MultiPage0_Shar
         ShardSpec(
             CoreRangeSet{std::set<CoreRange>{CoreRange{CoreCoord{0, 0}, CoreCoord{0, 0}}}},
             {tensor_shape[0] * tensor_shape[1] * tensor_shape[2], tensor_shape[3]},
-            ShardOrientation::ROW_MAJOR,
-            ShardMode::LOGICAL));
+            ShardOrientation::ROW_MAJOR));
     auto pass = RunMultiInputReaderTestPropagateFullTensorIn(
         tensor_shape,
         Layout::TILE,
@@ -272,8 +270,7 @@ TEST(WorkerCclCommandProcessingKernelLocalMode, MultiInputReader_MultiPage0_Shar
         ShardSpec(
             CoreRangeSet{std::set<CoreRange>{CoreRange{CoreCoord{0, 0}, CoreCoord{3, 0}}}},
             {tensor_shape[0] * tensor_shape[1] * tensor_shape[2], tensor_shape[3] / 4},
-            ShardOrientation::ROW_MAJOR,
-            ShardMode::LOGICAL));
+            ShardOrientation::ROW_MAJOR));
     auto pass = RunMultiInputReaderTestPropagateFullTensorIn(
         tensor_shape,
         Layout::TILE,
@@ -294,8 +291,7 @@ TEST(WorkerCclCommandProcessingKernelLocalMode, MultiInputReader_MultiPage0_Shar
         ShardSpec(
             CoreRangeSet{std::set<CoreRange>{CoreRange{CoreCoord{0, 0}, CoreCoord{ncores_x - 1, ncores_y - 1}}}},
             {tensor_shape[0] * tensor_shape[1] * tensor_shape[2], tensor_shape[3] / (ncores_x * ncores_y)},
-            ShardOrientation::ROW_MAJOR,
-            ShardMode::LOGICAL));
+            ShardOrientation::ROW_MAJOR));
     auto pass = RunMultiInputReaderTestPropagateFullTensorIn(
         tensor_shape,
         Layout::TILE,
@@ -316,8 +312,7 @@ TEST(WorkerCclCommandProcessingKernelLocalMode, MultiInputReader_MultiPage0_Shar
         ShardSpec(
             CoreRangeSet{std::set<CoreRange>{CoreRange{CoreCoord{0, 0}, CoreCoord{ncores_x - 1, ncores_y - 1}}}},
             {tensor_shape[0] * tensor_shape[1] * tensor_shape[2], tensor_shape[3] / (ncores_x * ncores_y)},
-            ShardOrientation::ROW_MAJOR,
-            ShardMode::LOGICAL));
+            ShardOrientation::ROW_MAJOR));
     auto pass = RunMultiInputReaderTestPropagateFullTensorIn(
         tensor_shape,
         Layout::TILE,
@@ -338,16 +333,14 @@ TEST(WorkerCclCommandProcessingKernelLocalMode, MultiInputReader_MultiPage0_Shar
         ShardSpec(
             CoreRangeSet{std::set<CoreRange>{CoreRange{CoreCoord{0, 0}, CoreCoord{0, 0}}}},
             {tensor_shape[0] * tensor_shape[1] * tensor_shape[2], tensor_shape[3]},
-            ShardOrientation::ROW_MAJOR,
-            ShardMode::LOGICAL));
+            ShardOrientation::ROW_MAJOR));
     auto output_mem_config = MemoryConfig(
         TensorMemoryLayout::WIDTH_SHARDED,
         BufferType::L1,
         ShardSpec(
             CoreRangeSet{std::set<CoreRange>{CoreRange{CoreCoord{0, 0}, CoreCoord{3, 0}}}},
             {tensor_shape[0] * tensor_shape[1] * tensor_shape[2], tensor_shape[3] / 4},
-            ShardOrientation::ROW_MAJOR,
-            ShardMode::LOGICAL));
+            ShardOrientation::ROW_MAJOR));
     auto pass = RunMultiInputReaderTestPropagateFullTensorIn(
         tensor_shape,
         Layout::TILE,
@@ -374,8 +367,7 @@ TEST(WorkerCclCommandProcessingKernelLocalMode, MultiInputReader_MultiPage0_Shar
                 std::set<CoreRange>{CoreRange{CoreCoord{0, 0}, CoreCoord{in_shard_grid_x - 1, in_shard_grid_y - 1}}}},
             {tensor_shape[0] * tensor_shape[1] * tensor_shape[2],
              tensor_shape[3] / (in_shard_grid_x * in_shard_grid_y)},
-            ShardOrientation::ROW_MAJOR,
-            ShardMode::LOGICAL));
+            ShardOrientation::ROW_MAJOR));
     auto mem_config1 = MemoryConfig(
         TensorMemoryLayout::WIDTH_SHARDED,
         BufferType::L1,
@@ -384,8 +376,7 @@ TEST(WorkerCclCommandProcessingKernelLocalMode, MultiInputReader_MultiPage0_Shar
                 std::set<CoreRange>{CoreRange{CoreCoord{0, 0}, CoreCoord{out_shard_grid_x - 1, out_shard_grid_y - 1}}}},
             {tensor_shape[0] * tensor_shape[1] * tensor_shape[2],
              tensor_shape[3] / (out_shard_grid_x * out_shard_grid_y)},
-            ShardOrientation::ROW_MAJOR,
-            ShardMode::LOGICAL));
+            ShardOrientation::ROW_MAJOR));
     auto pass = RunMultiInputReaderTestPropagateFullTensorIn(
         tensor_shape,
         Layout::TILE,

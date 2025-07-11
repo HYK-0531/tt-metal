@@ -126,9 +126,7 @@ def test_segformer_for_semantic_segmentation(device, is_ci_env):
             }
         )
         n_cores = 64
-        shard_spec = ttnn.ShardSpec(
-            shard_grid, [N * H * W // n_cores, C], ttnn.ShardOrientation.ROW_MAJOR, ttnn.ShardMode.PHYSICAL
-        )
+        shard_spec = ttnn.ShardSpec(shard_grid, [N * H * W // n_cores, C], ttnn.ShardOrientation.ROW_MAJOR)
         input_mem_config = ttnn.MemoryConfig(
             ttnn.types.TensorMemoryLayout.HEIGHT_SHARDED, ttnn.types.BufferType.L1, shard_spec
         )

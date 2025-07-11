@@ -725,7 +725,6 @@ FORCE_INLINE __attribute__((optimize("jump-tables"))) void receiver_forward_pack
     uint8_t transaction_id,
     uint32_t hop_cmd) {
     uint16_t payload_size_bytes = packet_start->payload_size_bytes;
-    DPRINT << "RX FWD PACKET\n";
 
     switch (hop_cmd) {
         case LowLatencyMeshRoutingFields::NOOP: break;
@@ -873,7 +872,6 @@ void run_sender_channel_step_impl(
             outbound_to_receiver_channel_pointers,
             remote_receiver_channel);
         increment_local_update_ptr_val(sender_channel_free_slots_stream_id, 1);
-        DPRINT << "send_data\n";  // uncommenting this causes a hang
     }
 
     // Process COMPLETIONs from receiver
@@ -1124,7 +1122,6 @@ void run_receiver_channel_step_impl(
                 receiver_channel_pointers.get_src_chan_id(receiver_buffer_index));
             receiver_channel_trid_tracker.clear_trid_at_buffer_slot(receiver_buffer_index);
             completion_counter.increment();
-            DPRINT << "RX send completion\n";
         }
     }
 };
@@ -1323,7 +1320,6 @@ void __attribute__((noinline)) wait_for_static_connection_to_ready(
     tuple_for_each_constexpr(
         local_sender_channel_worker_interfaces.channel_worker_interfaces, [&](auto& interface, auto idx) {
             if constexpr (is_sender_channel_serviced[idx]) {
-                DPRINT << "wait_for_static_connection_to_ready " << (uint32_t)idx << "\n";
                 if (!sender_ch_live_check_skip[idx]) {
                     return;
                 }
@@ -1471,18 +1467,17 @@ FORCE_INLINE void teardown(
         receiver_channel_1_trid_tracker.all_buffer_slot_transactions_acked();
     }
 
-    increment_local_update_ptr_val(MULTI_RISC_TEARDOWN_SYNC_STREAM_ID, 1);
-    while (get_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>() < static_cast<int32_t>(NUM_ACTIVE_ERISCS)) {
-        invalidate_l1_cache();
+    if constexpr (NUM_ACTIVE_ERISCS > 1) {
+        increment_local_update_ptr_val(MULTI_RISC_TEARDOWN_SYNC_STREAM_ID, 1);
+        while (get_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>() < static_cast<int32_t>(NUM_ACTIVE_ERISCS)) {
+            invalidate_l1_cache();
+        }
     }
 
-    DPRINT << "DONE5\n";
     // re-init the noc counters as the noc api used is not incrementing them
     if constexpr (IS_TEARDOWN_MASTER()) {
-        DPRINT << "DONE4.1\n";
         ncrisc_noc_counters_init();
     }
-    DPRINT << "DONE4\n";
 
     if constexpr (wait_for_host_signal) {
         if constexpr (is_local_handshake_master) {
@@ -1495,11 +1490,8 @@ FORCE_INLINE void teardown(
     }
     // TODO: ADD TEARDOWN SYNCHRONIZATION
     if constexpr (IS_TEARDOWN_MASTER()) {
-        DPRINT << "DONE3\n";
         noc_async_write_barrier();
-        DPRINT << "DONE2\n";
         noc_async_atomic_barrier();
-        DPRINT << "DONE1\n";
 
         *edm_status_ptr = tt::tt_fabric::EDMStatus::TERMINATED;
     }
@@ -1525,14 +1517,12 @@ void kernel_main() {
         receiver_txq_id == sender_txq_id || receiver_txq_id == 1,
         "For multi-txq mode, the only currently supported configuration is sender_txq_id=0 and receiver_txq_id=1");
     if constexpr (receiver_txq_id != sender_txq_id) {
-        initialize_state_for_txq1_active_mode();
+        constexpr bool is_erisc_that_sets_up_second_txq = is_receiver_channel_serviced[0];
+        if constexpr (is_erisc_that_sets_up_second_txq) {
+            initialize_state_for_txq1_active_mode();
+        }
     }
-    DPRINT << "KERNEL_MAIN\n";
-    DPRINT << "NUM_SENDER_CHANNELS: " << (uint32_t)NUM_SENDER_CHANNELS << "\n";
-    DPRINT << "NUM_RECEIVER_CHANNELS: " << (uint32_t)NUM_RECEIVER_CHANNELS << "\n";
-    DPRINT << "SENDER_NUM_BUFFERS_ARRAY[0]: " << (uint32_t)SENDER_NUM_BUFFERS_ARRAY[0] << "\n";
-    DPRINT << "SENDER_NUM_BUFFERS_ARRAY[1]: " << (uint32_t)SENDER_NUM_BUFFERS_ARRAY[1] << "\n";
-    DPRINT << "SENDER_NUM_BUFFERS_ARRAY[2]: " << (uint32_t)SENDER_NUM_BUFFERS_ARRAY[2] << "\n";
+
     //
     // COMMON CT ARGS (not specific to sender or receiver)
     //
@@ -1565,7 +1555,9 @@ void kernel_main() {
     init_ptr_val<receiver_channel_0_free_slots_from_south_stream_id>(DOWNSTREAM_SENDER_NUM_BUFFERS);
     init_ptr_val<receiver_channel_1_free_slots_from_downstream_stream_id>(DOWNSTREAM_SENDER_NUM_BUFFERS);
 
-    init_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>(0);
+    if constexpr (NUM_ACTIVE_ERISCS > 1) {
+        init_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>(0);
+    }
 
     if constexpr (is_2d_fabric) {
         init_ptr_val<sender_channel_free_slots_stream_ids[3]>(SENDER_NUM_BUFFERS_ARRAY[2]);  // NORTH
@@ -1833,7 +1825,6 @@ void kernel_main() {
         tt::tt_fabric::EdmChannelWorkerInterfaces<SENDER_NUM_BUFFERS_ARRAY>::make(
             std::make_index_sequence<NUM_SENDER_CHANNELS>{});
 
-    DPRINT << "HERE 5\n";
     // TODO: change to TMP.
     std::array<tt::tt_fabric::EdmToEdmSender<DOWNSTREAM_SENDER_NUM_BUFFERS>, NUM_USED_RECEIVER_CHANNELS>
         downstream_edm_noc_interfaces;
@@ -1917,7 +1908,6 @@ void kernel_main() {
         }
     }
 
-    DPRINT << "HERE 6\n";
     static_assert(!enable_ring_support || !is_2d_fabric, "2D mode does not yet support ring/torus");
     if constexpr (enable_ring_support) {
         if (has_downstream_edm_vc1_buffer_connection) {
@@ -1974,7 +1964,6 @@ void kernel_main() {
                     tt::tt_fabric::forward_and_local_write_noc_vc>();
         }
     }
-    DPRINT << "HERE 7\n";
 
     // initialize the local receiver channel buffers
     local_receiver_channels.init(
@@ -1994,7 +1983,6 @@ void kernel_main() {
     local_sender_channels.init(
         local_sender_buffer_addresses.data(), channel_buffer_size, sizeof(PACKET_HEADER_TYPE), sender_channel_base_id);
 
-    DPRINT << "HERE 8\n";
     // initialize the local sender channel worker interfaces
     if constexpr (is_sender_channel_serviced[0]) {
         init_local_sender_channel_worker_interfaces(
@@ -2003,7 +1991,6 @@ void kernel_main() {
             local_sender_channel_worker_interfaces,
             local_sender_flow_control_semaphores);
     }
-    DPRINT << "HERE 8.5\n";
 
     WriteTransactionIdTracker<RECEIVER_NUM_BUFFERS_ARRAY[0], NUM_TRANSACTION_IDS, 0> receiver_channel_0_trid_tracker;
     WriteTransactionIdTracker<
@@ -2024,17 +2011,12 @@ void kernel_main() {
             }
         }
     }
-    DPRINT << "HERE 9\n";
 
     if constexpr (enable_ethernet_handshake) {
-        DPRINT << "enable_ethernet_handshake\n";
-
         if constexpr (is_handshake_sender) {
-            DPRINT << "HANDSHAKE SENDER\n";
             erisc::datamover::handshake::sender_side_handshake(
                 handshake_addr, DEFAULT_HANDSHAKE_CONTEXT_SWITCH_TIMEOUT);
         } else {
-            DPRINT << "HANDSHAKE RECEIVER\n";
             erisc::datamover::handshake::receiver_side_handshake(
                 handshake_addr, DEFAULT_HANDSHAKE_CONTEXT_SWITCH_TIMEOUT);
         }
@@ -2042,9 +2024,7 @@ void kernel_main() {
         *edm_status_ptr = tt::tt_fabric::EDMStatus::REMOTE_HANDSHAKE_COMPLETE;
 
         if constexpr (wait_for_host_signal) {
-            DPRINT << "wait_for_host_signal\n";
             if constexpr (is_local_handshake_master) {
-                DPRINT << "\tmaster\n";
                 wait_for_notification((uint32_t)edm_local_sync_ptr, num_local_edms - 1);
                 // This master sends notification to self for multi risc in single eth core case,
                 // This still send to self even though with single risc core case, but no side effects
@@ -2052,11 +2032,9 @@ void kernel_main() {
                 notify_subordinate_routers(
                     edm_channels_mask, exclude_eth_chan, (uint32_t)edm_local_sync_ptr, num_local_edms);
             } else {
-                DPRINT << "\tslave\n";
                 notify_master_router(local_handshake_master_eth_chan, (uint32_t)edm_local_sync_ptr);
                 wait_for_notification((uint32_t)edm_local_sync_ptr, num_local_edms);
             }
-            DPRINT << "checkpoint\n";
 
             *edm_status_ptr = tt::tt_fabric::EDMStatus::LOCAL_HANDSHAKE_COMPLETE;
 
@@ -2067,7 +2045,6 @@ void kernel_main() {
             wait_for_notification((uint32_t)edm_status_ptr, tt::tt_fabric::EDMStatus::READY_FOR_TRAFFIC);
 
             if constexpr (is_local_handshake_master) {
-                DPRINT << "\tmaster\n";
                 // 3. Only master risc core notifies all subordinate risc cores (except subordinate riscs in master eth
                 // core)
                 notify_subordinate_routers(
@@ -2078,7 +2055,6 @@ void kernel_main() {
             }
         }
     }
-    DPRINT << "HERE 10\n";
 
     if constexpr (is_2d_fabric) {
         uint32_t has_downstream_edm = has_downstream_edm_vc0_buffer_connection & 0xF;
@@ -2130,19 +2106,9 @@ void kernel_main() {
 #endif
 
     WAYPOINT("FSCW");
-    DPRINT << "wait_for_static_connection_to_ready\n";
     wait_for_static_connection_to_ready(
         local_sender_channel_worker_interfaces, local_sender_channel_free_slots_stream_ids_ordered);
-    DPRINT << "\tDONE wait_for_static_connection_to_ready\n";
     WAYPOINT("FSCD");
-    for (size_t i = 0; i < NUM_SENDER_CHANNELS; i++) {
-        DPRINT << "Sender channel " << (uint32_t)i << " is serviced: " << (uint32_t)is_sender_channel_serviced[i]
-               << "\n";
-    }
-    for (size_t i = 0; i < NUM_RECEIVER_CHANNELS; i++) {
-        DPRINT << "Receiver channel " << (uint32_t)i << " is serviced: " << (uint32_t)is_receiver_channel_serviced[i]
-               << "\n";
-    }
 
     //////////////////////////////
     //////////////////////////////
@@ -2162,7 +2128,6 @@ void kernel_main() {
         port_direction_table,
         local_sender_channel_free_slots_stream_ids_ordered);
 
-    DPRINT << "DONE7\n";
     // we force these values to a non-zero value so that if we run the fabric back to back,
     // and we can reliably probe from host that this kernel has initialized properly.
     if constexpr (is_2d_fabric) {
@@ -2175,11 +2140,8 @@ void kernel_main() {
         // *sender0_worker_semaphore_ptr = 99;
     }
 
-    DPRINT << "Tearing down\n";
     // make sure all the noc transactions are acked before re-init the noc counters
     teardown(termination_signal_ptr, edm_status_ptr, receiver_channel_0_trid_tracker, receiver_channel_1_trid_tracker);
-
-    DPRINT << "DONE\n";
 
     WAYPOINT("DONE");
 }

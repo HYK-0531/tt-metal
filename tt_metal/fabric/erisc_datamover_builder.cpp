@@ -110,6 +110,11 @@ static void configure_risc_settings(
     }
 }
 
+static size_t get_num_riscv_cores() {
+    return tt::tt_metal::MetalContext::instance().hal().get_processor_classes_count(
+        tt::tt_metal::HalProgrammableCoreType::ACTIVE_ETH);
+}
+
 FabricRiscConfig::FabricRiscConfig(uint32_t risc_id) :
     enable_handshake_(true),
     enable_context_switch_(true),
@@ -119,8 +124,7 @@ FabricRiscConfig::FabricRiscConfig(uint32_t risc_id) :
     auto arch = tt::tt_metal::MetalContext::instance().hal().get_arch();
 
     configure_risc_settings(
-        tt::tt_metal::MetalContext::instance().hal().get_processor_classes_count(
-            tt::tt_metal::HalProgrammableCoreType::ACTIVE_ETH),
+        get_num_riscv_cores(),
         risc_id,
         arch,
         this->enable_handshake_,
@@ -142,8 +146,7 @@ FabricEriscDatamoverConfig::FabricEriscDatamoverConfig(Topology topology) {
     if (tt::tt_metal::MetalContext::instance().hal().get_arch() == tt::ARCH::BLACKHOLE) {
         this->receiver_txq_id = 1;
     }
-    this->num_riscv_cores = tt::tt_metal::MetalContext::instance().hal().get_processor_classes_count(
-        tt::tt_metal::HalProgrammableCoreType::ACTIVE_ETH);
+    this->num_riscv_cores = get_num_riscv_cores();
     for (uint32_t risc_id = 0; risc_id < this->num_riscv_cores; risc_id++) {
         this->risc_configs.emplace_back(risc_id);
     }

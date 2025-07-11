@@ -347,6 +347,8 @@ void MAIN {
                     cb_wait_front(cb_cur_sum, Sq_chunk_t);
                     std::swap(cb_cur_max, cb_prev_max);
                     std::swap(cb_cur_sum, cb_prev_sum);
+                    cb_push_back(cb_prev_max, Sq_chunk_t);
+                    cb_push_back(cb_prev_sum, Sq_chunk_t);
 
                 } else {
                     // Write o, m, l into cb_out

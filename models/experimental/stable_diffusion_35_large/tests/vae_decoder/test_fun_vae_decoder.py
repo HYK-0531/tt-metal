@@ -101,9 +101,9 @@ def test_vae_decoder(
 
     tt_out_torch = to_torch(tt_out).permute(0, 3, 1, 2)
 
+    logger.info(print_stats("torch", out))
+    logger.info(print_stats("tt", tt_out_torch, device=device))
     assert_quality(out, tt_out_torch, pcc=0.94, ccc=0.94)
     print(comp_allclose(out, tt_out_torch))
     result, output = comp_pcc(out, tt_out_torch)
     logger.info(f"Comparison result Pass:{result}, Output {output}, in: {torch.count_nonzero(tt_out_torch)}")
-    logger.info(print_stats("torch", out))
-    logger.info(print_stats("tt", tt_out_torch, device=device))

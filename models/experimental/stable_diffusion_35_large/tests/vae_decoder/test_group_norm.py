@@ -7,7 +7,7 @@ import torch
 import ttnn
 from loguru import logger
 
-from ...tt.vae_decoder.fun_group_norm import TtGroupNormParameters, group_norm
+from ...tt.vae_decoder.fun_group_norm import TtGroupNormParameters, vae_group_norm
 from ...tt.utils import assert_quality, to_torch
 from models.utility_functions import comp_allclose, comp_pcc
 
@@ -26,9 +26,10 @@ def print_stats(label, data: torch.Tensor, device=None):
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 0}], indirect=True)
 # @pytest.mark.usefixtures("use_program_cache")
 @pytest.mark.parametrize(
-    ("batch", "channels", "height", "width", "group_count", "num_out_blocks", "cores_y", "cores_x"),
+    ("batch", "channels", "height", "width", "group_count", "cores_y", "cores_x"),
     [
-        (8, 768, 1, 512, 32, 2, 8, 8),
+        # (8, 512, 32, 32, 32, 8, 8),
+        (1, 128, 32, 32, 32, 8, 8),  # Group norm observed edge case
         # (512, 256, 256, 32),
         # (256, 512, 512, 32),
         # (512, 512, 512, 32),
@@ -44,7 +45,6 @@ def test_group_norm(
     height: int,
     width: int,
     group_count: int,
-    num_out_blocks: int,
     cores_y: int,
     cores_x: int,
 ) -> None:
@@ -60,7 +60,6 @@ def test_group_norm(
 
     parameters = TtGroupNormParameters.from_torch(
         torch_model,
-        num_out_blocks=num_out_blocks,
         core_grid=ttnn.CoreGrid(x=cores_x, y=cores_y),
         device=mesh_device,
     )
@@ -81,7 +80,7 @@ def test_group_norm(
     with torch.no_grad():
         out = torch_model(inp)
 
-    tt_out = group_norm(tt_inp, parameters, torch_model.eps)
+    tt_out = vae_group_norm(tt_inp, parameters, torch_model.eps)
 
     tt_out_torch = to_torch(tt_out).permute(0, 3, 1, 2)
 

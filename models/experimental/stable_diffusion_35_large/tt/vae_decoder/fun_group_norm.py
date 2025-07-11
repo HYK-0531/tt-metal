@@ -38,18 +38,32 @@ class TtGroupNormParameters:
         inplace = False  # input_width * input_height <= k_device  # a heuristic
 
         # TODO: Update with parallel information
-        if not core_grid:  # get core grid from the mesh device.
-            core_grid = ttnn.CoreGrid(y=4, x=4)
+        opt_core_grid = core_grid
+        if not opt_core_grid:  # get core grid from the mesh device.
+            opt_core_grid = device.core_grid
+
         memory_config = ttnn.DRAM_MEMORY_CONFIG
         num_channels = torch_groupnorm.num_channels
         num_groups = torch_groupnorm.num_groups
+
+        # update core_grid.y to be a multiple of 32 as per group norm
+        # Group norm produces wrong results if core_grid.x != core_grid.y. Observed with Chnls=128 and Grp=32
+        assert (
+            num_channels % 32 == 0 == num_channels % num_groups
+        ), f"Incompatible channels ({num_channels}%32)or groups({num_channels}%{num_groups}):"
+        grid_e = min(opt_core_grid.x, opt_core_grid.y)
+        while num_channels % (32 * grid_e) != 0:
+            grid_e -= 1
+
+        opt_core_grid = ttnn.CoreGrid(y=grid_e, x=grid_e)
+
         torch_weight = ttnn.create_group_norm_weight_bias_rm(
-            torch_groupnorm.state_dict()["weight"], num_channels, core_grid.y
+            torch_groupnorm.state_dict()["weight"], num_channels, opt_core_grid.y
         )
         torch_bias = ttnn.create_group_norm_weight_bias_rm(
-            torch_groupnorm.state_dict()["bias"], num_channels, core_grid.y
+            torch_groupnorm.state_dict()["bias"], num_channels, opt_core_grid.y
         )
-        torch_mask = ttnn.create_group_norm_input_mask(num_channels, num_groups, core_grid.y)
+        torch_mask = ttnn.create_group_norm_input_mask(num_channels, num_groups, opt_core_grid.y)
 
         return cls(
             weight=ttnn.from_torch(
@@ -74,7 +88,7 @@ class TtGroupNormParameters:
                 memory_config=memory_config,
             ),
             memory_config=memory_config,
-            core_grid=core_grid,
+            core_grid=opt_core_grid,
             # num_out_blocks=num_out_blocks,
             inplace=inplace,
             num_channels=num_channels,

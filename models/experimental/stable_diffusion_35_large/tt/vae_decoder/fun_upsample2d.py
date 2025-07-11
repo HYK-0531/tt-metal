@@ -34,6 +34,5 @@ def vae_upsample2d(x, parameters):
     x = ttnn.to_layout(x, ttnn.ROW_MAJOR_LAYOUT)  # Upsample requires row major.
     x = ttnn.upsample(x, scale_factor=2)
     x = ttnn.to_layout(x, in_layout)
-    print(f"conv_up in channels -> {parameters.conv.in_channels}")
     x = vae_conv2d(x, parameters.conv)
     return x

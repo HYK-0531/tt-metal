@@ -69,10 +69,8 @@ def sd_vae_decode(
 
     x = unet_mid_block(x, parameters.mid_block, None)
 
-    for up_block_params in parameters.up_blocks:
+    for up_block_params in parameters.up_blocks[0:4]:
         x = updecoder_block(x, up_block_params, None)
-
-    return x
 
     x = vae_group_norm(x, parameters.conv_norm_out)
     x = ttnn.silu(x)

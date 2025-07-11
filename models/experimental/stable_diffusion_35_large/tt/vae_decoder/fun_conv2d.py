@@ -89,7 +89,6 @@ class TtConv2dParameters:
 def vae_conv2d(x, parameters):
     b, h, w, c = x.shape
     x = ttnn.to_layout(x, ttnn.ROW_MAJOR_LAYOUT)
-    print(f"Memory layout: {x.memory_config().memory_layout}")
 
     # TODO: compute optimal slice config per height or width.
     slice_config = ttnn.Conv2dSliceConfig(slice_type=ttnn.Conv2dSliceWidth, num_slices=w // 2)

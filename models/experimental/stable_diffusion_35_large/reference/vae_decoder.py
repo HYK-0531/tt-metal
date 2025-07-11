@@ -57,12 +57,11 @@ class VaeDecoder(torch.nn.Module):
         upscale_dtype = next(iter(self.up_blocks.parameters())).dtype
 
         x = self.mid_block(x)
+
         x = x.to(upscale_dtype)
 
-        for up_block in self.up_blocks:
+        for up_block in self.up_blocks[0:4]:
             x = up_block(x)
-
-        return x
 
         x = self.conv_norm_out(x)
         x = self.conv_act(x)

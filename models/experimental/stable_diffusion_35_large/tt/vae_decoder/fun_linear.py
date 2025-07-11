@@ -19,11 +19,22 @@ class TtLinearParameters:
 
     @classmethod
     def from_torch(
-        cls, torch_linear: torch.nn.Module, *, dtype: ttnn.DataType | None = None, device, core_grid: None
+        cls,
+        torch_linear: torch.nn.Module,
+        *,
+        dtype: ttnn.DataType | None = None,
+        device,
+        core_grid: None = None,
+        is_conv=False,
     ) -> TtLinearParameters:
         if not len(torch_linear.state_dict().keys()):
             breakpoint()
         weight = torch_linear.state_dict()["weight"]
+        if is_conv:
+            assert (
+                1 == weight.shape[-1] == weight.shape[-2]
+            ), f"Weight of shape {weight.shape} cannot be converted to linear"
+            weight = torch.squeeze(weight, (-2, -1))
         bias = torch_linear.state_dict()["bias"]
 
         compute_config = ttnn.WormholeComputeKernelConfig(

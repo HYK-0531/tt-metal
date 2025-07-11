@@ -35,7 +35,8 @@ def print_stats(label, data: torch.Tensor, device=None):
         # (1, 512, 512, 64, 64, 32, 2, 8, 8),
         # (1, 512, 512, 128, 128, 32, 2, 8, 8), #slice 32 works, outblocks 2
         # (1, 512, 512, 256, 256, 32, 8, 8, 8), #slice 128, output blocks 32. Need to parametize
-        (1, 512, 512, 512, 512, 32, 16, 8, 8),  # slice 128, output blocks 32. Need to parametize
+        (1, 512, 256, 512, 512, 32, 16, 8, 8),  # slice 128, output blocks 32. Need to parametize
+        # (1, 128, 128, 128, 128, 32, 16, 8, 8),  # slice 128, output blocks 32. Need to parametize
         # (512, 256, 256, 32),
         # (256, 512, 512, 32),
         # (512, 512, 512, 32),

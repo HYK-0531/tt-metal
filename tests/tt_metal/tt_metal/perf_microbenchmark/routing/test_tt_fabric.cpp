@@ -5,12 +5,17 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <map>
 #include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <random>
+#include <filesystem>
 #include <optional>
+#include <iomanip>
+#include <sstream>
 #include <memory>
+#include <magic_enum/magic_enum.hpp>
 
 #include "tt_fabric_test_config.hpp"
 #include "tt_fabric_test_common.hpp"
@@ -68,7 +73,8 @@ public:
     void launch_programs();
     void wait_for_prorgams();
     void validate_results();
-    void profile_results();
+    void profile_results(const TestConfig& config);
+    void initialize_csv_file();
     void close_devices();
     void set_benchmark_mode(bool benchmark_mode) { benchmark_mode_ = benchmark_mode; }
     void set_global_sync(bool global_sync) { global_sync_ = global_sync; }
@@ -77,8 +83,7 @@ public:
     uint32_t get_global_sync_region_size() { return sender_memory_map_.get_global_sync_region_size(); }
     uint32_t get_local_sync_address() { return sender_memory_map_.get_local_sync_address(); }
     uint32_t get_local_sync_region_size() { return sender_memory_map_.get_local_sync_region_size(); }
-    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>
-    get_outgoing_traffic_through_device_boundary();
+    std::map<FabricNodeId, std::map<RoutingDirection, uint32_t>> get_outgoing_traffic_through_device_boundary();
 
 private:
     void add_traffic_config(const TestTrafficConfig& traffic_config);
@@ -86,16 +91,19 @@ private:
     void trace_traffic_path(
         const FabricNodeId& src_node_id,
         const TestTrafficSenderConfig& config,
-        std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic);
+        std::map<FabricNodeId, std::map<RoutingDirection, uint32_t>>& outgoing_traffic);
     void trace_ring_traffic_path(
         const FabricNodeId& src_node_id,
         const TestTrafficSenderConfig& config,
-        std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic);
+        std::map<FabricNodeId, std::map<RoutingDirection, uint32_t>>& outgoing_traffic);
     void trace_line_or_mesh_traffic_path(
         const FabricNodeId& src_node_id,
         const TestTrafficSenderConfig& config,
-        std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic);
-    void calculate_bandwidth();
+        std::map<FabricNodeId, std::map<RoutingDirection, uint32_t>>& outgoing_traffic);
+    void calculate_bandwidth(const TestConfig& config);
+    void generate_bandwidth_csv(
+        const std::vector<std::tuple<uint32_t, RoutingDirection, uint64_t, uint64_t, double>>& bandwidth_results,
+        const TestConfig& config);
 
     // Track sync cores for each device
     std::unordered_map<FabricNodeId, CoreCoord> device_global_sync_cores_;
@@ -114,8 +122,9 @@ private:
     uint32_t global_sync_val_ = 0;
 
     // Performance profiling data
-    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>> outgoing_traffic_;
-    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint64_t>> device_direction_cycles_;
+    std::map<FabricNodeId, std::map<RoutingDirection, uint32_t>> outgoing_traffic_;
+    std::map<FabricNodeId, std::map<RoutingDirection, uint64_t>> device_direction_cycles_;
+    std::filesystem::path csv_file_path_;
 
     void reset_local_variables() {
         benchmark_mode_ = false;
@@ -307,9 +316,9 @@ void TestContext::validate_results() {
 
 void TestContext::close_devices() { fixture_->close_devices(); }
 
-void TestContext::profile_results() {
+void TestContext::profile_results(const TestConfig& config) {
     // Map to store cycles: [device][core] -> cycles
-    std::unordered_map<FabricNodeId, std::unordered_map<CoreCoord, uint64_t>> device_core_cycles;
+    std::map<FabricNodeId, std::map<CoreCoord, uint64_t>> device_core_cycles;
 
     log_info(tt::LogTest, "Profiling performance results from sender cores");
 
@@ -349,31 +358,9 @@ void TestContext::profile_results() {
     // Print results for checking
     log_info(tt::LogTest, "Performance profiling results:");
 
-    // Sort devices for consistent output
-    std::vector<FabricNodeId> sorted_devices;
-    for (const auto& [device_id, _] : device_core_cycles) {
-        sorted_devices.push_back(device_id);
-    }
-    std::sort(sorted_devices.begin(), sorted_devices.end(), [](const FabricNodeId& a, const FabricNodeId& b) {
-        return a.chip_id < b.chip_id;
-    });
-
-    for (const auto& device_id : sorted_devices) {
-        const auto& core_cycles = device_core_cycles[device_id];
-
-        // Sort cores for consistent output
-        std::vector<std::pair<CoreCoord, uint64_t>> sorted_cores;
+    // Results are automatically sorted by device ID and core coordinates
+    for (const auto& [device_id, core_cycles] : device_core_cycles) {
         for (const auto& [core, cycles] : core_cycles) {
-            sorted_cores.emplace_back(core, cycles);
-        }
-        std::sort(sorted_cores.begin(), sorted_cores.end(), [](const auto& a, const auto& b) {
-            if (a.first.x != b.first.x) {
-                return a.first.x < b.first.x;
-            }
-            return a.first.y < b.first.y;
-        });
-
-        for (const auto& [core, cycles] : sorted_cores) {
             log_info(tt::LogTest, "Device {} Core ({},{}) Cycles: {}", device_id.chip_id, core.x, core.y, cycles);
         }
     }
@@ -419,33 +406,22 @@ void TestContext::profile_results() {
     // Print direction-based results
     log_info(tt::LogTest, "Performance profiling by direction:");
 
-    for (const auto& device_id : sorted_devices) {
-        if (device_direction_cycles_.count(device_id) == 0) {
-            continue;
-        }
-
-        const auto& direction_cycles = device_direction_cycles_[device_id];
-
-        // Sort directions for consistent output
-        std::vector<std::pair<RoutingDirection, uint64_t>> sorted_directions;
+    // Results are automatically sorted by device ID and direction
+    for (const auto& [device_id, direction_cycles] : device_direction_cycles_) {
         for (const auto& [direction, cycles] : direction_cycles) {
-            sorted_directions.emplace_back(direction, cycles);
-        }
-        std::sort(sorted_directions.begin(), sorted_directions.end(), [](const auto& a, const auto& b) {
-            return static_cast<int>(a.first) < static_cast<int>(b.first);
-        });
-
-        for (const auto& [direction, cycles] : sorted_directions) {
             log_info(tt::LogTest, "Device {} Direction {} Cycles: {}", device_id.chip_id, direction, cycles);
         }
     }
 
     // Calculate and print bandwidth (Bytes/cycle)
-    calculate_bandwidth();
+    calculate_bandwidth(config);
 }
 
-void TestContext::calculate_bandwidth() {
+void TestContext::calculate_bandwidth(const TestConfig& config) {
     log_info(tt::LogTest, "Calculating bandwidth (Bytes/cycle) by direction:");
+
+    // Store bandwidth results for CSV generation
+    std::vector<std::tuple<uint32_t, RoutingDirection, uint64_t, uint64_t, double>> bandwidth_results;
 
     for (const auto& [device_id, direction_cycles_map] : device_direction_cycles_) {
         for (const auto& [direction, cycles] : direction_cycles_map) {
@@ -453,8 +429,9 @@ void TestContext::calculate_bandwidth() {
                 continue;  // Skip to avoid division by zero
             }
 
-            // Calculate total bytes sent in this direction from this device
+            // Calculate total bytes and packets sent in this direction from this device
             uint64_t total_bytes = 0;
+            uint64_t total_packets = 0;
             uint32_t total_traffic_count = 0;
 
             // Get traffic count for this device and direction
@@ -476,6 +453,7 @@ void TestContext::calculate_bandwidth() {
                             uint32_t num_packets = config.parameters.num_packets;
                             total_bytes +=
                                 static_cast<uint64_t>(payload_size_bytes) * num_packets * total_traffic_count;
+                            total_packets += static_cast<uint64_t>(num_packets) * total_traffic_count;
                         }
                     }
                 }
@@ -486,17 +464,74 @@ void TestContext::calculate_bandwidth() {
 
             log_info(
                 tt::LogTest,
-                "Device {} Direction {} Bandwidth: {:.6f} Bytes/cycle (Total Bytes: {}, Cycles: {})",
+                "Device {} Direction {} Bandwidth: {:.6f} Bytes/cycle (Total Packets: {}, Total Bytes: {}, Cycles: {})",
                 device_id.chip_id,
                 direction,
                 bandwidth,
+                total_packets,
                 total_bytes,
                 cycles);
+
+            // Store result for CSV generation
+            bandwidth_results.emplace_back(device_id.chip_id, direction, total_packets, cycles, bandwidth);
         }
     }
+
+    // Generate CSV file
+    generate_bandwidth_csv(bandwidth_results, config);
 }
 
-std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>
+void TestContext::generate_bandwidth_csv(
+    const std::vector<std::tuple<uint32_t, RoutingDirection, uint64_t, uint64_t, double>>& bandwidth_results,
+    const TestConfig& config) {
+    // Open CSV file in append mode
+    std::ofstream csv_stream(csv_file_path_, std::ios::out | std::ios::app);
+    if (!csv_stream.is_open()) {
+        log_error(tt::LogTest, "Failed to open CSV file for appending: {}", csv_file_path_.string());
+        return;
+    }
+
+    // Write data rows (header already written in initialize_csv_file)
+    for (const auto& [device_id, direction, num_packets, cycles, bandwidth] : bandwidth_results) {
+        csv_stream << config.name << "," << magic_enum::enum_name(config.fabric_setup.topology) << "," << device_id
+                   << "," << magic_enum::enum_name(direction) << "," << num_packets << "," << cycles << ","
+                   << std::fixed << std::setprecision(6) << bandwidth << "\n";
+    }
+
+    csv_stream.close();
+    log_info(tt::LogTest, "Bandwidth results appended to CSV file: {}", csv_file_path_.string());
+}
+
+void TestContext::initialize_csv_file() {
+    // Create output directory
+    std::filesystem::path output_path =
+        std::filesystem::path(tt::tt_metal::MetalContext::instance().rtoptions().get_root_dir()) / output_dir;
+
+    if (!std::filesystem::exists(output_path)) {
+        std::filesystem::create_directories(output_path);
+    }
+
+    // Generate CSV filename
+    std::ostringstream oss;
+    oss << "bandwidth_results.csv";
+    csv_file_path_ = output_path / oss.str();
+
+    // Create CSV file with header
+    std::ofstream csv_stream(csv_file_path_, std::ios::out | std::ios::trunc);  // Truncate file
+    if (!csv_stream.is_open()) {
+        log_error(tt::LogTest, "Failed to create CSV file: {}", csv_file_path_.string());
+        return;
+    }
+
+    // Write header
+    csv_stream
+        << "test_name,topology,device,direction,num_packets_through_device_boundary,cycles,bandwidth_bytes_per_cycle\n";
+    csv_stream.close();
+
+    log_info(tt::LogTest, "Initialized CSV file: {}", csv_file_path_.string());
+}
+
+std::map<FabricNodeId, std::map<RoutingDirection, uint32_t>>
 TestContext::get_outgoing_traffic_through_device_boundary() {
     outgoing_traffic_.clear();  // Clear previous data
 
@@ -514,33 +549,15 @@ TestContext::get_outgoing_traffic_through_device_boundary() {
         }
     }
 
-    // Log the results for debugging (sorted for readability)
-    std::vector<FabricNodeId> sorted_devices;
+    // Log the results for debugging (automatically sorted)
     for (const auto& [node_id, device_traffic] : outgoing_traffic_) {
         if (!device_traffic.empty()) {
-            sorted_devices.push_back(node_id);
-        }
-    }
-    std::sort(sorted_devices.begin(), sorted_devices.end(), [](const FabricNodeId& a, const FabricNodeId& b) {
-        return a.chip_id < b.chip_id;
-    });
-
-    for (const auto& node_id : sorted_devices) {
-        const auto& device_traffic = outgoing_traffic_[node_id];
-
-        // Sort directions for consistent output
-        std::vector<std::pair<RoutingDirection, uint32_t>> sorted_directions;
-        for (const auto& [direction, count] : device_traffic) {
-            if (count > 0) {
-                sorted_directions.emplace_back(direction, count);
+            for (const auto& [direction, count] : device_traffic) {
+                if (count > 0) {
+                    log_info(
+                        tt::LogTest, "Device {} Direction {} Traffic Count: {}", node_id.chip_id, direction, count);
+                }
             }
-        }
-        std::sort(sorted_directions.begin(), sorted_directions.end(), [](const auto& a, const auto& b) {
-            return static_cast<int>(a.first) < static_cast<int>(b.first);
-        });
-
-        for (const auto& [direction, count] : sorted_directions) {
-            log_info(tt::LogTest, "Device {} Direction {} Traffic Count: {}", node_id.chip_id, direction, count);
         }
     }
 
@@ -550,7 +567,7 @@ TestContext::get_outgoing_traffic_through_device_boundary() {
 void TestContext::trace_traffic_path(
     const FabricNodeId& src_node_id,
     const TestTrafficSenderConfig& config,
-    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic) {
+    std::map<FabricNodeId, std::map<RoutingDirection, uint32_t>>& outgoing_traffic) {
     const auto& hops = config.hops;
 
     // Use proper topology detection from fixture
@@ -566,7 +583,7 @@ void TestContext::trace_traffic_path(
 void TestContext::trace_ring_traffic_path(
     const FabricNodeId& src_node_id,
     const TestTrafficSenderConfig& config,
-    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic) {
+    std::map<FabricNodeId, std::map<RoutingDirection, uint32_t>>& outgoing_traffic) {
     const auto& hops = config.hops;
 
     // Find the initial direction and total hops for ring traversal
@@ -594,7 +611,7 @@ void TestContext::trace_ring_traffic_path(
 void TestContext::trace_line_or_mesh_traffic_path(
     const FabricNodeId& src_node_id,
     const TestTrafficSenderConfig& config,
-    std::unordered_map<FabricNodeId, std::unordered_map<RoutingDirection, uint32_t>>& outgoing_traffic) {
+    std::map<FabricNodeId, std::map<RoutingDirection, uint32_t>>& outgoing_traffic) {
     auto remaining_hops = config.hops;  // Make a copy to modify
     FabricNodeId current_node = src_node_id;
 
@@ -799,6 +816,9 @@ int main(int argc, char** argv) {
     TestContext test_context;
     test_context.init(fixture, allocation_policies);
 
+    // Initialize CSV file for bandwidth results
+    test_context.initialize_csv_file();
+
     cmdline_parser.apply_overrides(raw_test_configs);
 
     if (raw_test_configs.empty()) {
@@ -879,7 +899,7 @@ int main(int argc, char** argv) {
             test_context.validate_results();
             log_info(tt::LogTest, "Test {} Results validated.", built_test.name);
 
-            test_context.profile_results();
+            test_context.profile_results(built_test);
 
             test_context.reset_devices();
         }

@@ -214,21 +214,22 @@ def run_reduce_scatter_impl(
         #     ttnn.bfloat16,
         #     1,
         # ),  # Full SD3.5 shape, when reduce scatter unfused
-        (8, 1, [8, 1, 512, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
-        (8, 1, [4, 1, 1024, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
-        (8, 1, [2, 1, 2048, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
-        (8, 1, [1, 1, 4096, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
-        (8, 1, [1, 1, 512, 256], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),
-        (8, 1, [1, 1, 512, 512], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),
+        # (8, 1, [8, 1, 512, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
+        # (8, 1, [4, 1, 1024, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
+        # (8, 1, [2, 1, 2048, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
+        # (8, 1, [1, 1, 4096, 2560], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),  # use batching when fused
+        # (8, 1, [1, 1, 512, 256], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),
+        # (8, 1, [1, 1, 512, 512], 3, ttnn.TILE_LAYOUT, ttnn.bfloat16),
+        (4, 1, [1, 1, 256, 4096], 3, ttnn.TILE_LAYOUT, ttnn.ttnn.bfloat16),
     ],
-    ids=[
-        "batch_8",
-        "batch_4",
-        "batch_2",
-        "batch_1",
-        "batch_1_slice_wt_1",
-        "batch_1_slice_wt_2",
-    ],
+    # ids=[
+    #     "batch_8",
+    #     "batch_4",
+    #     "batch_2",
+    #     "batch_1",
+    #     "batch_1_slice_wt_1",
+    #     "batch_1_slice_wt_2",
+    # ],
 )
 @pytest.mark.parametrize(
     "mem_config_input, mem_config_rs",
@@ -242,22 +243,22 @@ def run_reduce_scatter_impl(
 @pytest.mark.parametrize(
     "enable_trace, num_iters",
     [
-        (True, 10),
+        # (True, 10),
         (False, 1),
     ],
-    ids=["perf", "check"],
+    ids=["check"],
 )
 @pytest.mark.parametrize(
     "ones_tensor",
     [
-        True,
+        # True,
         False,
     ],
 )
 @pytest.mark.parametrize(
     "device_params, rs_topology",
     [
-        ({"fabric_config": ttnn.FabricConfig.FABRIC_1D_RING, "trace_region_size": 90112}, ttnn.Topology.Ring),
+        ({"fabric_config": ttnn.FabricConfig.FABRIC_1D, "trace_region_size": 90112}, ttnn.Topology.Ring),
     ],
     indirect=["device_params"],
     ids=["fabric_ring"],

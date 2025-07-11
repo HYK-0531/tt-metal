@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <cstddef>
 #include "debug/dprint.h"
-#include "tt_metal/fabric/impl/kernels/edm_fabric/fabric_txq_setup.h"
+#include "tt_metal/fabric/hw/inc/edm_fabric/fabric_txq_setup.h"
 constexpr uint32_t data_txq_id = get_compile_time_arg_val(0);
 constexpr uint32_t ack_txq_id = get_compile_time_arg_val(1);
 constexpr uint32_t PAYLOAD_SIZE = get_compile_time_arg_val(2);

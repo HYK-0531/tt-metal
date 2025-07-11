@@ -25,7 +25,7 @@
 
 #include "noc_overlay_parameters.h"
 #include "tt_metal/hw/inc/utils/utils.h"
-#include "tt_metal/fabric/impl/kernels/edm_fabric/fabric_txq_setup.h"
+#include "tt_metal/fabric/hw/inc/edm_fabric/fabric_txq_setup.h"
 #include <fabric_host_interface.h>
 
 #include <array>

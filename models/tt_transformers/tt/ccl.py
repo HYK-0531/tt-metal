@@ -147,6 +147,21 @@ class TT_CCL:
         return create_rs_persistent_output_buffers(mesh_device=self.mesh_device, model=1)
 
     def get_rs_persistent_output_buffer(self, pb_key):
+        # Temporary hack to handle nd_shard_spec shit
+        if pb_key not in self.rs_persistent_output_buffers:
+            shape = (1, 1, 32, 640)
+            dtype = ttnn.bfloat16
+            memory_config = ttnn.MemoryConfig(
+                ttnn.TensorMemoryLayout.WIDTH_SHARDED,
+                ttnn.BufferType.L1,
+                ttnn.ShardSpec(
+                    ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), ttnn.CoreCoord(7, 1))}),
+                    [32, 320],
+                    ttnn.ShardOrientation.ROW_MAJOR,
+                ),
+            )
+            pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+
         assert (
             pb_key in self.rs_persistent_output_buffers
         ), "RS persistent output buffer does not exist for key: {pb_key}"
@@ -215,6 +230,10 @@ def tt_all_reduce(
         )
         reduced = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
+            persistent_intermediate_buffer=tt_ccl.get_rs_persistent_intermediate_buffer(
+                peristent_intermediate_buffer_key
+            ),
+            persistent_output_buffer=tt_ccl.get_rs_persistent_output_buffer(peristent_output_buffer_key),
             dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_rs_semaphore_handles(),
             num_links=num_reduce_scatter_links,
@@ -246,7 +265,8 @@ def tt_all_reduce(
         )
         gathered_tensor = ttnn.experimental.all_gather_async(
             input_tensor,
-            dim,
+            persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
+            dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=num_all_gather_links,
             cluster_axis=cluster_axis,
@@ -266,7 +286,9 @@ def tt_all_reduce(
             compute_kernel_config=None,
             memory_config=ttnn.L1_MEMORY_CONFIG if sharded else ttnn.DRAM_MEMORY_CONFIG,
         )
-        gathered_tensor.deallocate(True)
+
+        # TODO: (GR)
+        # gathered_tensor.deallocate(True)
     else:
         input_mem_cfg = input_tensor.memory_config()
         peristent_intermediate_buffer_key = tt_ccl.create_rs_persistent_intermediate_buffer_key(
@@ -285,6 +307,10 @@ def tt_all_reduce(
         )
         reduced_tensor = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
+            persistent_intermediate_buffer=tt_ccl.get_rs_persistent_intermediate_buffer(
+                peristent_intermediate_buffer_key
+            ),
+            persistent_output_buffer=tt_ccl.get_rs_persistent_output_buffer(peristent_output_buffer_key),
             dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_rs_semaphore_handles(),
             num_links=num_reduce_scatter_links,
@@ -300,7 +326,8 @@ def tt_all_reduce(
         )
         reduced_tensor = ttnn.experimental.all_gather_async(
             reduced_tensor,
-            dim,
+            persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
+            dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=num_all_gather_links,
             cluster_axis=cluster_axis,
@@ -348,7 +375,8 @@ def tt_all_gather(
         )
         gathered = ttnn.experimental.all_gather_async(
             input_tensor,
-            dim,
+            persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
+            dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=num_links,
             topology=topology,
@@ -361,7 +389,8 @@ def tt_all_gather(
         )
         gathered = ttnn.experimental.all_gather_async(
             input_tensor,
-            dim,
+            persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
+            dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=num_links,
             cluster_axis=cluster_axis,
@@ -396,7 +425,8 @@ def tt_distributed_rmsnorm(inp, epsilon, gamma, mesh_device, tt_ccl, compute_ker
         inp, tt_stats_gathered, epsilon=epsilon, weight=gamma, compute_kernel_config=compute_kernel_config
     )
 
-    tt_stats_gathered.deallocate(True)
+    # TODO: (GR)
+    # tt_stats_gathered.deallocate(True)
     # inp.deallocate(True)
 
     return tt_out
@@ -417,7 +447,8 @@ def tt_sharded_distributed_rmsnorm(
     )
     tt_stats = ttnn.experimental.all_gather_async(
         tt_stats,
-        3,
+        persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
+        dim=3,
         multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
         num_links=1,
         cluster_axis=cluster_axis,
@@ -435,6 +466,7 @@ def tt_sharded_distributed_rmsnorm(
         program_config=ln_sharded_progcfg,
         stats=tt_stats,
     )
-    tt_stats.deallocate(True)
+    # TODO: (GR)
+    # tt_stats.deallocate(True)
 
     return tt_out

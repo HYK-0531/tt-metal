@@ -78,6 +78,7 @@ class DistributedNorm(LightweightModule):
             )
             x = ttnn.experimental.all_gather_async(
                 x,
+                persistent_output_buffer=self.tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
                 dim=3,
                 multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 num_links=1,
@@ -97,6 +98,7 @@ class DistributedNorm(LightweightModule):
             )
             x = ttnn.experimental.all_gather_async(
                 x,
+                persistent_output_buffer=self.tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
                 dim=3,
                 multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 num_links=1,

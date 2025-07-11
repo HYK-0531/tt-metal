@@ -140,8 +140,10 @@ class TransformerBlock(LightweightModule):
         )
         # Here x and attn_out are both fractured across devices
         h = ttnn.add(x, attn_out, memory_config=skip_mem_cfg, dtype=ttnn.bfloat16 if TG else None)
-        ttnn.deallocate(attn_out)
+        # TODO: (GR)
+        # ttnn.deallocate(attn_out)
         if mode == "prefill":
+            # TODO: (GR) This should be fine
             x.deallocate(True)
 
         # Norms take fractured inputs and output replicated across devices

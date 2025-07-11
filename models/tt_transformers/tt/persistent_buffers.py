@@ -74,7 +74,7 @@ def create_ag_persistent_output_buffers(mesh_device, model):
 
     shape = (1, 1, 32, 152064)
     dtype = ttnn.bfloat8_b
-    memory_config = ttnn.DRAM_MEMORY_CONFIG
+    memory_config = ttnn.L1_MEMORY_CONFIG
     pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
     persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
 

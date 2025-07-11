@@ -137,7 +137,8 @@ class MLP(LightweightModule):
             program_config=pc_3,
             memory_config=memory_config,
         )
-        ttnn.deallocate(x)
+        # TODO: (GR)
+        # ttnn.deallocate(x)
 
         if TG:
             # if mode == "decode" and self.dim!=8192:
@@ -162,6 +163,10 @@ class MLP(LightweightModule):
                 )
                 w1_out = ttnn.experimental.reduce_scatter_minimal_async(
                     w1_out,
+                    persistent_intermediate_buffer=self.tt_ccl.get_rs_persistent_intermediate_buffer(
+                        peristent_intermediate_buffer_key
+                    ),
+                    persistent_output_buffer=self.tt_ccl.get_rs_persistent_output_buffer(peristent_output_buffer_key),
                     dim=3,
                     multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
                     num_links=self.args.num_reduce_scatter_links,
@@ -188,6 +193,10 @@ class MLP(LightweightModule):
                 )
                 w3_out = ttnn.experimental.reduce_scatter_minimal_async(
                     w3_out,
+                    persistent_intermediate_buffer=self.tt_ccl.get_rs_persistent_intermediate_buffer(
+                        peristent_intermediate_buffer_key
+                    ),
+                    persistent_output_buffer=self.tt_ccl.get_rs_persistent_output_buffer(peristent_output_buffer_key),
                     dim=3,
                     multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
                     num_links=1,
@@ -231,8 +240,9 @@ class MLP(LightweightModule):
             # w2 may use a different core grid, this is a no-op if they already match
             w2_in = ttnn.to_memory_config(w2_in, self.model_config["SHARDED_MLP2_INPUT_MEMCFG"])
 
-        ttnn.deallocate(w3_out)
-        ttnn.deallocate(w1_out)
+        # TODO: (GR)
+        # ttnn.deallocate(w3_out)
+        # ttnn.deallocate(w1_out)
 
         if TG and (self.dim == 8192 or mode == "prefill"):
             cluster_axis = 1
@@ -241,7 +251,8 @@ class MLP(LightweightModule):
             )
             w2_in = ttnn.experimental.all_gather_async(
                 w2_in,
-                3,
+                persistent_output_buffer=self.tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
+                dim=3,
                 multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 num_links=2,
                 cluster_axis=cluster_axis,
@@ -266,7 +277,9 @@ class MLP(LightweightModule):
             memory_config=memory_config,
             core_grid=None,  # FIXME: validate on TG ttnn.CoreGrid(y=8, x=8) if not pc_2 else None,
         )
-        ttnn.deallocate(w2_in)
+        # TODO: (GR)
+        # ttnn.deallocate(w2_in)
+
         # if mode == "decode" and not TG:
         #     w2_out = ttnn.sharded_to_interleaved(w2_out, ttnn.DRAM_MEMORY_CONFIG)
         w2_out_reduced = tt_all_reduce(

@@ -42,6 +42,7 @@ show_help() {
     echo "  --enable-coverage                Instrument the binaries for code coverage."
     echo "  --without-distributed            Disable distributed compute support (OpenMPI dependency). Enabled by default."
     echo "  --without-python-bindings        Disable Python bindings (ttnncpp will be available as standalone library, otherwise ttnn will include the cpp backend and the python bindings), Enabled by default"
+    echo "  --build-mlp-op-perf              Build optional mlp-op-perf submodule for offline models."
 }
 
 clean() {
@@ -75,6 +76,7 @@ cpm_source_cache=""
 c_compiler_path=""
 ttnn_shared_sub_libs="OFF"
 toolchain_path="cmake/x86_64-linux-clang-17-libstdcpp-toolchain.cmake"
+build_mlp_op_perf="OFF"
 
 # Requested handling for 20.04 -> 22.04 migration
 if [[ "$FLAVOR" == "ubuntu" && "$VERSION" == "20.04" ]]; then
@@ -123,6 +125,7 @@ configure-only
 enable-coverage
 without-distributed
 without-python-bindings
+build-mlp-op-perf
 "
 
 # Flatten LONGOPTIONS into a comma-separated string for getopt
@@ -202,6 +205,8 @@ while true; do
             build_type="Debug";;
         --clean)
 	    clean; exit 0;;
+        --build-mlp-op-perf)
+            build_mlp_op_perf="ON";;
         --)
             shift;break;;
     esac
@@ -257,6 +262,7 @@ echo "INFO: TTNN Shared sub libs : $ttnn_shared_sub_libs"
 echo "INFO: Enable Light Metal Trace: $light_metal_trace"
 echo "INFO: Enable Distributed: $enable_distributed"
 echo "INFO: With python bindings: $with_python_bindings"
+echo "INFO: With submodule mlp-op-perf: $build_mlp_op_perf"
 
 # Prepare cmake arguments
 cmake_args+=("-B" "$build_dir")
@@ -369,6 +375,12 @@ if [ "$enable_distributed" = "ON" ]; then
     cmake_args+=("-DENABLE_DISTRIBUTED=ON")
 else
     cmake_args+=("-DENABLE_DISTRIBUTED=OFF")
+fi
+
+if [ "$build_mlp_op_perf" = "ON" ]; then
+    cmake_args+=("-DBUILD_MLP_OP_PERF=ON")
+else
+    cmake_args+=("-DBUILD_MLP_OP_PERF=OFF")
 fi
 
 # toolchain and cxx_compiler settings would conflict with eachother

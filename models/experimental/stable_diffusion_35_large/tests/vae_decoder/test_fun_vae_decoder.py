@@ -11,6 +11,7 @@ from ...reference.vae_decoder import VaeDecoder
 from ...tt.vae_decoder.fun_vae_decoder import sd_vae_decode, TtVaeDecoderParameters
 from ...tt.utils import assert_quality, to_torch
 from models.utility_functions import comp_allclose, comp_pcc
+from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
 
 
 def print_stats(label, data: torch.Tensor, device=None):
@@ -72,9 +73,9 @@ def test_vae_decoder(
         norm_num_groups=norm_num_groups,
     )
 
-    # sd_vae = AutoencoderKL.from_pretrained("stabilityai/stable-diffusion-3.5-large", subfolder="vae")
+    sd_vae = AutoencoderKL.from_pretrained("stabilityai/stable-diffusion-3.5-large", subfolder="vae")
     # print(sd_vae.decoder)
-    # torch_model=sd_vae.decoder.mid_block
+    torch_model = sd_vae.decoder
     torch_model.eval()
 
     parameters = TtVaeDecoderParameters.from_torch(

@@ -37,11 +37,11 @@ class TtUpDecoderBlock2DParameters:
         return cls(
             resnets=[
                 TtResnetBlock2DParameters.from_torch(resnet_block, dtype=dtype, core_grid=core_grid, device=device)
-                for resnet_block in updecoder_block.resnets
+                for resnet_block in (updecoder_block.resnets or [])
             ],
             upsamplers=[
                 TtUpsample2DParameters.from_torch(torch_upsample, dtype=dtype, device=device)
-                for torch_upsample in updecoder_block.upsamplers
+                for torch_upsample in (updecoder_block.upsamplers or [])
             ],
         )
 

@@ -57,19 +57,6 @@ class TtConv2dParameters:
         if act_block_h is not None:
             conv_config.act_block_h_override = act_block_h
 
-        conv_config_ = ttnn.Conv2dConfig(
-            weights_dtype=dtype,
-            shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
-            deallocate_activation=True,
-            reallocate_halo_output=False,
-            enable_act_double_buffer=False,
-            enable_split_reader=True,
-            enable_subblock_padding=False,
-            reshard_if_not_optimal=True,
-            act_block_w_div=1,
-            act_block_h_override=32,
-        )
-
         return cls(
             weight=ttnn.from_torch(weight, dtype=dtype),
             bias=ttnn.from_torch(bias.reshape((1, 1, 1, -1)), dtype=dtype),

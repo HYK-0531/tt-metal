@@ -48,7 +48,7 @@ class TtVaeDecoderParameters:
             ),
             up_blocks=[
                 TtUpDecoderBlock2DParameters.from_torch(up_block, dtype=dtype, core_grid=core_grid, device=device)
-                for up_block in torch_vae_decoder.up_blocks
+                for up_block in (torch_vae_decoder.up_blocks or [])
             ],
             conv_norm_out=TtGroupNormParameters.from_torch(
                 torch_vae_decoder.conv_norm_out, device=device, core_grid=core_grid

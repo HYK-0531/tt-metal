@@ -185,7 +185,7 @@ void MeshCommandQueueBase::enqueue_write_shard_to_sub_grid(
     }
 
     if (blocking) {
-        this->finish();
+        this->finish_locked();
     }
 }
 
@@ -226,7 +226,7 @@ void MeshCommandQueueBase::enqueue_write_shards(
     dispatch_thread_pool_->wait();
 
     if (blocking) {
-        this->finish();
+        this->finish_locked();
     }
 }
 

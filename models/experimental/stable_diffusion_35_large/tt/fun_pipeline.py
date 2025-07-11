@@ -291,6 +291,7 @@ class TtStableDiffusion3Pipeline:
         print(f"Latents shape: {latents_shape}")
 
         logger.info("encoding prompts...")
+        breakpoint()
 
         prompt_encoding_start_time = time.time()
         prompt_embeds, pooled_prompt_embeds = self._encode_prompts(

@@ -36,7 +36,11 @@ class TtConv2dParameters:
             dtype=dtype,
             weights_dtype=dtype,
             activation=activation,
-            shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
+            shard_layout=(
+                ttnn.TensorMemoryLayout.HEIGHT_SHARDED
+                if torch_conv.in_channels < 256
+                else ttnn.TensorMemoryLayout.BLOCK_SHARDED  # Prevent asserts. TODO: Add correct optimization
+            ),
             reshard_if_not_optimal=False,
             deallocate_activation=True,
             output_layout=ttnn.ROW_MAJOR_LAYOUT,
@@ -52,6 +56,19 @@ class TtConv2dParameters:
 
         if act_block_h is not None:
             conv_config.act_block_h_override = act_block_h
+
+        conv_config_ = ttnn.Conv2dConfig(
+            weights_dtype=dtype,
+            shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
+            deallocate_activation=True,
+            reallocate_halo_output=False,
+            enable_act_double_buffer=False,
+            enable_split_reader=True,
+            enable_subblock_padding=False,
+            reshard_if_not_optimal=True,
+            act_block_w_div=1,
+            act_block_h_override=32,
+        )
 
         return cls(
             weight=ttnn.from_torch(weight, dtype=dtype),
@@ -71,6 +88,12 @@ class TtConv2dParameters:
 
 def vae_conv2d(x, parameters):
     b, h, w, c = x.shape
+    x = ttnn.to_layout(x, ttnn.ROW_MAJOR_LAYOUT)
+    print(f"Memory layout: {x.memory_config().memory_layout}")
+
+    # TODO: compute optimal slice config per height or width.
+    slice_config = ttnn.Conv2dSliceConfig(slice_type=ttnn.Conv2dSliceWidth, num_slices=w // 2)
+
     output_tensor, [_out_height, _out_width] = ttnn.conv2d(
         input_tensor=x,
         weight_tensor=parameters.weight,
@@ -86,6 +109,8 @@ def vae_conv2d(x, parameters):
         input_width=w,
         conv_config=parameters.conv_config,
         compute_config=parameters.compute_config,
+        # memory_config=ttnn.DRAM_MEMORY_CONFIG,
+        slice_config=slice_config,
         return_output_dim=True,
     )
 

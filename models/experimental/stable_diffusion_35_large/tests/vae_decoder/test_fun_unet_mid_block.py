@@ -7,8 +7,7 @@ import torch
 import ttnn
 from loguru import logger
 
-from ...tt.vae_decoder.fun_resnet_block import resnet_block, TtResnetBlock2DParameters
-from ...reference.vae_decoder import ResnetBlock2D
+from ...tt.vae_decoder.fun_unet_mid_block import unet_mid_block, TtUNetMidBlock2DParameters
 from ...tt.utils import assert_quality, to_torch
 from models.utility_functions import comp_allclose, comp_pcc
 from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
@@ -29,30 +28,20 @@ def print_stats(label, data: torch.Tensor, device=None):
 # @pytest.mark.usefixtures("use_program_cache")
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 32768}])
 @pytest.mark.parametrize(
-    ("batch", "in_channels", "out_channels", "height", "width", "num_groups", "num_out_blocks", "cores_y", "cores_x"),
+    ("batch", "in_channels", "height", "width", "num_groups", "num_heads", "cores_y", "cores_x"),
     [
-        # (1, 256, 256, 32, 32, 32, 2, 8, 8),
-        # (1, 512, 512, 64, 64, 32, 2, 8, 8),
-        # (1, 512, 512, 128, 128, 32, 2, 8, 8), #slice 32 works, outblocks 2
-        # (1, 512, 512, 256, 256, 32, 8, 8, 8), #slice 128, output blocks 32. Need to parametize
-        (1, 512, 512, 512, 512, 32, 16, 8, 8),  # slice 128, output blocks 32. Need to parametize
-        # (512, 256, 256, 32),
-        # (256, 512, 512, 32),
-        # (512, 512, 512, 32),
-        # (128, 1024, 1024, 32),
-        # (256, 1024, 1024, 32),
+        (1, 512, 256, 256, 32, 4, 8, 8),  # slice 128, output blocks 32. Need to parametize
     ],
 )
-def test_resnet_block(
+def test_unetmid_block(
     *,
     device: ttnn.Device,
     batch: int,
     in_channels: int,
-    out_channels: int,
     height: int,
     width: int,
     num_groups: int,
-    num_out_blocks: int,
+    num_heads: int,
     cores_y: int,
     cores_x: int,
 ) -> None:
@@ -62,13 +51,18 @@ def test_resnet_block(
     torch.manual_seed(0)
     logger.info(f"Device: {device}, {device.core_grid}")
 
+    attention_head_dim = in_channels // num_heads
+    # torch_model = UNetMidBlock2D(in_channels=in_channels,
+    #                             resnet_groups=num_groups,
+    #                             attention_head_dim=attention_head_dim
+    #                            )
     sd_vae = AutoencoderKL.from_pretrained("stabilityai/stable-diffusion-3.5-large", subfolder="vae")
     print(sd_vae.decoder)
-    torch_model = ResnetBlock2D(in_channels=in_channels, out_channels=out_channels, groups=num_groups)
+    torch_model = sd_vae.decoder.mid_block
     torch_model.eval()
 
-    parameters = TtResnetBlock2DParameters.from_torch(
-        resnet_block=torch_model,
+    parameters = TtUNetMidBlock2DParameters.from_torch(
+        unet_mid_block=torch_model,
         dtype=ttnn_dtype,
         device=device,
         core_grid=ttnn.CoreGrid(x=cores_x, y=cores_y),
@@ -87,7 +81,7 @@ def test_resnet_block(
     with torch.no_grad():
         out = torch_model(inp)
 
-    tt_out = resnet_block(tt_inp, parameters, None)
+    tt_out = unet_mid_block(tt_inp, parameters, None)
 
     tt_out_torch = to_torch(tt_out).permute(0, 3, 1, 2)
 

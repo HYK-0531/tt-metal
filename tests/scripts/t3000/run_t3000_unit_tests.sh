@@ -84,8 +84,6 @@ run_t3000_ttnn_tests() {
   ./build/test/ttnn/unit_tests_ttnn_ccl_multi_tensor
   ./build/test/ttnn/unit_tests_ttnn_ccl_ops
   ./build/test/ttnn/test_ccl_multi_cq_multi_device
-  mpirun -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache0 TT_METAL_VISIBLE_DEVICES=0,1 TT_MESH_ID=0 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit2x2SendRecvFixture* : -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache1 TT_METAL_VISIBLE_DEVICES=2,3 TT_MESH_ID=1 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit2x2SendRecvFixture*
-  mpirun -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache0 TT_METAL_VISIBLE_DEVICES=0 TT_MESH_ID=0 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit1x2SendRecvFixture* : -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache1 TT_METAL_VISIBLE_DEVICES=1 TT_MESH_ID=2 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit1x2SendRecvFixture* : -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache2  TT_METAL_VISIBLE_DEVICES=2 TT_MESH_ID=3 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit1x2SendRecvFixture* : -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache3 TT_METAL_VISIBLE_DEVICES=3 TT_MESH_ID=1 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit1x2SendRecvFixture*
   WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest tests/ttnn/unit_tests/test_multi_device_trace.py ; fail+=$?
   WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest tests/ttnn/unit_tests/test_multi_device_events.py ; fail+=$?
   WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest tests/ttnn/unit_tests/operations/test_prefetcher.py::test_run_prefetcher_post_commit_multi_device ; fail+=$?
@@ -109,8 +107,8 @@ run_t3000_ttnn_multiprocess_tests() {
   start_time=$(date +%s)
 
   echo "LOG_METAL: Running run_t3000_ttnn_multiprocess_tests"
-  mpirun -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache0 TT_METAL_VISIBLE_DEVICES=0,1 TT_MESH_ID=0 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit2x2SendRecvFixture* : -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache1 TT_METAL_VISIBLE_DEVICES=2,3 TT_MESH_ID=1 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit2x2SendRecvFixture*
-  mpirun -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache0 TT_METAL_VISIBLE_DEVICES=0 TT_MESH_ID=0 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit1x2SendRecvFixture* : -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache1 TT_METAL_VISIBLE_DEVICES=1 TT_MESH_ID=2 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit1x2SendRecvFixture* : -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache2  TT_METAL_VISIBLE_DEVICES=2 TT_MESH_ID=3 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit1x2SendRecvFixture* : -n 1 env TT_METAL_CACHE=~/.cache/tt-metal-cache3 TT_METAL_VISIBLE_DEVICES=3 TT_MESH_ID=1 TT_HOST_RANK=0 ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit1x2SendRecvFixture*
+  tt-run --rank-binding tests/tt_metal/distributed/config/2x2_multiprocess_rank_bindings.yaml ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit2x2SendRecvFixture*
+  tt-run --rank-binding tests/tt_metal/distributed/config/1x2_multiprocess_rank_bindings.yaml ./build/test/ttnn/unit_tests_ttnn_multihost_ccl_ops --gtest_filter=*MeshDeviceSplit1x2SendRecvFixture*
   # Record the end time
   end_time=$(date +%s)
   duration=$((end_time - start_time))

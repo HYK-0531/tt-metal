@@ -40,7 +40,7 @@ class Transformer(LightweightModule):
         self.grid_size = self.args.max_grid_size
         state_dict_prefix = args.get_state_dict_prefix("", None)
 
-        self.tt_ccl = TT_CCL(self.mesh_device)
+        self.tt_ccl = TT_CCL(self.mesh_device, self.args.base_model_name)
 
         self.embd = Embedding(
             mesh_device=mesh_device,

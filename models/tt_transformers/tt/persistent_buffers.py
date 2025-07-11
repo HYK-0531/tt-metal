@@ -8,6 +8,8 @@ import torch
 
 import ttnn
 
+ccl_buffer_safe_models = ["QwQ-32B"]  #  "Qwen3-32B", "Qwen2.5-72B", "Llama-3.1-70B"
+
 
 @dataclass(frozen=True)
 class PBKey:
@@ -27,8 +29,10 @@ def create_buffer(mesh_device, pb_key):
     )
 
 
-def create_ag_persistent_output_buffers(mesh_device, model):
+def create_ag_persistent_output_buffers(mesh_device, model_name):
     # output buffer must match the config expected in the model
+
+    assert model_name in ccl_buffer_safe_models, f"model_name '{model_name}' does not have hardcoded persistent buffers"
 
     persistent_buffers = {}
 
@@ -133,12 +137,14 @@ def create_ag_persistent_output_buffers(mesh_device, model):
     return persistent_buffers
 
 
-def create_rs_persistent_intermediate_buffers(mesh_device, model):
+def create_rs_persistent_intermediate_buffers(mesh_device, model_name):
     # intermediate buffers can always be L1 (if we have space),
     # only the output buffers needs to match the config expected in the model
 
     # currently can't really have sharded intermediate buffers, as we don't know
     # the sharding cores, shard shape, etc to use for the intermediate tensor
+
+    assert model_name in ccl_buffer_safe_models, f"model_name '{model_name}' does not have hardcoded persistent buffers"
 
     persistent_buffers = {}
 
@@ -175,8 +181,10 @@ def create_rs_persistent_intermediate_buffers(mesh_device, model):
     return persistent_buffers
 
 
-def create_rs_persistent_output_buffers(mesh_device, model):
+def create_rs_persistent_output_buffers(mesh_device, model_name):
     # output buffer must match the config expected in the model
+
+    assert model_name in ccl_buffer_safe_models, f"model_name '{model_name}' does not have hardcoded persistent buffers"
 
     persistent_buffers = {}
 

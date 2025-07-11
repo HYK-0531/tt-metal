@@ -6,6 +6,7 @@
 import ttnn
 from models.tt_transformers.tt.persistent_buffers import (
     PBKey,
+    ccl_buffer_safe_models,
     create_ag_persistent_output_buffers,
     create_rs_persistent_intermediate_buffers,
     create_rs_persistent_output_buffers,
@@ -16,8 +17,10 @@ class TT_CCL:
     def __init__(
         self,
         mesh_device,
+        model_name=None,
     ):
         self.mesh_device = mesh_device
+        self.model_name = model_name
         self.worker_sub_device_id = ttnn.SubDeviceId(0)
         self.sub_device_crs = ttnn.CoreRangeSet(
             {
@@ -89,12 +92,18 @@ class TT_CCL:
         return pb_key
 
     def create_ag_persistent_output_buffers(self):
-        return create_ag_persistent_output_buffers(mesh_device=self.mesh_device, model=1)
+        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+            return {}
+        else:
+            return create_ag_persistent_output_buffers(mesh_device=self.mesh_device, model_name=self.model_name)
 
     def get_ag_persistent_output_buffer(self, pb_key):
+        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+            return None
+
         assert (
             pb_key in self.ag_persistent_output_buffers
-        ), "AG persistent output buffer does not exist for key: {pb_key}"
+        ), f"AG persistent output buffer does not exist for key: `{pb_key}`"
         return self.ag_persistent_output_buffers[pb_key]
 
     #
@@ -117,12 +126,18 @@ class TT_CCL:
         return pb_key
 
     def create_rs_persistent_intermediate_buffers(self):
-        return create_rs_persistent_intermediate_buffers(mesh_device=self.mesh_device, model=1)
+        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+            return {}
+        else:
+            return create_rs_persistent_intermediate_buffers(mesh_device=self.mesh_device, model_name=self.model_name)
 
     def get_rs_persistent_intermediate_buffer(self, pb_key):
+        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+            return None
+
         assert (
             pb_key in self.rs_persistent_intermediate_buffers
-        ), "RS persistent intermediate buffer does not exist for key: {pb_key}"
+        ), f"RS persistent intermediate buffer does not exist for key: `{pb_key}`"
         return self.rs_persistent_intermediate_buffers[pb_key]
 
     #
@@ -144,9 +159,15 @@ class TT_CCL:
         return pb_key
 
     def create_rs_persistent_output_buffers(self):
-        return create_rs_persistent_output_buffers(mesh_device=self.mesh_device, model=1)
+        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+            return {}
+        else:
+            return create_rs_persistent_output_buffers(mesh_device=self.mesh_device, model_name=self.model_name)
 
     def get_rs_persistent_output_buffer(self, pb_key):
+        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+            return None
+
         # Temporary hack to handle nd_shard_spec shit
         if pb_key not in self.rs_persistent_output_buffers:
             shape = (1, 1, 32, 640)
@@ -164,7 +185,7 @@ class TT_CCL:
 
         assert (
             pb_key in self.rs_persistent_output_buffers
-        ), "RS persistent output buffer does not exist for key: {pb_key}"
+        ), f"RS persistent output buffer does not exist for key: `{pb_key}`"
         return self.rs_persistent_output_buffers[pb_key]
 
     #

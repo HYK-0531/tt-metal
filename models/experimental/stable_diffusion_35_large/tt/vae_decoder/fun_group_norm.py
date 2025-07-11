@@ -22,10 +22,10 @@ class TtGroupNormParameters:
     mask: ttnn.Tensor
     memory_config: ttnn.MemoryConfig
     core_grid: ttnn.CoreGrid
-    # num_out_blocks: int
     inplace: bool
     num_channels: int
     num_groups: int
+    eps: float
 
     @classmethod
     def from_torch(
@@ -89,14 +89,14 @@ class TtGroupNormParameters:
             ),
             memory_config=memory_config,
             core_grid=opt_core_grid,
-            # num_out_blocks=num_out_blocks,
             inplace=inplace,
             num_channels=num_channels,
             num_groups=num_groups,
+            eps=torch_groupnorm.eps,
         )
 
 
-def vae_group_norm(x_in, parameters: TtGroupNormParameters, eps=1e-6):
+def vae_group_norm(x_in, parameters: TtGroupNormParameters):
     [batch_size, height, width, channels] = list(x_in.shape)
 
     # TODO: Compute optimal output blocks
@@ -111,12 +111,11 @@ def vae_group_norm(x_in, parameters: TtGroupNormParameters, eps=1e-6):
         bias=parameters.bias,
         input_mask=parameters.mask,
         num_groups=parameters.num_groups,
-        epsilon=eps,
+        epsilon=parameters.eps,
         core_grid=parameters.core_grid,
-        # memory_config=parameters.memory_config,
         inplace=False,
         num_out_blocks=num_out_blocks,
         output_layout=ttnn.TILE_LAYOUT,
     )
-    # x = ttnn.to_layout(x, x_in.layout)
+
     return x.reshape([batch_size, height, width, channels])

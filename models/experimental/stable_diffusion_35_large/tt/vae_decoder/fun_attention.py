@@ -8,7 +8,6 @@ from dataclasses import dataclass
 
 import ttnn
 
-# from .conv2d import TtConv2d, TtConv2dParameters
 from .fun_linear import vae_linear, TtLinearParameters
 from .fun_group_norm import vae_group_norm, TtGroupNormParameters
 from ..parallel_config import StableDiffusionParallelManager

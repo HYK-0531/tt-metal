@@ -47,7 +47,7 @@ def print_stats(label, data: torch.Tensor, device=None):
 )
 def test_vae_decoder(
     *,
-    device: ttnn.Device,
+    mesh_device: ttnn.MeshDevice,
     batch: int,
     in_channels: int,
     out_channels: int,
@@ -63,7 +63,7 @@ def test_vae_decoder(
     torch_dtype = torch.bfloat16
     ttnn_dtype = ttnn.bfloat16
     torch.manual_seed(0)
-    logger.info(f"Device: {device}, {device.core_grid}")
+    logger.info(f"Device: {mesh_device}, {mesh_device.core_grid}")
 
     torch_model = VaeDecoder(
         block_out_channels=block_out_channels,
@@ -81,17 +81,17 @@ def test_vae_decoder(
     parameters = TtVaeDecoderParameters.from_torch(
         torch_vae_decoder=torch_model,
         dtype=ttnn_dtype,
-        device=device,
+        device=mesh_device,
         core_grid=ttnn.CoreGrid(x=cores_x, y=cores_y),
     )
 
     # inp = torch.randn(batch, in_channels, height, width)
     inp = torch.normal(1, 2, (batch, in_channels, height, width))
 
-    tt_inp = ttnn.from_torch(inp.permute(0, 2, 3, 1), dtype=ttnn_dtype, device=device)
+    tt_inp = ttnn.from_torch(inp.permute(0, 2, 3, 1), dtype=ttnn_dtype, device=mesh_device)
 
     logger.info(print_stats("torch_input", inp))
-    logger.info(print_stats("tt_input", tt_inp, device=device))
+    logger.info(print_stats("tt_input", tt_inp, device=mesh_device))
 
     # tt_inp = allocate_tensor_on_device_like(tt_inp_host, device=mesh_device)
     logger.info(f" input shape TT: {tt_inp.shape}, Torch: {inp.shape}")
@@ -103,8 +103,8 @@ def test_vae_decoder(
     tt_out_torch = to_torch(tt_out).permute(0, 3, 1, 2)
 
     logger.info(print_stats("torch", out))
-    logger.info(print_stats("tt", tt_out_torch, device=device))
-    assert_quality(out, tt_out_torch, pcc=0.94, ccc=0.94)
+    logger.info(print_stats("tt", tt_out_torch, device=mesh_device))
+    assert_quality(out, tt_out_torch, pcc=0.99, ccc=0.99)
     print(comp_allclose(out, tt_out_torch))
     result, output = comp_pcc(out, tt_out_torch)
     logger.info(f"Comparison result Pass:{result}, Output {output}, in: {torch.count_nonzero(tt_out_torch)}")

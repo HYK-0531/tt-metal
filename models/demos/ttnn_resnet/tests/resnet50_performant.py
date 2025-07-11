@@ -238,6 +238,7 @@ def run_resnet50_trace_2cqs_inference(
     if use_signpost:
         signpost(header="start")
     outputs = []
+    ttnn.DumpDeviceProfiler(device)
     for iter in range(0, 2):
         ttnn.wait_for_event(1, op_event)
         ttnn.copy_host_to_device_tensor(tt_inputs_host, tt_image_res, 1)
@@ -247,6 +248,7 @@ def run_resnet50_trace_2cqs_inference(
         input_tensor = ttnn.reshard(tt_image_res, input_mem_config, input_tensor)
         op_event = ttnn.record_event(device, 0)
         ttnn.execute_trace(device, tid, cq_id=0, blocking=False)
+        ttnn.DumpDeviceProfiler(device)
         outputs.append(ttnn.from_device(test_infra.output_tensor, blocking=False))
     ttnn.synchronize_device(device)
 

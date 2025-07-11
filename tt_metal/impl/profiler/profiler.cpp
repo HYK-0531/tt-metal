@@ -429,6 +429,14 @@ void DeviceProfiler::readControlBufferForCore(
             reinterpret_cast<uint64_t>(profiler_msg->control_vector),
             kernel_profiler::PROFILER_L1_CONTROL_BUFFER_SIZE);
     }
+
+    const auto& rtoptions = tt::tt_metal::MetalContext::instance().rtoptions();
+    if (rtoptions.get_profiler_trace_profiler()) {
+        std::cout << "MOOO:" << core_control_buffers.at(virtual_core)[kernel_profiler::CURRENT_TRACE_ID] << std::endl;
+        if (core_control_buffers.at(virtual_core)[kernel_profiler::CURRENT_TRACE_ID] != 0) {
+            wasTraceReplay = true;
+        }
+    }
 }
 
 void DeviceProfiler::readControlBuffers(
@@ -522,7 +530,7 @@ void DeviceProfiler::readRiscProfilerResults(
         }
         uint32_t riscType;
 
-        if (rtoptions.get_profiler_trace_profiler()) {
+        if (rtoptions.get_profiler_trace_profiler() && wasTraceReplay) {
             riscType = 6;
         } else {
             if (CoreType == HalProgrammableCoreType::TENSIX) {
@@ -723,7 +731,7 @@ void DeviceProfiler::logPacketData(
     uint32_t t_id = timer_id & 0xFFFF;
     nlohmann::json metaData;
 
-    const ZoneDetails zone_details = getZoneDetails(timer_id);
+    ZoneDetails zone_details = getZoneDetails(timer_id);
 
     if ((packet_type == kernel_profiler::ZONE_START) || (packet_type == kernel_profiler::ZONE_END)) {
         tracy::TTDeviceEventPhase zone_phase = tracy::TTDeviceEventPhase::begin;
@@ -739,6 +747,25 @@ void DeviceProfiler::logPacketData(
             tracy_run_host_id = 0;
         }
 
+        const auto& rtoptions = tt::tt_metal::MetalContext::instance().rtoptions();
+        if (rtoptions.get_profiler_trace_profiler() && risc_num == 6) {
+            if (zone_details.zone_name_keyword_flags[static_cast<uint16_t>(ZoneDetails::ZoneNameKeyword::BRISC_FW)] ||
+                zone_details.zone_name_keyword_flags[static_cast<uint16_t>(ZoneDetails::ZoneNameKeyword::NCRISC_FW)] ||
+                zone_details.zone_name_keyword_flags[static_cast<uint16_t>(ZoneDetails::ZoneNameKeyword::TRISC_FW)] ||
+                zone_details.zone_name_keyword_flags[static_cast<uint16_t>(ZoneDetails::ZoneNameKeyword::ERISC_FW)]) {
+                zone_details.zone_name = "TRACE-FW";
+            }
+            if (zone_details
+                    .zone_name_keyword_flags[static_cast<uint16_t>(ZoneDetails::ZoneNameKeyword::BRISC_KERNEL)] ||
+                zone_details
+                    .zone_name_keyword_flags[static_cast<uint16_t>(ZoneDetails::ZoneNameKeyword::NCRISC_KERNEL)] ||
+                zone_details
+                    .zone_name_keyword_flags[static_cast<uint16_t>(ZoneDetails::ZoneNameKeyword::TRISC_KERNEL)] ||
+                zone_details
+                    .zone_name_keyword_flags[static_cast<uint16_t>(ZoneDetails::ZoneNameKeyword::ERISC_KERNEL)]) {
+                zone_details.zone_name = "TRACE-KERNEL";
+            }
+        }
         auto ret = device_events.emplace(
             tracy_run_host_id,
             device_id,
@@ -1378,15 +1405,6 @@ void DeviceProfiler::populateZoneSrcLocations(
         std::getline(ss, zone_name, ',');
         std::getline(ss, source_file, ',');
         std::getline(ss, line_num_str, ',');
-
-        const auto& rtoptions = tt::tt_metal::MetalContext::instance().rtoptions();
-        if (rtoptions.get_profiler_trace_profiler()) {
-            if (zone_name.find("FW") != std::string::npos) {
-                zone_name = "TRACE-FW";
-            } else if (zone_name.find("KERNEL") != std::string::npos) {
-                zone_name = "TRACE-KERNEL";
-            }
-        }
 
         ZoneDetails details(zone_name, source_file, std::stoull(line_num_str));
 

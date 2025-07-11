@@ -807,9 +807,12 @@ void DumpDeviceProfileResults(
 }
 void ShareTraceIDwithProfiler(chip_id_t device_id, uint32_t trace_id) {
 #if defined(TRACY_ENABLE)
+    ZoneScoped;
     const auto& rtoptions = tt::tt_metal::MetalContext::instance().rtoptions();
     if (rtoptions.get_profiler_trace_profiler()) {
         auto device = tt::DevicePool::instance().get_active_device(device_id);
+        // Flush profiler buffers
+        DumpDeviceProfileResults(device);
         constexpr uint32_t TRACE_ID_SET_BIT = (1 << 31);
         for (auto core :
              tt::tt_metal::MetalContext::instance().get_cluster().get_virtual_routing_to_profiler_flat_id(device_id)) {
@@ -822,6 +825,7 @@ void ShareTraceIDwithProfiler(chip_id_t device_id, uint32_t trace_id) {
                 &traceControl, tt_cxy_pair(device_id, core.first), control_addr);
         }
     }
+    std::cout << "TRTRTRTRTRTRTRTRTRTRTRTRTRTRTRTRTRTR: " << device_id << std::endl;
 #endif
 }
 

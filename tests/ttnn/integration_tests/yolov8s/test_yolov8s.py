@@ -46,13 +46,13 @@ def test_yolov8s_640(device, input_tensor, use_weights_from_ultralytics):
     n, h, w, c = input_tensor.shape
     if c == 3:
         c = 16
-    input_mem_config = ttnn.create_sharded_memory_config(
-        [h*w, 3],
-        ttnn.CoreGrid(x=8, y=8),
-        ttnn.ShardStrategy.HEIGHT,
-    )
+    # input_mem_config = ttnn.create_sharded_memory_config(
+    #     [h*w, 3],
+    #     ttnn.CoreGrid(x=8, y=8),
+    #     ttnn.ShardStrategy.HEIGHT,
+    # )
     ttnn_input = ttnn.from_torch(input_tensor, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT)
-    ttnn_input = ttnn_input.to(device, input_mem_config)
+    ttnn_input = ttnn_input.to(device)
 
     with torch.inference_mode():
         ttnn_model_output = ttnn_model(ttnn_input)[0]

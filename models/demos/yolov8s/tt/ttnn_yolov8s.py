@@ -149,8 +149,8 @@ class TtConv:
         self.compute_config = self._initialize_compute_config()
         self.weights, self.bias = self.parameters[path]
         self.slice_config = None
-        # if slice_type is not None and num_slices is not None:
-        self.slice_config = ttnn.Conv2dSliceConfig(slice_type=ttnn.Conv2dSliceWidth, num_slices=8)
+        if slice_type is not None and num_slices is not None:
+            self.slice_config = ttnn.Conv2dSliceConfig(slice_type=slice_type, num_slices=num_slices)
 
     def _initialize_conv_config(self):
         self.output_dtype = ttnn.bfloat16
@@ -613,6 +613,8 @@ class TtDetectionModel:
             act_block_h=False,
             enable_split_reader=True,
             deallocate_activation=True,
+            slice_type=ttnn.Conv2dSliceWidth,
+            num_slices=8,
         )
         self.conv_1 = TtConv(
             device,
@@ -760,11 +762,11 @@ class TtDetectionModel:
         shardspec = ttnn.create_sharded_memory_config_(
             [H*W, min_channels],  ttnn.CoreGrid(x=8, y=8), ttnn.ShardStrategy.HEIGHT, orientation=ttnn.ShardOrientation.ROW_MAJOR
         )
-        nhwc = ttnn.reshard(nhwc, shardspec)
-        nhwc = ttnn.reallocate(nhwc)
-        x = ttnn.reshape(nhwc, [1, 1, nhwc.shape[0] * nhwc.shape[1] * nhwc.shape[2], nhwc.shape[-1]])
-
-        conv_0, out_h, out_w = self.conv_0(x)
+        # nhwc = ttnn.reshard(nhwc, shardspec)
+        # nhwc = ttnn.reallocate(nhwc)
+        # x = ttnn.reshape(nhwc, [1, 1, nhwc.shape[0] * nhwc.shape[1] * nhwc.shape[2], nhwc.shape[-1]])
+        breakpoint()
+        conv_0, out_h, out_w = self.conv_0(nhwc)
         conv_1, out_h, out_w = self.conv_1(conv_0)
         ttnn.deallocate(conv_0)
 

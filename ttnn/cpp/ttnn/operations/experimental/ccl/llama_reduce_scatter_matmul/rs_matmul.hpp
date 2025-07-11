@@ -41,7 +41,8 @@ struct ExecuteLlamaReduceScatterMatmul {
         const std::optional<const std::string>& activation = std::nullopt,          // mm7 set false
         const std::optional<const tt::tt_metal::Tile>& output_tile = std::nullopt,  // mm10 std::nullopt
         const std::optional<Tensor>& optional_output_tensor = std::nullopt,         // mm11 std::nullopt
-        bool use_noc1_only = false);
+        bool use_noc1_only = false,
+        const std::optional<const ttnn::Tensor>& second_input_tensor = std::nullopt);
 };
 
 }  // namespace operations::experimental::ccl

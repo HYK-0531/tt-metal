@@ -1498,8 +1498,6 @@ FORCE_INLINE void teardown(
     DPRINT << "DONE\n";
 }
 void initialize_state_for_txq1_active_mode() {
-    eth_txq_reg_write(receiver_txq_id, ETH_TXQ_DATA_PACKET_ACCEPT_AHEAD, DEFAULT_NUM_ETH_TXQ_DATA_PACKET_ACCEPT_AHEAD);
-
     eth_enable_packet_mode(receiver_txq_id);
     for (size_t i = 0; i < NUM_SENDER_CHANNELS; i++) {
         *reinterpret_cast<volatile uint32_t*>(to_sender_remote_ack_counter_addrs[i]) = 0;
@@ -1509,6 +1507,7 @@ void initialize_state_for_txq1_active_mode() {
         *reinterpret_cast<volatile uint32_t*>(local_receiver_ack_counter_ptrs[i]) = 0;
         *reinterpret_cast<volatile uint32_t*>(local_receiver_completion_counter_ptrs[i]) = 0;
     }
+    eth_txq_reg_write(receiver_txq_id, ETH_TXQ_DATA_PACKET_ACCEPT_AHEAD, DEFAULT_NUM_ETH_TXQ_DATA_PACKET_ACCEPT_AHEAD);
 }
 
 void kernel_main() {

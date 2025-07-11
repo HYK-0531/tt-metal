@@ -14,6 +14,7 @@
 #include <tt-metalium/fabric_types.hpp>
 #include <tt-metalium/multi_mesh_types.hpp>
 #include "core_coord.hpp"
+#include <umd/device/cluster.h>
 
 #include <map>
 #include <unordered_map>
@@ -49,6 +50,11 @@ public:
     void configure_ethernet_cores_for_fabric_routers(
         tt_metal::FabricConfig fabric_config, std::optional<uint8_t> num_routing_planes = std::nullopt);
 
+    /*
+    * EthernetContext is initialized with a pointer to driver and cluster description
+    * we do not own these resources, just have a pointer to them
+    * Their lifetime is the lifetime of the MetalContext
+    */
     EthernetContext(tt::umd::Cluster *driver, tt_ClusterDescriptor *clusterdesc) {
         driver_ = driver;
         clusterdesc_ = clusterdesc;

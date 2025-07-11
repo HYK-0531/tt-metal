@@ -8,8 +8,8 @@ Tests:
     defaults:
       ftype: mcast
       ntype: unicast_write
-      size: 1024
-      num_packets: 100
+      size: 4096
+      num_packets: 200000
 
     patterns:
       - type: unidirectional_linear_multicast

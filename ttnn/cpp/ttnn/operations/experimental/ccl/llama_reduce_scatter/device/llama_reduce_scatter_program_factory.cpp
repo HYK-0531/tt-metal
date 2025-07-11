@@ -288,9 +288,8 @@ LlamaReduceScatterDeviceOperation::LlamaReduceScatterAdd::create_at(
         create_at_program_processing(operation_attributes, mesh_coordinate, tensor_args, tensor_return_value, program)};
 }
 
-std::tuple<CoreRangeSet, CoreRangeSet> get_rs_core_grids(
-    const LlamaReduceScatterDeviceOperation::operation_attributes_t& operation_attributes,
-    const LlamaReduceScatterDeviceOperation::tensor_args_t& tensor_args) {
+std::tuple<CoreRangeSet, CoreRangeSet> LlamaReduceScatterDeviceOperation::get_rs_core_grids(
+    const operation_attributes_t& operation_attributes, const tensor_args_t& tensor_args) {
     const auto& input_tensor = tensor_args.input_tensor;
     const uint32_t ring_size = operation_attributes.ring_devices;
     const auto& input_tile_shape = input_tensor.tensor_spec().tile().get_tile_shape();

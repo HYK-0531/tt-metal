@@ -26,14 +26,12 @@
 #include "device.hpp"
 #include "dispatch/device_command.hpp"
 #include "impl/context/metal_context.hpp"
-#include "dprint_server.hpp"
 #include "hal_types.hpp"
 #include "lightmetal/host_api_capture_helpers.hpp"
 #include "tt-metalium/program.hpp"
 #include <tt_stl/span.hpp>
 #include "system_memory_manager.hpp"
 #include "tracy/Tracy.hpp"
-#include "tt_metal/impl/debug/watcher_server.hpp"
 #include "tt_metal/impl/dispatch/data_collection.hpp"
 #include "tt_metal/impl/dispatch/kernels/cq_commands.hpp"
 #include "tt_metal/impl/program/dispatch.hpp"
@@ -309,11 +307,11 @@ void EventSynchronize(const std::shared_ptr<Event>& event) {
 
     while (event->device->sysmem_manager().get_last_completed_event(event->cq_id) < event->event_id) {
         if (tt::tt_metal::MetalContext::instance().rtoptions().get_test_mode_enabled() &&
-            tt::watcher_server_killed_due_to_error()) {
+            MetalContext::instance().watcher_server()->killed_due_to_error()) {
             TT_FATAL(
                 false,
                 "Command Queue could not complete EventSynchronize. See {} for details.",
-                tt::watcher_get_log_file_name());
+                MetalContext::instance().watcher_server()->log_file_name());
             return;
         }
         std::this_thread::sleep_for(std::chrono::microseconds(5));
@@ -342,12 +340,12 @@ void Finish(CommandQueue& cq, tt::stl::Span<const SubDeviceId> sub_device_ids) {
     // If in testing mode, don't need to check dprint/watcher errors, since the tests will induce/handle them.
     if (!MetalContext::instance().rtoptions().get_test_mode_enabled()) {
         TT_FATAL(
-            !(DPrintServerHangDetected()),
+            !(MetalContext::instance().dprint_server() and MetalContext::instance().dprint_server()->hang_detected()),
             "Command Queue could not finish: device hang due to unanswered DPRINT WAIT.");
         TT_FATAL(
-            !(tt::watcher_server_killed_due_to_error()),
+            !(MetalContext::instance().watcher_server()->killed_due_to_error()),
             "Command Queue could not finish: device hang due to illegal NoC transaction. See {} for details.",
-            tt::watcher_get_log_file_name());
+            MetalContext::instance().watcher_server()->log_file_name());
     }
 }
 

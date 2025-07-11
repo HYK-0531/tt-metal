@@ -18,12 +18,10 @@ from models.tt_transformers.tt.common import (
     calculate_hidden_dim,
     encode_prompt_hf,
     encode_prompt_instruct,
-    freqs_to_rotation_matrix,
     get_base_model_name,
     get_out_subblock_w,
     nearest_multiple,
     num_to_core_range_set,
-    precompute_freqs,
 )
 from models.tt_transformers.tt.load_checkpoints import (
     convert_hf_to_meta,
@@ -540,6 +538,7 @@ class ModelArgs:
         if max_prefill_chunk_size_div1024 is None:
             # TODO Improve this to be more general to more devices and models
             MAX_PREFILL_CHUNK_SIZES_DIV1024 = {
+                "gemma-3-4b": {"N150": 8, "N300": 128, "T3K": 128, "TG": 128, "P150x4": 128},
                 "Llama-3.2-1B": {"N150": 128, "N300": 128, "T3K": 128, "TG": 128, "P150x4": 128},
                 "Llama-3.2-3B": {"N150": 8, "N300": 128, "T3K": 128, "TG": 128, "P150x4": 128},
                 "Llama-3.1-8B": {"N150": 4, "N300": 64, "T3K": 128, "TG": 128, "P150x4": 128},
@@ -601,11 +600,6 @@ class ModelArgs:
         self.model_config["DECODERS_OPTIMIZATIONS"] = self.optimizations
         # Update memory layouts (Tile, except MLP)
         self.model_config.update({f"{key}_TILE": ttnn.TILE_LAYOUT for key in self.OP_KEYS if "LAYOUT" in key})
-
-        self.cos, self.sin = precompute_freqs(
-            self.head_dim, self.max_seq_len * 2, self.rope_theta, self.rope_scaling_factor, self.orig_context_len
-        )  # for prefill
-        self.rot_emb = freqs_to_rotation_matrix(self.cos, self.sin)  # for decode
 
         self.tokenizer = None if dummy_weights else self.create_tokenizer()
 
@@ -794,7 +788,7 @@ class ModelArgs:
                 m=num_rows(seq_len),
                 k=k_dim,
                 n=n_dim,
-                grid_size=self.find_prefill_grid(num_rows(seq_len), n_dim // self.tile_size),
+                grid_size=self.find_prefill_grid(prefill_rows, k_dim // self.tile_size),
                 in0_block_w=1 if self.is_galaxy else None,
                 fuse_batch=seq_len <= 1024,
                 per_core_N=math.ceil(n_dim / (self.tile_size * dram_shard_grid_width)) if dram_sharded_wo else None,
@@ -1354,37 +1348,50 @@ class ModelArgs:
         )
         return xs_1BSH
 
-    def _set_params_from_dict(self, params, is_hf=False):
+    def _get_text_prefix(self):
+        if self.is_vision():
+            return "text_model."
+        else:
+            return ""
+
+    def _set_model_specific_params(self):
+        # Gemma3 specific params
+        self.rms_norm_add_unit_offset = "gemma-3" in self.base_model_name.lower()
+
+    def _set_params_from_dict(self, config, is_hf=False):
+        # Try to get text_config, if it doesn't exist everything is text config
+        text_config = config.get("text_config", config)
+
         # Common params with different names between Meta and HF
-        self.dim = params.get("dim", params.get("hidden_size"))
-        self.n_heads = params.get("n_heads", params.get("num_attention_heads"))
-        self.n_kv_heads = params.get("n_kv_heads", params.get("num_key_value_heads"))
-        self.n_layers = params.get("n_layers", params.get("num_hidden_layers"))
+        self.dim = text_config.get("dim", text_config.get("hidden_size"))
+        self.n_heads = text_config.get("n_heads", text_config.get("num_attention_heads"))
+        self.n_kv_heads = text_config.get("n_kv_heads", text_config.get("num_key_value_heads"))
+        self.n_layers = text_config.get("n_layers", text_config.get("num_hidden_layers"))
         self.full_model_n_layers = self.n_layers
-        self.norm_eps = params.get("norm_eps", params.get("rms_norm_eps"))
-        self.vocab_size = params["vocab_size"]
+        self.norm_eps = text_config.get("norm_eps", text_config.get("rms_norm_eps"))
+        self.vocab_size = text_config["vocab_size"]
         self.padded_vocab_size = 128 * 1024 if self.is_galaxy else None
-        self.head_dim = params.get("head_dim", self.dim // self.n_heads)
+        self.head_dim = text_config.get("head_dim", self.dim // self.n_heads)
         if is_hf:
-            self.max_context_len = params.get("max_position_embeddings")
+            self.max_context_len = text_config.get("max_position_embeddings")
         else:
             self.max_context_len = (
                 128 * 1024
             )  # For Llama3 Meta weights TODO: Remove this when we move to HF weights only
 
         # Handle different MLP dimension specifications
-        if "intermediate_size" in params:
-            self.hidden_dim = params["intermediate_size"]
+        if "intermediate_size" in text_config:
+            self.hidden_dim = text_config["intermediate_size"]
             self.ffn_dim_multiplier = None
             self.multiple_of = None
         else:
-            self.ffn_dim_multiplier = params["ffn_dim_multiplier"]
-            self.multiple_of = params["multiple_of"]
+            self.ffn_dim_multiplier = text_config["ffn_dim_multiplier"]
+            self.multiple_of = text_config["multiple_of"]
             self.hidden_dim = calculate_hidden_dim(self.dim, self.ffn_dim_multiplier, self.multiple_of)
 
-        if "_name_or_path" in params:
+        if "_name_or_path" in config:
             if is_hf:
-                normalized_path = os.path.normpath(params["_name_or_path"])
+                normalized_path = os.path.normpath(config["_name_or_path"])
                 # For HF paths, they might end with `<model_name>/snapshots/<snapshot_id>/`
                 if "snapshots" in normalized_path:
                     full_model_name = normalized_path.split(os.path.sep)[-3]
@@ -1392,8 +1399,8 @@ class ModelArgs:
                 else:
                     self.model_name = os.path.basename(normalized_path)
             else:
-                self.model_name = os.path.basename(params["_name_or_path"])
-            logger.info(f"Model name from params: {self.model_name}")
+                self.model_name = os.path.basename(config["_name_or_path"])
+            logger.info(f"Model name from config: {self.model_name}")
 
         if self.base_model_name == "Qwen2.5-7B" and self.num_devices not in [0, 2, 4]:
             raise AssertionError(
@@ -1425,22 +1432,22 @@ class ModelArgs:
                     self.hidden_dim = padded_hidden_dim
 
         # RoPE params
-        self.rope_theta = params.get("rope_theta")
+        self.rope_theta = text_config.get("rope_theta")
         # If use_scaled_rope is not present, assume setting rope_scaling means use scaled rope
         # If it is present and is set to false, do not use scaled rope
         # Setting self.rope_scaling_factor to None is our way of saying do not use scaled rope
-        rope_scaling_params = params.get("rope_scaling", None)
+        rope_scaling_params = text_config.get("rope_scaling", None)
         if rope_scaling_params:
             self.rope_scaling_factor = rope_scaling_params.get("factor", None)
-            self.orig_context_len = rope_scaling_params.get("original_max_position_embeddings", None)
+            self.orig_context_len = rope_scaling_params.get("original_max_position_embeddings", self.max_context_len)
         else:
             self.rope_scaling_factor = None
             self.orig_context_len = None
 
         # Vision params (Meta-specific)
-        self.vision_chunk_size = params.get("vision_chunk_size", -1)
-        self.vision_max_num_chunks = params.get("vision_max_num_chunks", 4)
-        self.vision_num_cross_attention_layers = params.get("vision_num_cross_attention_layers", -1)
+        self.vision_chunk_size = config.get("vision_chunk_size", -1)
+        self.vision_max_num_chunks = config.get("vision_max_num_chunks", 4)
+        self.vision_num_cross_attention_layers = config.get("vision_num_cross_attention_layers", -1)
 
         # Vision constants
         self.vision_dim = 1280
@@ -1455,6 +1462,10 @@ class ModelArgs:
         self.vision_max_num_tiles = 4
         self.vision_patch_size = 14
         self.vision_in_channels = 3
+
+        self.state_dict_text_prefix = self._get_text_prefix()
+
+        self._set_model_specific_params()
 
     @property
     def use_scaled_rope(self):
@@ -1554,7 +1565,7 @@ class ModelArgs:
         return self.vision_chunk_size > 0
 
     def get_state_dict_prefix(self, module_name, layer_num):
-        text_prefix = "text_model." if self.is_vision() else ""
+        text_prefix = self.state_dict_text_prefix
         layer_prefix = f"layers.{layer_num}." if layer_num is not None else ""
         module_map = {
             "MLP": "feed_forward",
@@ -1653,6 +1664,9 @@ class ModelArgs:
         )  # TODO: Needed for TG hang workaround
 
         if in0_block_w is None:
+            assert (
+                k % (self.tile_size * grid_size[1]) == 0
+            ), f"Input width must be divisible by tile size times grid size"
             in0_block_w = self.find_largest_divisor(k // (self.tile_size * grid_size[1]))
 
         return ttnn.MatmulMultiCoreReuseMultiCastProgramConfig(
@@ -2002,6 +2016,10 @@ class ModelArgs:
                     self.cached_hf_model = model
                 else:
                     model = self.cached_hf_model
+                # HACK: Assume that we want the language model layers only
+                if hasattr(model, "language_model"):
+                    model.model = model.language_model
+                    # We keep language_model because transformers don't let us change or delete it
                 model.model.layers = model.model.layers[: self.n_layers]
             if wrap:
                 wrapper = HfModelWrapper(model, self.head_dim)

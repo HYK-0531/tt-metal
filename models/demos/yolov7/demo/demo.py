@@ -31,7 +31,7 @@ sys.modules["models.yolo"] = yolov7_model
     ],
 )
 @pytest.mark.parametrize("model_type", ["torch_model", "tt_model"])
-def test_demo(device, use_program_cache, reset_seeds, model_type, source):
+def test_demo(device, reset_seeds, model_type, source):
     disable_persistent_kernel_cache()
 
     names = load_coco_class_names()
@@ -56,14 +56,14 @@ def test_demo(device, use_program_cache, reset_seeds, model_type, source):
 
         logger.info("Inferencing [Torch] Model")
         for batch in dataset:
-            path, im0s, s, _ = batch
+            path, im0s, s = batch
             im = preprocess(im0s)
             preds = torch_model(im)[0]
             postprocess(preds, im, im0s, batch, names, path, s, dataset, save_dir=save_dir)
 
     else:
         for batch in dataset:
-            path, im0s, s, _ = batch
+            path, im0s, s = batch
             im = preprocess(im0s)
             performant_runner = YOLOv7PerformantRunner(
                 device,

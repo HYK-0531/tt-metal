@@ -149,36 +149,36 @@ void kernel_main() {
 
                         // Will have more cases once scatter-write supports more than 2 distinct addresses
                         switch (tiles_to_put_in_current_packet) {
-                            case 2: {
-                                uint32_t tile_one_id = input_tile_id_start + row_offset + pages_read_in_row;
-                                pages_read_in_row++;
-                                if (pages_read_in_row == slice_Wt) {
-                                    row_offset += stride_Wt;
-                                    pages_read_in_row = 0;
-                                }
+                            // case 2: {
+                            //     uint32_t tile_one_id = input_tile_id_start + row_offset + pages_read_in_row;
+                            //     pages_read_in_row++;
+                            //     if (pages_read_in_row == slice_Wt) {
+                            //         row_offset += stride_Wt;
+                            //         pages_read_in_row = 0;
+                            //     }
 
-                                uint32_t tile_two_id = input_tile_id_start + row_offset + pages_read_in_row;
-                                pages_read_in_row++;
-                                if (pages_read_in_row == slice_Wt) {
-                                    row_offset += stride_Wt;
-                                    pages_read_in_row = 0;
-                                }
+                            //     uint32_t tile_two_id = input_tile_id_start + row_offset + pages_read_in_row;
+                            //     pages_read_in_row++;
+                            //     if (pages_read_in_row == slice_Wt) {
+                            //         row_offset += stride_Wt;
+                            //         pages_read_in_row = 0;
+                            //     }
 
-                                uint64_t remote_noc0_dest_noc_addr_tile_one =
-                                    get_noc_addr(tile_one_id, intermediate_addrgen, 0 /*offset*/, 0 /*noc_id*/);
-                                uint64_t remote_noc0_dest_noc_addr_tile_two =
-                                    get_noc_addr(tile_two_id, intermediate_addrgen, 0 /*offset*/, 0 /*noc_id*/);
+                            //     uint64_t remote_noc0_dest_noc_addr_tile_one =
+                            //         get_noc_addr(tile_one_id, intermediate_addrgen, 0 /*offset*/, 0 /*noc_id*/);
+                            //     uint64_t remote_noc0_dest_noc_addr_tile_two =
+                            //         get_noc_addr(tile_two_id, intermediate_addrgen, 0 /*offset*/, 0 /*noc_id*/);
 
-                                scatter_write_and_advance_local_read_address_for_fabric(
-                                    remote_noc0_dest_noc_addr_tile_one,
-                                    remote_noc0_dest_noc_addr_tile_two,
-                                    pkt_hdr,
-                                    fabric_direction_connection,
-                                    l1_read_addr,
-                                    intermediate_page_size,
-                                    intermediate_page_size);
-                                break;
-                            }
+                            //     scatter_write_and_advance_local_read_address_for_fabric(
+                            //         remote_noc0_dest_noc_addr_tile_one,
+                            //         remote_noc0_dest_noc_addr_tile_two,
+                            //         pkt_hdr,
+                            //         fabric_direction_connection,
+                            //         l1_read_addr,
+                            //         intermediate_page_size,
+                            //         intermediate_page_size);
+                            //     break;
+                            // }
                             case 1:
                             default: {
                                 uint32_t tile_id = input_tile_id_start + row_offset + pages_read_in_row;

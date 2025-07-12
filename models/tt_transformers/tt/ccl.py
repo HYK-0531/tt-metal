@@ -84,12 +84,22 @@ class TT_CCL:
         return self.rs_semaphore_handles[current_idx]
 
     def create_ag_persistent_output_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=None):
+        # TODO: (GR) Need custom hash because certain runtime memory_configs have both shard_spec and nd_shard_spec fields
+        # defined, and we can't manually define this kind of memory config for a preallocated buffer
+        to_hash_memory_config = ttnn.MemoryConfig(
+            memory_config.memory_layout,
+            memory_config.buffer_type,
+            memory_config.shard_spec,
+        )
+
         ring_size = (
             self.mesh_device.get_num_devices() if cluster_axis is None else list(self.mesh_device.shape)[cluster_axis]
         )
         output_shape = list(input_shape)
         output_shape[dim] *= ring_size
-        persistent_buffer_key = PersistentBufferKey(shape=tuple(output_shape), dtype=dtype, memory_config=memory_config)
+        persistent_buffer_key = PersistentBufferKey(
+            shape=tuple(output_shape), dtype=dtype, memory_config=to_hash_memory_config
+        )
 
         if self.extract_shapes:
             self.ag_output_persistent_buffer_keys.add(persistent_buffer_key)
@@ -117,11 +127,19 @@ class TT_CCL:
     def create_rs_persistent_intermediate_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=None):
         assert dim == 3, "RS dim is not 3"
 
+        # TODO: (GR) Need custom hash because certain runtime memory_configs have both shard_spec and nd_shard_spec fields
+        # defined, and we can't manually define this kind of memory config for a preallocated buffer
+        to_hash_memory_config = ttnn.MemoryConfig(
+            memory_config.memory_layout,
+            memory_config.buffer_type,
+            memory_config.shard_spec,
+        )
+
         intermediate_shape = list(input_shape)
         num_batches = intermediate_shape[0]
         intermediate_shape[2] //= num_batches
         persistent_buffer_key = PersistentBufferKey(
-            shape=tuple(intermediate_shape), dtype=dtype, memory_config=memory_config
+            shape=tuple(intermediate_shape), dtype=dtype, memory_config=to_hash_memory_config
         )
 
         if self.extract_shapes:
@@ -149,13 +167,21 @@ class TT_CCL:
     def create_rs_persistent_output_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=None):
         assert dim == 3, "RS dim is not 3"
 
+        # TODO: (GR) Need custom hash because certain runtime memory_configs have both shard_spec and nd_shard_spec fields
+        # defined, and we can't manually define this kind of memory config for a preallocated buffer
+        to_hash_memory_config = ttnn.MemoryConfig(
+            memory_config.memory_layout,
+            memory_config.buffer_type,
+            memory_config.shard_spec,
+        )
+
         ring_size = (
             self.mesh_device.get_num_devices() if cluster_axis is None else list(self.mesh_device.shape)[cluster_axis]
         )
         rs_output_shape = list(input_shape)
         rs_output_shape[dim] //= ring_size
         persistent_buffer_key = PersistentBufferKey(
-            shape=tuple(rs_output_shape), dtype=dtype, memory_config=memory_config
+            shape=tuple(rs_output_shape), dtype=dtype, memory_config=to_hash_memory_config
         )
 
         if self.extract_shapes:
@@ -174,21 +200,6 @@ class TT_CCL:
     def get_rs_persistent_output_buffer(self, persistent_buffer_key):
         if self.persistent_buffers_configuration is None:
             return None
-
-        # TODO: (GR) Temporary hack to handle nd_shard_spec shit
-        if persistent_buffer_key not in self.rs_persistent_output_buffers:
-            shape = (1, 1, 32, 640)
-            dtype = ttnn.bfloat16
-            memory_config = ttnn.MemoryConfig(
-                ttnn.TensorMemoryLayout.WIDTH_SHARDED,
-                ttnn.BufferType.L1,
-                ttnn.ShardSpec(
-                    ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), ttnn.CoreCoord(7, 1))}),
-                    [32, 320],
-                    ttnn.ShardOrientation.ROW_MAJOR,
-                ),
-            )
-            persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
 
         assert (
             persistent_buffer_key in self.rs_persistent_output_buffers

@@ -13,16 +13,16 @@ import ttnn
 # TODO: (GR) Cleanup what determines the shapes, does anything else matter?
 @dataclass(frozen=True)
 class PersistentBuffersConfiguration:
-    is_wormhole: bool = True  # Assuming shapes are different on wormhole and blackhole
-    num_devices: int = None  # Assuming same set of shapes used for a given type of devices
-    model_name: str = None  # Different models have different weights, and therefore different shapes
+    is_wormhole: bool  # Assuming shapes are different on wormhole and blackhole
+    num_devices: int  # Assuming same set of shapes used for a given type of devices
+    model_name: str  # Different models have different weights, and therefore different shapes
 
 
 @dataclass(frozen=True)
 class PersistentBufferKey:
-    shape: tuple = ()
-    dtype: any = None
-    memory_config: any = None
+    shape: tuple
+    dtype: any
+    memory_config: any
 
 
 # TODO: (GR) I believe llama 3.3 has the same weights, so that should also implicitly be supported

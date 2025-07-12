@@ -15,7 +15,12 @@ from models.tt_transformers.tt.distributed_norm import DistributedNorm
 from models.tt_transformers.tt.embedding import Embedding
 from models.tt_transformers.tt.lm_head import LMHead
 from models.tt_transformers.tt.model_config import TensorGroup
+from models.tt_transformers.tt.persistent_buffers import (
+    PersistentBuffersConfiguration,
+    supported_persistent_buffers_configurations,
+)
 from models.tt_transformers.tt.rope import RotarySetup
+from models.utility_functions import is_wormhole_b0
 
 
 class Transformer(LightweightModule):
@@ -40,7 +45,17 @@ class Transformer(LightweightModule):
         self.grid_size = self.args.max_grid_size
         state_dict_prefix = args.get_state_dict_prefix("", None)
 
-        self.tt_ccl = TT_CCL(self.mesh_device, self.args.base_model_name)
+        persistent_buffers_configuration = PersistentBuffersConfiguration(
+            is_wormhole=is_wormhole_b0(),
+            num_devices=self.mesh_device.get_num_devices(),
+            model_name=self.args.base_model_name,
+        )
+        self.tt_ccl = TT_CCL(
+            self.mesh_device,
+            persistent_buffers_configuration
+            if persistent_buffers_configuration in supported_persistent_buffers_configurations
+            else None,
+        )
 
         self.embd = Embedding(
             mesh_device=mesh_device,

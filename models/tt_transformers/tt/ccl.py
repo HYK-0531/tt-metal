@@ -5,8 +5,7 @@
 
 import ttnn
 from models.tt_transformers.tt.persistent_buffers import (
-    PBKey,
-    ccl_buffer_safe_models,
+    PersistentBufferKey,
     create_ag_persistent_output_buffers,
     create_rs_persistent_intermediate_buffers,
     create_rs_persistent_output_buffers,
@@ -17,10 +16,17 @@ class TT_CCL:
     def __init__(
         self,
         mesh_device,
-        model_name=None,
+        persistent_buffers_configuration=None,
+        extract_shapes=False,
     ):
+        # If persistent_buffers_configuration=None, we let the AG and RS ops allocate their
+        # output and intermediate tensors at runtime, otherwise we use the preallocated
+        # hardcoded buffers associated with persistent_buffers_configuration
+
         self.mesh_device = mesh_device
-        self.model_name = model_name
+        self.persistent_buffers_configuration = persistent_buffers_configuration
+        self.extract_shapes = extract_shapes
+
         self.worker_sub_device_id = ttnn.SubDeviceId(0)
         self.sub_device_crs = ttnn.CoreRangeSet(
             {
@@ -33,12 +39,6 @@ class TT_CCL:
                 )
             }
         )
-
-        # EXTRACTING SHAPES
-        self.ag_output_pb_keys = set()
-        self.rs_intermediate_pb_keys = set()
-        self.rs_output_pb_keys = set()
-        # EXTRACTING SHAPES
 
         self.ag_semaphores_idx = 0
         self.ag_semaphore_handles = [[], []]
@@ -60,10 +60,15 @@ class TT_CCL:
         self.rs_persistent_intermediate_buffers = self.create_rs_persistent_intermediate_buffers()
         self.rs_persistent_output_buffers = self.create_rs_persistent_output_buffers()
 
+        # TODO: (GR) Is this setup correct?
         worker_sub_device = ttnn.SubDevice([self.sub_device_crs])
         sub_device_manager = self.mesh_device.create_sub_device_manager([worker_sub_device], 0)
         self.mesh_device.load_sub_device_manager(sub_device_manager)
         self.mesh_device.set_sub_device_stall_group([self.worker_sub_device_id])
+
+        self.ag_output_persistent_buffer_keys = set()
+        self.rs_intermediate_persistent_buffer_keys = set()
+        self.rs_output_persistent_buffer_keys = set()
 
     def get_and_cycle_ag_semaphore_handles(self):
         current_idx = self.ag_semaphores_idx
@@ -75,101 +80,100 @@ class TT_CCL:
         self.rs_semaphores_idx = (self.rs_semaphores_idx + 1) % 2
         return self.rs_semaphore_handles[current_idx]
 
-    #
-    # AG Persistent Output
-    #
-
-    def create_ag_persistent_output_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=1):
-        ring_size = list(self.mesh_device.shape)[cluster_axis]
+    def create_ag_persistent_output_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=None):
+        ring_size = (
+            self.mesh_device.get_num_devices() if cluster_axis is None else list(self.mesh_device.shape)[cluster_axis]
+        )
         output_shape = list(input_shape)
         output_shape[dim] *= ring_size
-        pb_key = PBKey(shape=tuple(output_shape), dtype=dtype, memory_config=memory_config)
+        persistent_buffer_key = PersistentBufferKey(shape=tuple(output_shape), dtype=dtype, memory_config=memory_config)
 
-        # EXTRACTING SHAPES
-        self.ag_output_pb_keys.add(pb_key)
-        # EXTRACTING SHAPES
+        if self.extract_shapes:
+            self.ag_output_persistent_buffer_keys.add(persistent_buffer_key)
 
-        return pb_key
+        return persistent_buffer_key
 
     def create_ag_persistent_output_buffers(self):
-        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+        if self.persistent_buffers_configuration is None:
             return {}
         else:
-            return create_ag_persistent_output_buffers(mesh_device=self.mesh_device, model_name=self.model_name)
+            return create_ag_persistent_output_buffers(
+                mesh_device=self.mesh_device, persistent_buffers_configuration=self.persistent_buffers_configuration
+            )
 
-    def get_ag_persistent_output_buffer(self, pb_key):
-        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+    def get_ag_persistent_output_buffer(self, persistent_buffer_key):
+        if self.persistent_buffers_configuration is None:
             return None
 
         assert (
-            pb_key in self.ag_persistent_output_buffers
-        ), f"AG persistent output buffer does not exist for key: `{pb_key}`"
-        return self.ag_persistent_output_buffers[pb_key]
-
-    #
-    # RS Persistent Intermediate
-    #
+            persistent_buffer_key in self.ag_persistent_output_buffers
+        ), f"AG persistent output buffer does not exist for key: `{persistent_buffer_key}`"
+        return self.ag_persistent_output_buffers[persistent_buffer_key]
 
     # TODO: Can these indices be hardcoded?, Are we indeed restricted to dim 3?
-    def create_rs_persistent_intermediate_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=1):
+    def create_rs_persistent_intermediate_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=None):
         assert dim == 3, "RS dim is not 3"
 
         intermediate_shape = list(input_shape)
         num_batches = intermediate_shape[0]
         intermediate_shape[2] //= num_batches
-        pb_key = PBKey(shape=tuple(intermediate_shape), dtype=dtype, memory_config=memory_config)
+        persistent_buffer_key = PersistentBufferKey(
+            shape=tuple(intermediate_shape), dtype=dtype, memory_config=memory_config
+        )
 
-        # EXTRACTING SHAPES
-        self.rs_intermediate_pb_keys.add(pb_key)
-        # EXTRACTING SHAPES
+        if self.extract_shapes:
+            self.rs_intermediate_persistent_buffer_keys.add(persistent_buffer_key)
 
-        return pb_key
+        return persistent_buffer_key
 
     def create_rs_persistent_intermediate_buffers(self):
-        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+        if self.persistent_buffers_configuration is None:
             return {}
         else:
-            return create_rs_persistent_intermediate_buffers(mesh_device=self.mesh_device, model_name=self.model_name)
+            return create_rs_persistent_intermediate_buffers(
+                mesh_device=self.mesh_device, persistent_buffers_configuration=self.persistent_buffers_configuration
+            )
 
-    def get_rs_persistent_intermediate_buffer(self, pb_key):
-        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+    def get_rs_persistent_intermediate_buffer(self, persistent_buffer_key):
+        if self.persistent_buffers_configuration is None:
             return None
 
         assert (
-            pb_key in self.rs_persistent_intermediate_buffers
-        ), f"RS persistent intermediate buffer does not exist for key: `{pb_key}`"
-        return self.rs_persistent_intermediate_buffers[pb_key]
+            persistent_buffer_key in self.rs_persistent_intermediate_buffers
+        ), f"RS persistent intermediate buffer does not exist for key: `{persistent_buffer_key}`"
+        return self.rs_persistent_intermediate_buffers[persistent_buffer_key]
 
-    #
-    # RS Persistent Output
-    #
-
-    def create_rs_persistent_output_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=1):
+    def create_rs_persistent_output_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=None):
         assert dim == 3, "RS dim is not 3"
 
-        ring_size = list(self.mesh_device.shape)[cluster_axis]
+        ring_size = (
+            self.mesh_device.get_num_devices() if cluster_axis is None else list(self.mesh_device.shape)[cluster_axis]
+        )
         rs_output_shape = list(input_shape)
         rs_output_shape[dim] //= ring_size
-        pb_key = PBKey(shape=tuple(rs_output_shape), dtype=dtype, memory_config=memory_config)
+        persistent_buffer_key = PersistentBufferKey(
+            shape=tuple(rs_output_shape), dtype=dtype, memory_config=memory_config
+        )
 
-        # EXTRACTING SHAPES
-        self.rs_output_pb_keys.add(pb_key)
-        # EXTRACTING SHAPES
+        if self.extract_shapes:
+            self.rs_output_persistent_buffer_keys.add(persistent_buffer_key)
 
-        return pb_key
+        return persistent_buffer_key
 
     def create_rs_persistent_output_buffers(self):
-        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+        if self.persistent_buffers_configuration is None:
             return {}
         else:
-            return create_rs_persistent_output_buffers(mesh_device=self.mesh_device, model_name=self.model_name)
+            return create_rs_persistent_output_buffers(
+                mesh_device=self.mesh_device, persistent_buffers_configuration=self.persistent_buffers_configuration
+            )
 
-    def get_rs_persistent_output_buffer(self, pb_key):
-        if self.model_name is None or self.model_name not in ccl_buffer_safe_models:
+    def get_rs_persistent_output_buffer(self, persistent_buffer_key):
+        if self.persistent_buffers_configuration is None:
             return None
 
-        # Temporary hack to handle nd_shard_spec shit
-        if pb_key not in self.rs_persistent_output_buffers:
+        # TODO: (GR) Temporary hack to handle nd_shard_spec shit
+        if persistent_buffer_key not in self.rs_persistent_output_buffers:
             shape = (1, 1, 32, 640)
             dtype = ttnn.bfloat16
             memory_config = ttnn.MemoryConfig(
@@ -181,37 +185,30 @@ class TT_CCL:
                     ttnn.ShardOrientation.ROW_MAJOR,
                 ),
             )
-            pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
+            persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
 
         assert (
-            pb_key in self.rs_persistent_output_buffers
-        ), f"RS persistent output buffer does not exist for key: `{pb_key}`"
-        return self.rs_persistent_output_buffers[pb_key]
-
-    #
-    # Helpers
-    #
+            persistent_buffer_key in self.rs_persistent_output_buffers
+        ), f"RS persistent output buffer does not exist for key: `{persistent_buffer_key}`"
+        return self.rs_persistent_output_buffers[persistent_buffer_key]
 
     def close(self):
-        print("----------------")
-        print("AG OUTPUT SHAPES")
-        for e in self.ag_output_pb_keys:
-            print(e)
+        if self.extract_shapes:
+            print("AG OUTPUT SHAPES")
+            for e in self.ag_output_persistent_buffer_keys:
+                print(e)
 
-        print("----------------")
-        print("RS INTERMEDIATE SHAPES")
-        for e in self.rs_intermediate_pb_keys:
-            print(e)
+            print("RS INTERMEDIATE SHAPES")
+            for e in self.rs_intermediate_persistent_buffer_keys:
+                print(e)
 
-        print("----------------")
-        print("RS OUTPUT SHAPES")
-        for e in self.rs_output_pb_keys:
-            print(e)
+            print("RS OUTPUT SHAPES")
+            for e in self.rs_output_persistent_buffer_keys:
+                print(e)
 
         self.mesh_device.reset_sub_device_stall_group()
 
 
-# def tt_all_reduce(input_tensor, mesh_device, cluster_axis=0, dim=0, num_links=2, memory_config=None, sharded=False):
 def tt_all_reduce(
     input_tensor,
     mesh_device,

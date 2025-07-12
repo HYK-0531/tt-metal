@@ -2,51 +2,79 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
+
 from dataclasses import dataclass
 
 import torch
 
 import ttnn
 
-ccl_buffer_safe_models = ["QwQ-32B"]  #  "Qwen3-32B", "Qwen2.5-72B", "Llama-3.1-70B"
+
+# TODO: (GR) Cleanup what determines the shapes, does anything else matter?
+@dataclass(frozen=True)
+class PersistentBuffersConfiguration:
+    is_wormhole: bool = True  # Assuming shapes are different on wormhole and blackhole
+    num_devices: int = None  # Assuming same set of shapes used for a given type of devices
+    model_name: str = None  # Different models have different weights, and therefore different shapes
 
 
 @dataclass(frozen=True)
-class PBKey:
-    shape: any = ()
+class PersistentBufferKey:
+    shape: tuple = ()
     dtype: any = None
     memory_config: any = None
 
 
-def create_buffer(mesh_device, pb_key):
-    return ttnn.from_torch(
-        torch.zeros(pb_key.shape),
-        device=mesh_device,
-        layout=ttnn.TILE_LAYOUT,
-        dtype=pb_key.dtype,
-        memory_config=pb_key.memory_config,
-        mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
-    )
+# TODO: (GR) I believe llama 3.3 has the same weights, so that should also implicitly be supported
+supported_persistent_buffers_configurations = [
+    PersistentBuffersConfiguration(
+        is_wormhole=True,
+        num_devices=8,
+        model_name="QwQ-32B",
+    ),
+    # PersistentBuffersConfiguration(
+    #     is_wormhole=True,
+    #     num_devices=8,
+    #     model_name="Qwen3-32B",
+    # ),
+    # PersistentBuffersConfiguration(
+    #     is_wormhole=True,
+    #     num_devices=8,
+    #     model_name="Qwen2.5-72B",
+    # ),
+    # PersistentBuffersConfiguration(
+    #     is_wormhole=True,
+    #     num_devices=8,
+    #     model_name="Llama-3.1-70B",
+    # ),
+]
 
 
-def create_ag_persistent_output_buffers(mesh_device, model_name):
-    # output buffer must match the config expected in the model
+def create_ag_persistent_output_buffers(mesh_device, persistent_buffers_configuration):
+    # The memory config of the persistent output tensor must match the memory config
+    # that is expected in the model for the subsequent op after the AG
 
-    assert model_name in ccl_buffer_safe_models, f"model_name '{model_name}' does not have hardcoded persistent buffers"
+    assert (
+        persistent_buffers_configuration in supported_persistent_buffers_configurations
+    ), f"Configuration '{persistent_buffers_configuration}' does not have hardcoded persistent buffers"
 
     persistent_buffers = {}
 
     shape = (1, 1, 128, 256)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 256, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 32, 5120)
     dtype = ttnn.bfloat16
@@ -59,8 +87,10 @@ def create_ag_persistent_output_buffers(mesh_device, model_name):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 32, 5120)
     dtype = ttnn.bfloat16
@@ -73,20 +103,26 @@ def create_ag_persistent_output_buffers(mesh_device, model_name):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 32, 152064)
     dtype = ttnn.bfloat8_b
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 256, 256)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 32, 5120)
     dtype = ttnn.bfloat16
@@ -99,8 +135,10 @@ def create_ag_persistent_output_buffers(mesh_device, model_name):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 32, 5120)
     dtype = ttnn.bfloat16
@@ -113,78 +151,102 @@ def create_ag_persistent_output_buffers(mesh_device, model_name):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 32, 256)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 32, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 128, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     return persistent_buffers
 
 
-def create_rs_persistent_intermediate_buffers(mesh_device, model_name):
-    # intermediate buffers can always be L1 (if we have space),
-    # only the output buffers needs to match the config expected in the model
+def create_rs_persistent_intermediate_buffers(mesh_device, persistent_buffers_configuration):
+    # Intermediate persistent buffers for reduce scatter can have any memory config,
+    # it does not have to match the memory config of the input tensor or the output tensor
 
-    # currently can't really have sharded intermediate buffers, as we don't know
-    # the sharding cores, shard shape, etc to use for the intermediate tensor
+    # TODO: We are currently using interleaved L1 for all intermediate persistent buffers
+    # for reduce scatter. These buffers (or some subset of them) can be changed to be sharded
+    # at some point in the future if it's determined that gives a significant perf uplift.
 
-    assert model_name in ccl_buffer_safe_models, f"model_name '{model_name}' does not have hardcoded persistent buffers"
+    assert (
+        persistent_buffers_configuration in supported_persistent_buffers_configurations
+    ), f"Configuration '{persistent_buffers_configuration}' does not have hardcoded persistent buffers"
 
     persistent_buffers = {}
 
     shape = (1, 1, 32, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 128, 5120)
     dtype = ttnn.bfloat8_b
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 128, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 256, 5120)
     dtype = ttnn.bfloat8_b
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 256, 5120)
     dtype = ttnn.bfloat16
     memory_config = ttnn.L1_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     return persistent_buffers
 
 
-def create_rs_persistent_output_buffers(mesh_device, model_name):
-    # output buffer must match the config expected in the model
+def create_rs_persistent_output_buffers(mesh_device, persistent_buffers_configuration):
+    # The memory config of the persistent output tensor must match the memory config
+    # that is expected in the model for the subsequent op after the RS
 
-    assert model_name in ccl_buffer_safe_models, f"model_name '{model_name}' does not have hardcoded persistent buffers"
+    assert (
+        persistent_buffers_configuration in supported_persistent_buffers_configurations
+    ), f"Configuration '{persistent_buffers_configuration}' does not have hardcoded persistent buffers"
 
     persistent_buffers = {}
 
@@ -199,8 +261,10 @@ def create_rs_persistent_output_buffers(mesh_device, model_name):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 32, 640)
     dtype = ttnn.bfloat16
@@ -213,31 +277,52 @@ def create_rs_persistent_output_buffers(mesh_device, model_name):
             ttnn.ShardOrientation.ROW_MAJOR,
         ),
     )
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 128, 640)
     dtype = ttnn.bfloat8_b
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 128, 640)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 256, 640)
     dtype = ttnn.bfloat8_b
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     shape = (1, 1, 256, 640)
     dtype = ttnn.bfloat16
     memory_config = ttnn.DRAM_MEMORY_CONFIG
-    pb_key = PBKey(shape=shape, dtype=dtype, memory_config=memory_config)
-    persistent_buffers[pb_key] = create_buffer(mesh_device=mesh_device, pb_key=pb_key)
+    persistent_buffer_key = PersistentBufferKey(shape=shape, dtype=dtype, memory_config=memory_config)
+    persistent_buffers[persistent_buffer_key] = create_buffer(
+        mesh_device=mesh_device, persistent_buffer_key=persistent_buffer_key
+    )
 
     return persistent_buffers
+
+
+def create_buffer(mesh_device, persistent_buffer_key):
+    return ttnn.from_torch(
+        torch.zeros(persistent_buffer_key.shape),
+        device=mesh_device,
+        layout=ttnn.TILE_LAYOUT,
+        dtype=persistent_buffer_key.dtype,
+        memory_config=persistent_buffer_key.memory_config,
+        mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
+    )

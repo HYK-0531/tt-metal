@@ -70,6 +70,9 @@ class TT_CCL:
         self.rs_intermediate_persistent_buffer_keys = set()
         self.rs_output_persistent_buffer_keys = set()
 
+    def is_using_preallocated_persistent_buffers(self):
+        return self.persistent_buffers_configuration is not None
+
     def get_and_cycle_ag_semaphore_handles(self):
         current_idx = self.ag_semaphores_idx
         self.ag_semaphores_idx = (self.ag_semaphores_idx + 1) % 2
@@ -305,8 +308,8 @@ def tt_all_reduce(
             memory_config=ttnn.L1_MEMORY_CONFIG if sharded else ttnn.DRAM_MEMORY_CONFIG,
         )
 
-        # TODO: (GR)
-        # gathered_tensor.deallocate(True)
+        if not tt_ccl.is_using_preallocated_persistent_buffers():
+            gathered_tensor.deallocate(True)
     else:
         input_mem_cfg = input_tensor.memory_config()
         peristent_intermediate_buffer_key = tt_ccl.create_rs_persistent_intermediate_buffer_key(
@@ -443,8 +446,8 @@ def tt_distributed_rmsnorm(inp, epsilon, gamma, mesh_device, tt_ccl, compute_ker
         inp, tt_stats_gathered, epsilon=epsilon, weight=gamma, compute_kernel_config=compute_kernel_config
     )
 
-    # TODO: (GR)
-    # tt_stats_gathered.deallocate(True)
+    if not tt_ccl.is_using_preallocated_persistent_buffers():
+        tt_stats_gathered.deallocate(True)
     # inp.deallocate(True)
 
     return tt_out
@@ -484,7 +487,7 @@ def tt_sharded_distributed_rmsnorm(
         program_config=ln_sharded_progcfg,
         stats=tt_stats,
     )
-    # TODO: (GR)
-    # tt_stats.deallocate(True)
+    if not tt_ccl.is_using_preallocated_persistent_buffers():
+        tt_stats.deallocate(True)
 
     return tt_out

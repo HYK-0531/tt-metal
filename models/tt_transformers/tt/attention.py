@@ -405,8 +405,8 @@ class Attention(LightweightModule):
             num_tiles = int(math.ceil(xqkv_fused_sharded.shape[-2] / self.tile_size))
             xqkv_fused_sharded = xqkv_fused_sharded + self.wqkv_bias_decode[num_tiles - 1]
 
-        # TODO: (GR)
-        # ttnn.deallocate(x)
+        if not self.tt_ccl.is_using_preallocated_persistent_buffers():
+            ttnn.deallocate(x)
         xqkv_fused = tt_all_reduce(
             xqkv_fused_sharded,
             self.mesh_device,
@@ -457,8 +457,8 @@ class Attention(LightweightModule):
         q_heads_pre_rot_1BQD = self.q_norm(q_heads_pre_rot_1BQD, mode="decode")
         k_heads_pre_rot_1BKD = self.k_norm(k_heads_pre_rot_1BKD, mode="decode")
 
-        # TODO: (GR)
-        # ttnn.deallocate(xqkv_fused)
+        if not self.tt_ccl.is_using_preallocated_persistent_buffers():
+            ttnn.deallocate(xqkv_fused)
 
         # Q Rotary Embeddings
         q_heads_1BQD = ttnn.experimental.rotary_embedding_llama(
@@ -557,8 +557,8 @@ class Attention(LightweightModule):
                 memory_config_ag=self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"],
                 memory_config_mm=self.model_config["DECODE_RESIDUAL_MEMCFG"],
             )
-            # TODO: (GR)
-            # ttnn.deallocate(attn_output_cat)
+            if not self.tt_ccl.is_using_preallocated_persistent_buffers():
+                ttnn.deallocate(attn_output_cat)
             dense_out_sharded = ttnn.to_memory_config(dense_out_sharded, self.model_config["DECODE_RESIDUAL_MEMCFG"])
             return dense_out_sharded
 
@@ -679,8 +679,8 @@ class Attention(LightweightModule):
         if seq_len > self.MAX_QKV_MM_SEQ_LEN:
             xqkv_fused = ttnn.reshape(xqkv_fused, [1, 1, seq_len, -1])
 
-        # TODO: (GR)
-        # ttnn.deallocate(x_11SH)
+        if not self.tt_ccl.is_using_preallocated_persistent_buffers():
+            ttnn.deallocate(x_11SH)
 
         # split qkv into heads
         (
@@ -698,8 +698,8 @@ class Attention(LightweightModule):
         q_heads_1QSD_pre_rot = self.q_norm(q_heads_1QSD_pre_rot, mode="prefill")
         k_heads_1KSD_pre_rot = self.k_norm(k_heads_1KSD_pre_rot, mode="prefill")
 
-        # TODO: (GR)
-        # ttnn.deallocate(xqkv_fused)
+        if not self.tt_ccl.is_using_preallocated_persistent_buffers():
+            ttnn.deallocate(xqkv_fused)
 
         ###
         # Rotary embeddings
@@ -856,8 +856,8 @@ class Attention(LightweightModule):
 
         if seq_len > 1024:
             output_11SH = ttnn.reshape(output_11SH, [1, 1, seq_len, -1])
-        # TODO: (GR)
-        # ttnn.deallocate(attn_output_11SH)
+        if not self.tt_ccl.is_using_preallocated_persistent_buffers():
+            ttnn.deallocate(attn_output_11SH)
 
         # Reduce-scatter
         if not self.use_fused_all_gather_matmul:

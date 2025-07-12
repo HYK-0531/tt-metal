@@ -137,8 +137,8 @@ class MLP(LightweightModule):
             program_config=pc_3,
             memory_config=memory_config,
         )
-        # TODO: (GR)
-        # ttnn.deallocate(x)
+        if not self.tt_ccl.is_using_preallocated_persistent_buffers():
+            ttnn.deallocate(x)
 
         if TG:
             # if mode == "decode" and self.dim!=8192:
@@ -240,9 +240,9 @@ class MLP(LightweightModule):
             # w2 may use a different core grid, this is a no-op if they already match
             w2_in = ttnn.to_memory_config(w2_in, self.model_config["SHARDED_MLP2_INPUT_MEMCFG"])
 
-        # TODO: (GR)
-        # ttnn.deallocate(w3_out)
-        # ttnn.deallocate(w1_out)
+        if not self.tt_ccl.is_using_preallocated_persistent_buffers():
+            ttnn.deallocate(w3_out)
+            ttnn.deallocate(w1_out)
 
         if TG and (self.dim == 8192 or mode == "prefill"):
             cluster_axis = 1
@@ -277,8 +277,10 @@ class MLP(LightweightModule):
             memory_config=memory_config,
             core_grid=None,  # FIXME: validate on TG ttnn.CoreGrid(y=8, x=8) if not pc_2 else None,
         )
-        # TODO: (GR)
-        # ttnn.deallocate(w2_in)
+        if not self.tt_ccl.is_using_preallocated_persistent_buffers() or not (
+            TG and (self.dim == 8192 or mode == "prefill")
+        ):
+            ttnn.deallocate(w2_in)
 
         # if mode == "decode" and not TG:
         #     w2_out = ttnn.sharded_to_interleaved(w2_out, ttnn.DRAM_MEMORY_CONFIG)

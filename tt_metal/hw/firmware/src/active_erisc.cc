@@ -123,7 +123,7 @@ void Application() {
     risc_init();
 
     while (enable_fw_flag[0] != 1) {
-        // Wait for sync from host t
+        // Wait for sync from host
         invalidate_l1_cache();
     }
 
@@ -210,6 +210,4 @@ void Application() {
 
         invalidate_l1_cache();
     }
-
-    internal_::disable_erisc_app();
 }

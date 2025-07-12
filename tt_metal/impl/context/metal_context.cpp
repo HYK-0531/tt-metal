@@ -555,9 +555,11 @@ void MetalContext::reset_cores(chip_id_t device_id) {
             tt::tt_metal::MetalContext::instance().get_cluster().assert_risc_reset_at_core(
                 tt_cxy_pair(device_id, virtual_core), reset_val);
 
+            // Ensure exit to base firmware
             std::vector<uint32_t> clear_flag_data = {0};
             tt::llrt::write_hex_vec_to_core(
                 device_id, virtual_core, clear_flag_data, get_active_erisc_launch_flag_addr());
+            llrt::internal_::wait_for_heartbeat(device_id, virtual_core);
         }
     }
 
@@ -923,6 +925,12 @@ void MetalContext::initialize_firmware(
                     tt_cxy_pair(device_id, virtual_core),
                     jit_build_config.fw_launch_addr);
             } else {
+                // Also send the enable flag to 1 otherwise if it's 0 the firmware will exit
+                std::vector<uint32_t> enable_data = {1};
+                tt::llrt::write_hex_vec_to_core(
+                    device_id, virtual_core, enable_data, get_active_erisc_launch_flag_addr());
+                cluster_->l1_barrier(device_id);
+
                 // ETH FW API
                 tt::llrt::internal_::send_msg_to_eth_mailbox(
                     device_id,
@@ -930,10 +938,6 @@ void MetalContext::initialize_firmware(
                     tt_metal::FWMailboxMsg::ETH_MSG_RELEASE_CORE,
                     {/*l1 addr to exec*/ jit_build_config.fw_launch_addr_value},
                     true);  // Wait for ack is not needed because we will wait for cores to be ready
-
-                std::vector<uint32_t> enable_data = {1};
-                tt::llrt::write_hex_vec_to_core(
-                    device_id, virtual_core, enable_data, get_active_erisc_launch_flag_addr());
             }
 
             break;

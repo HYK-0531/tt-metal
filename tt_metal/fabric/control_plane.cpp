@@ -567,12 +567,13 @@ std::map<FabricNodeId, chip_id_t> ControlPlane::get_logical_chip_to_physical_chi
         // Iterate over every mesh defined in the mesh-graph descriptor and embed it on top of
         // the physical cluster using the generic helper.
         for (const auto& mesh_id : this->routing_table_generator_->mesh_graph->get_mesh_ids()) {
-            const auto& mesh_container = this->routing_table_generator_->mesh_graph->get_chip_ids(mesh_id);
-            const auto& physical_chip_ids = this->get_mesh_physical_chip_ids(mesh_container);
-
-            for (std::uint32_t i = 0; i < physical_chip_ids.size(); ++i) {
-                logical_mesh_chip_id_to_physical_chip_id_mapping.emplace(
-                    FabricNodeId(mesh_id, i), physical_chip_ids[i]);
+            if (this->is_local_mesh(mesh_id)) {
+                const auto& mesh_container = this->routing_table_generator_->mesh_graph->get_chip_ids(mesh_id);
+                const auto& physical_chip_ids = this->get_mesh_physical_chip_ids(mesh_container);
+                for (std::uint32_t i = 0; i < physical_chip_ids.size(); ++i) {
+                    logical_mesh_chip_id_to_physical_chip_id_mapping.emplace(
+                        FabricNodeId(mesh_id, i), physical_chip_ids[i]);
+                }
             }
         }
     }

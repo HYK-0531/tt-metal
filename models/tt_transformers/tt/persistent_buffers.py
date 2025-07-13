@@ -25,6 +25,7 @@ class PersistentBufferKey:
     memory_config: any
 
 
+# TODO: (GR) DeepSeek-R1-Distill-Llama-70B
 # TODO: (GR) I believe llama 3.3 has the same weights, so that should also implicitly be supported
 supported_persistent_buffers_configurations = [
     PersistentBuffersConfiguration(

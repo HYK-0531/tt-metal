@@ -42,7 +42,7 @@ def print_stats(label, data: torch.Tensor, device=None):
         "cores_x",
     ),
     [
-        (1, 16, 3, 2, 32, 32, 32, (128, 256, 512, 512), 8, 8),  # slice 128, output blocks 32. Need to parametize
+        (1, 16, 3, 2, 128, 128, 32, (128, 256, 512, 512), 8, 8),  # slice 128, output blocks 32. Need to parametize
     ],
 )
 def test_vae_decoder(
@@ -59,6 +59,7 @@ def test_vae_decoder(
     cores_y: int,
     cores_x: int,
 ) -> None:
+    # mesh_device = device
     # torch_dtype = torch.float32
     torch_dtype = torch.bfloat16
     ttnn_dtype = ttnn.bfloat16
@@ -86,9 +87,10 @@ def test_vae_decoder(
     )
 
     # inp = torch.randn(batch, in_channels, height, width)
-    inp = torch.normal(1, 2, (batch, in_channels, height, width))
+    # inp = torch.normal(1, 2, (batch, in_channels, height, width))
+    inp = torch.load("torch_latent.pt")
 
-    tt_inp = ttnn.from_torch(inp.permute(0, 2, 3, 1), dtype=ttnn_dtype, device=mesh_device)
+    tt_inp = ttnn.from_torch(inp, dtype=ttnn_dtype, device=mesh_device)
 
     logger.info(print_stats("torch_input", inp))
     logger.info(print_stats("tt_input", tt_inp, device=mesh_device))

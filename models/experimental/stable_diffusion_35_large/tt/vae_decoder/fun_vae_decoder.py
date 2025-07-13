@@ -65,14 +65,18 @@ def sd_vae_decode(
     parameters: TtVaeDecoderParameters,
     parallel_manager: StableDiffusionParallelManager,
 ) -> ttnn.Tensor:
+    print("vae_conv2d", x.shape)
     x = vae_conv2d(x, parameters.conv_in)
-
+    print("unet_mid_block")
     x = unet_mid_block(x, parameters.mid_block, None)
 
-    for up_block_params in parameters.up_blocks[0:4]:
+    print("updecoder_block")
+    for up_block_params in parameters.up_blocks:
         x = updecoder_block(x, up_block_params, None)
 
+    print("vae_group_norm")
     x = vae_group_norm(x, parameters.conv_norm_out)
+    print("vae_conv2d")
     x = ttnn.silu(x)
     x = vae_conv2d(x, parameters.conv_out)
 

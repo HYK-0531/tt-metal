@@ -21,6 +21,7 @@ from transformers import CLIPTextModelWithProjection, CLIPTokenizer, T5EncoderMo
 from ..tt.utils import from_torch_fast
 from .t5_encoder import TtT5Encoder, TtT5EncoderParameters
 from .fun_transformer import sd_transformer, TtSD3Transformer2DModelParameters
+from .vae_decoder.fun_vae_decoder import sd_vae_decode, TtVaeDecoderParameters
 from .parallel_config import StableDiffusionParallelManager
 
 TILE_SIZE = 32
@@ -50,6 +51,12 @@ class TtStableDiffusion3Pipeline:
             torch_text_encoder_3 = T5EncoderModel.from_pretrained(checkpoint, subfolder="text_encoder_3")
         self._scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(checkpoint, subfolder="scheduler")
         self._vae = AutoencoderKL.from_pretrained(checkpoint, subfolder="vae")
+        self.fun_vae_params = TtVaeDecoderParameters.from_torch(
+            torch_vae_decoder=self._vae.decoder,
+            dtype=ttnn.bfloat16,
+            device=mesh_device,
+            core_grid=mesh_device.core_grid,
+        )
         torch_transformer = SD3Transformer2DModel.from_pretrained(
             checkpoint,
             subfolder="transformer",
@@ -291,7 +298,6 @@ class TtStableDiffusion3Pipeline:
         print(f"Latents shape: {latents_shape}")
 
         logger.info("encoding prompts...")
-        breakpoint()
 
         prompt_encoding_start_time = time.time()
         prompt_embeds, pooled_prompt_embeds = self._encode_prompts(
@@ -432,6 +438,22 @@ class TtStableDiffusion3Pipeline:
             assert isinstance(image, torch.Tensor)
 
         image_decoding_end_time = time.time()
+        print(" TT decode")
+
+        # ttvae
+        torch.save(latents, "torch_latent.pt")
+        tt_latent = ttnn.from_torch(
+            latents.permute([0, 2, 3, 1]), dtype=ttnn.bfloat16, device=self.parallel_manager.submesh_devices[0]
+        )
+        print("sd_var_decode")
+        tt_img = sd_vae_decode(tt_latent, self.fun_vae_params, None)
+        print("sd to torch")
+        torch_img = ttnn.to_torch(tt_img, dtyp=ttnn.bfloat16)
+        torch_img = torch_img.permute([0, 3, 1, 2])
+        torch_img = self._image_processor.postprocess(torch_img, output_type="pt")
+        tt_pil = self._image_processor.numpy_to_pil(self._image_processor.pt_to_numpy(torch_img))
+        tt_pil.save("SD_tt_image.png")
+        # ttvae end
 
         output = self._image_processor.numpy_to_pil(self._image_processor.pt_to_numpy(image))
 

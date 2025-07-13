@@ -26,7 +26,7 @@ def print_stats(label, data: torch.Tensor, device=None):
 @pytest.mark.parametrize(
     ("batch", "in_channels", "out_channels", "height", "width"),
     [
-        (1, 512, 512, 512, 512),
+        (1, 512, 512, 128, 128),
         # (1, 32, 512, 512, 512),
         # (1, 64, 512, 512, 512),
         # (1, 128, 512, 512, 512),

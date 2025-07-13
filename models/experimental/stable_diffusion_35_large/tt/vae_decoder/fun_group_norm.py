@@ -100,7 +100,9 @@ def vae_group_norm(x_in, parameters: TtGroupNormParameters):
     [batch_size, height, width, channels] = list(x_in.shape)
 
     # TODO: Compute optimal output blocks
-    num_out_blocks = -(-width // 32)
+    num_out_blocks = -(
+        -width * height // (256 * parameters.core_grid.x * parameters.core_grid.y)
+    )  # Prevents next step from hanging. TODO: Investigate
     x = ttnn.to_memory_config(x_in, ttnn.DRAM_MEMORY_CONFIG)
     x = ttnn.to_layout(x, ttnn.ROW_MAJOR_LAYOUT)
     x = x.reshape([batch_size, 1, width * height, channels])

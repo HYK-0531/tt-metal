@@ -78,7 +78,8 @@ def vae_conv2d(x, parameters):
     x = ttnn.to_layout(x, ttnn.ROW_MAJOR_LAYOUT)
 
     # TODO: compute optimal slice config per height or width.
-    slice_config = ttnn.Conv2dSliceConfig(slice_type=ttnn.Conv2dSliceWidth, num_slices=w // 2)
+    # slice_config = ttnn.Conv2dSliceConfig(slice_type=ttnn.Conv2dSliceWidth, num_slices=w // 2)
+    slice_config = ttnn.Conv2dSliceConfig(slice_type=ttnn.Conv2dSliceWidth, num_slices=min(32, w // 2))
 
     output_tensor, [_out_height, _out_width] = ttnn.conv2d(
         input_tensor=x,

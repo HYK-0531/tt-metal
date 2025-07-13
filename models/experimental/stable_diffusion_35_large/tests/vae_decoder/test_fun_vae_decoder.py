@@ -21,7 +21,7 @@ def print_stats(label, data: torch.Tensor, device=None):
         data_ = ttnn.to_torch(
             data, mesh_composer=ttnn.ConcatMesh2dToTensor(device, mesh_shape=tuple(device.shape), dims=(0, 1))
         )
-    return f"{label}: mean:{data_.mean()} , std:{data_.std()} , range:[{data_.min()}, {data_.max()}]"
+    return f"{label}: mean:{data_.mean()} , std:{data_.std()} , range:[{data_.min()}, {data_.max()}, shape:{data_.shape},stats in shape: {data.shape}]"
 
 
 # @pytest.mark.parametrize("device_params", [{"trace_region_size": 40960}], indirect=True)
@@ -88,9 +88,10 @@ def test_vae_decoder(
 
     # inp = torch.randn(batch, in_channels, height, width)
     # inp = torch.normal(1, 2, (batch, in_channels, height, width))
-    inp = torch.load("torch_latent.pt")
+    inp = torch.load("torch_latent.pt").permute(0, 3, 1, 2)
+    logger.info(f"data shape :{inp.shape}")
 
-    tt_inp = ttnn.from_torch(inp, dtype=ttnn_dtype, device=mesh_device)
+    tt_inp = ttnn.from_torch(inp.permute(0, 2, 3, 1), dtype=ttnn_dtype, device=mesh_device)
 
     logger.info(print_stats("torch_input", inp))
     logger.info(print_stats("tt_input", tt_inp, device=mesh_device))

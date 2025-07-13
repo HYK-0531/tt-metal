@@ -7,7 +7,7 @@ rank_bindings:
   - rank: 1
     mesh_id: 1
     env_overrides:
-      TT_METAL_VISIBLE_DEVICES: "2,3"
+      TT_METAL_VISIBLE_DEVICES: "3,2"
 
 global_env:
   OMPI_ALLOW_RUN_AS_ROOT: "1"

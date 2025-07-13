@@ -28,7 +28,7 @@ TEST_F(IntermeshSplit2x2FabricFixture, RandomizedInterMeshUnicast) {
     }
 }
 
-TEST_F(IntermeshSplit2x2FabricFixture, DISABLED_MultiMeshEastMulticast) {
+TEST_F(IntermeshSplit2x2FabricFixture, MultiMeshEastMulticast_0) {
     std::vector<FabricNodeId> mcast_req_nodes = {
         FabricNodeId(MeshId{0}, 1), FabricNodeId(MeshId{0}, 0), FabricNodeId(MeshId{0}, 3), FabricNodeId(MeshId{0}, 2)};
     std::vector<FabricNodeId> mcast_start_nodes = {FabricNodeId(MeshId{1}, 2), FabricNodeId(MeshId{1}, 0)};
@@ -42,29 +42,17 @@ TEST_F(IntermeshSplit2x2FabricFixture, DISABLED_MultiMeshEastMulticast) {
     }
 }
 
-TEST_F(IntermeshSplit2x2FabricFixture, DISABLED_MultiMeshSouthMulticast) {
-    std::vector<FabricNodeId> mcast_req_nodes = {FabricNodeId(MeshId{0}, 0), FabricNodeId(MeshId{0}, 1)};
-    std::vector<FabricNodeId> mcast_start_nodes = {FabricNodeId(MeshId{1}, 0), FabricNodeId(MeshId{1}, 1)};
+TEST_F(IntermeshSplit2x2FabricFixture, MultiMeshEastMulticast_1) {
+    std::vector<FabricNodeId> mcast_req_nodes = {
+        FabricNodeId(MeshId{1}, 1), FabricNodeId(MeshId{1}, 0), FabricNodeId(MeshId{1}, 3), FabricNodeId(MeshId{1}, 2)};
+    std::vector<FabricNodeId> mcast_start_nodes = {FabricNodeId(MeshId{0}, 3), FabricNodeId(MeshId{0}, 1)};
     std::vector<McastRoutingInfo> routing_info = {
-        McastRoutingInfo{.mcast_dir = RoutingDirection::S, .num_mcast_hops = 1}};
+        McastRoutingInfo{.mcast_dir = RoutingDirection::W, .num_mcast_hops = 1}};
     std::vector<std::vector<FabricNodeId>> mcast_group_node_ids = {
-        {FabricNodeId(MeshId{1}, 2)}, {FabricNodeId(MeshId{1}, 3)}};
+        {FabricNodeId(MeshId{0}, 2)}, {FabricNodeId(MeshId{0}, 0)}};
     for (uint32_t i = 0; i < 100; i++) {
         multihost_utils::InterMeshLineMcast(
-            this, mcast_req_nodes[i % 2], mcast_start_nodes[i % 2], routing_info, mcast_group_node_ids[i % 2]);
-    }
-}
-
-TEST_F(IntermeshSplit2x2FabricFixture, DISABLED_MultiMeshNorthMulticast) {
-    std::vector<FabricNodeId> mcast_req_nodes = {FabricNodeId(MeshId{0}, 3), FabricNodeId(MeshId{0}, 3)};
-    std::vector<FabricNodeId> mcast_start_nodes = {FabricNodeId(MeshId{1}, 2), FabricNodeId(MeshId{1}, 3)};
-    std::vector<McastRoutingInfo> routing_info = {
-        McastRoutingInfo{.mcast_dir = RoutingDirection::N, .num_mcast_hops = 1}};
-    std::vector<std::vector<FabricNodeId>> mcast_group_node_ids = {
-        {FabricNodeId(MeshId{1}, 0)}, {FabricNodeId(MeshId{1}, 1)}};
-    for (uint32_t i = 0; i < 100; i++) {
-        multihost_utils::InterMeshLineMcast(
-            this, mcast_req_nodes[i % 2], mcast_start_nodes[i % 2], routing_info, mcast_group_node_ids[i % 2]);
+            this, mcast_req_nodes[i % 4], mcast_start_nodes[i % 2], routing_info, mcast_group_node_ids[i % 2], 1, 0);
     }
 }
 
@@ -76,7 +64,7 @@ TEST_F(InterMeshDual2x4FabricFixture, RandomizedInterMeshUnicast) {
     }
 }
 
-TEST_F(InterMeshDual2x4FabricFixture, DISABLED_MultiMesh_EW_Multicast) {
+TEST_F(InterMeshDual2x4FabricFixture, MultiMesh_EW_Multicast) {
     std::vector<FabricNodeId> mcast_req_nodes = {
         FabricNodeId(MeshId{0}, 1), FabricNodeId(MeshId{0}, 2), FabricNodeId(MeshId{0}, 5), FabricNodeId(MeshId{0}, 6)};
     std::vector<FabricNodeId> mcast_start_nodes = {
@@ -95,7 +83,7 @@ TEST_F(InterMeshDual2x4FabricFixture, DISABLED_MultiMesh_EW_Multicast) {
     }
 }
 
-TEST_F(InterMeshDual2x4FabricFixture, DISABLED_MultiMesh_EW_MultiHopMulticast) {
+TEST_F(InterMeshDual2x4FabricFixture, MultiMesh_EW_MultiHopMulticast) {
     std::vector<FabricNodeId> mcast_req_nodes = {
         FabricNodeId(MeshId{0}, 1), FabricNodeId(MeshId{0}, 2), FabricNodeId(MeshId{0}, 5), FabricNodeId(MeshId{0}, 6)};
     std::vector<FabricNodeId> mcast_start_nodes = {
@@ -122,7 +110,7 @@ TEST_F(InterMeshDual2x4FabricFixture, DISABLED_MultiMesh_EW_MultiHopMulticast) {
     }
 }
 
-TEST_F(InterMeshDual2x4FabricFixture, DISABLED_MultiMesh_EW_MulticastWithTurns) {
+TEST_F(InterMeshDual2x4FabricFixture, MultiMesh_EW_MulticastWithTurns) {
     std::vector<FabricNodeId> mcast_req_nodes = {
         FabricNodeId(MeshId{0}, 1), FabricNodeId(MeshId{0}, 2), FabricNodeId(MeshId{0}, 5), FabricNodeId(MeshId{0}, 6)};
     std::vector<FabricNodeId> mcast_start_nodes = {

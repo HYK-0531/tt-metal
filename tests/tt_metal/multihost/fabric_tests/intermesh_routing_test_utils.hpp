@@ -27,7 +27,9 @@ void InterMeshLineMcast(
     FabricNodeId mcast_sender_node,
     FabricNodeId mcast_start_node,
     const std::vector<McastRoutingInfo>& mcast_routing_info,
-    const std::vector<FabricNodeId>& mcast_group_node_ids);
+    const std::vector<FabricNodeId>& mcast_group_node_ids,
+    uint32_t sender_rank = 0,
+    uint32_t receiver_rank = 1);
 
 std::map<FabricNodeId, chip_id_t> get_physical_chip_mapping_from_eth_coords_mapping(
     const std::vector<std::vector<eth_coord_t>>& mesh_graph_eth_coords, uint32_t local_mesh_id);

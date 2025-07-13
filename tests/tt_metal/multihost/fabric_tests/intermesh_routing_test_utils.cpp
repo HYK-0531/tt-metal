@@ -299,7 +299,8 @@ void run_mcast_sender_step(
     FabricNodeId mcast_sender_node,
     FabricNodeId mcast_start_node,
     const std::vector<McastRoutingInfo>& mcast_routing_info,
-    const std::vector<FabricNodeId>& mcast_group_node_ids) {
+    const std::vector<FabricNodeId>& mcast_group_node_ids,
+    uint32_t recv_rank) {
     // The following code runs on the sender host
     auto& control_plane = tt::tt_metal::MetalContext::instance().get_control_plane();
     auto distributed_context = tt_metal::distributed::multihost::DistributedContext::get_current_world();
@@ -315,8 +316,8 @@ void run_mcast_sender_step(
     uint32_t time_seed = std::chrono::system_clock::now().time_since_epoch().count();
     distributed_context->send(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&time_seed), sizeof(time_seed)),
-        tt::tt_metal::distributed::multihost::Rank{1},  // send to receiver host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange seed over tag 0
+        tt::tt_metal::distributed::multihost::Rank{recv_rank},  // send to receiver host
+        tt::tt_metal::distributed::multihost::Tag{0}            // exchange seed over tag 0
     );
     // Randomly select a mcast sender device
     auto sender_phys_id = control_plane.get_physical_chip_id_from_fabric_node_id(mcast_sender_node);
@@ -331,8 +332,8 @@ void run_mcast_sender_step(
     CoreCoord receiver_logical_core = {0, 0};
     distributed_context->recv(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&receiver_logical_core), sizeof(receiver_logical_core)),
-        tt::tt_metal::distributed::multihost::Rank{1},  // receive from receiver host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange logical core over tag 0
+        tt::tt_metal::distributed::multihost::Rank{recv_rank},  // receive from receiver host
+        tt::tt_metal::distributed::multihost::Tag{0}            // exchange logical core over tag 0
     );
 
     CoreCoord receiver_virtual_core = sender_device->worker_core_from_logical_core(receiver_logical_core);
@@ -369,8 +370,9 @@ void run_mcast_sender_step(
 
     std::vector<uint32_t> mcast_header_rtas(4, 0);
     for (const auto& routing_info : mcast_routing_info) {
-        mcast_header_rtas[static_cast<uint32_t>(
-            control_plane.routing_direction_to_eth_direction(routing_info.mcast_dir))] = routing_info.num_mcast_hops;
+        // Increment hop count to account for the mcast start node
+        mcast_header_rtas[static_cast<uint32_t>(control_plane.routing_direction_to_eth_direction(
+            routing_info.mcast_dir))] = routing_info.num_mcast_hops + 1;
     }
 
     sender_runtime_args.insert(sender_runtime_args.end(), mcast_header_rtas.begin(), mcast_header_rtas.end());
@@ -399,23 +401,26 @@ void run_mcast_sender_step(
     // Send test results to the receiver host
     distributed_context->send(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&sender_bytes), sizeof(sender_bytes)),
-        tt::tt_metal::distributed::multihost::Rank{1},  // send to receiver host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange test results over tag 0
+        tt::tt_metal::distributed::multihost::Rank{recv_rank},  // send to receiver host
+        tt::tt_metal::distributed::multihost::Tag{0}            // exchange test results over tag 0
     );
     // Request test results from all devices on the receiver host and ensure that they match
     for (std::size_t recv_idx = 0; recv_idx < mcast_group_node_ids.size() + 1; recv_idx++) {
         uint64_t recv_bytes = 0;
         distributed_context->recv(
             tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&recv_bytes), sizeof(recv_bytes)),
-            tt::tt_metal::distributed::multihost::Rank{1},  // recv from receiver host
-            tt::tt_metal::distributed::multihost::Tag{0}    // exchange test results over tag 0
+            tt::tt_metal::distributed::multihost::Rank{recv_rank},  // recv from receiver host
+            tt::tt_metal::distributed::multihost::Tag{0}            // exchange test results over tag 0
         );
         EXPECT_EQ(sender_bytes, recv_bytes);
     }
 }
 
 void run_mcast_recv_step(
-    BaseFabricFixture* fixture, FabricNodeId mcast_start_node, const std::vector<FabricNodeId>& mcast_group_node_ids) {
+    BaseFabricFixture* fixture,
+    FabricNodeId mcast_start_node,
+    const std::vector<FabricNodeId>& mcast_group_node_ids,
+    uint32_t sender_rank) {
     // The following code runs on the receiver host
     auto& control_plane = tt::tt_metal::MetalContext::instance().get_control_plane();
     auto distributed_context = tt_metal::distributed::multihost::DistributedContext::get_current_world();
@@ -430,8 +435,8 @@ void run_mcast_recv_step(
     uint32_t time_seed = 0;
     distributed_context->recv(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&time_seed), sizeof(time_seed)),
-        tt::tt_metal::distributed::multihost::Rank{0},  // recv from sender host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange seed over tag 0
+        tt::tt_metal::distributed::multihost::Rank{sender_rank},  // recv from sender host
+        tt::tt_metal::distributed::multihost::Tag{0}              // exchange seed over tag 0
     );
     // Query the mcast start device
     auto mcast_start_phys_id = control_plane.get_physical_chip_id_from_fabric_node_id(mcast_start_node);
@@ -446,8 +451,8 @@ void run_mcast_recv_step(
     // Send the randomized receiver core to the sender host, so it can send packets to the correct destination
     distributed_context->send(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&receiver_logical_core), sizeof(receiver_logical_core)),
-        tt::tt_metal::distributed::multihost::Rank{0},  // send to sender host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange logical core over tag 0
+        tt::tt_metal::distributed::multihost::Rank{sender_rank},  // send to sender host
+        tt::tt_metal::distributed::multihost::Tag{0}              // exchange logical core over tag 0
     );
     // Query the mcast group devices
     std::vector<tt_metal::IDevice*> mcast_group_devices = {};
@@ -486,8 +491,8 @@ void run_mcast_recv_step(
     uint64_t sender_bytes = 0;
     distributed_context->recv(
         tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&sender_bytes), sizeof(sender_bytes)),
-        tt::tt_metal::distributed::multihost::Rank{0},  // recv from sender host
-        tt::tt_metal::distributed::multihost::Tag{0}    // exchange tests results over tag 0
+        tt::tt_metal::distributed::multihost::Rank{sender_rank},  // recv from sender host
+        tt::tt_metal::distributed::multihost::Tag{0}              // exchange tests results over tag 0
     );
 
     for (auto& [dev, _] : recv_programs) {
@@ -506,8 +511,8 @@ void run_mcast_recv_step(
             ((uint64_t)receiver_status[TT_FABRIC_WORD_CNT_INDEX + 1] << 32) | receiver_status[TT_FABRIC_WORD_CNT_INDEX];
         distributed_context->send(
             tt::stl::Span<std::byte>(reinterpret_cast<std::byte*>(&receiver_bytes), sizeof(receiver_bytes)),
-            tt::tt_metal::distributed::multihost::Rank{0},  // send to sender host
-            tt::tt_metal::distributed::multihost::Tag{0}    // exchange test results over tag 0
+            tt::tt_metal::distributed::multihost::Rank{sender_rank},  // send to sender host
+            tt::tt_metal::distributed::multihost::Tag{0}              // exchange test results over tag 0
         );
         EXPECT_EQ(sender_bytes, receiver_bytes);
     }
@@ -527,13 +532,16 @@ void InterMeshLineMcast(
     FabricNodeId mcast_sender_node,
     FabricNodeId mcast_start_node,
     const std::vector<McastRoutingInfo>& mcast_routing_info,
-    const std::vector<FabricNodeId>& mcast_group_node_ids) {
+    const std::vector<FabricNodeId>& mcast_group_node_ids,
+    uint32_t sender_rank,
+    uint32_t receiver_rank) {
     auto distributed_context = tt_metal::distributed::multihost::DistributedContext::get_current_world();
 
-    if (*(distributed_context->rank()) == 0) {
-        run_mcast_sender_step(fixture, mcast_sender_node, mcast_start_node, mcast_routing_info, mcast_group_node_ids);
+    if (*(distributed_context->rank()) == sender_rank) {
+        run_mcast_sender_step(
+            fixture, mcast_sender_node, mcast_start_node, mcast_routing_info, mcast_group_node_ids, receiver_rank);
     } else {
-        run_mcast_recv_step(fixture, mcast_start_node, mcast_group_node_ids);
+        run_mcast_recv_step(fixture, mcast_start_node, mcast_group_node_ids, sender_rank);
     }
 }
 

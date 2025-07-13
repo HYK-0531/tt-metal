@@ -414,9 +414,9 @@ Tensor all_gather_async_impl(
 
 Tensor all_gather_async_impl(
     const Tensor& input_tensor,
-    Tensor& persistent_output_buffer,
     const uint32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
+    const std::optional<ttnn::Tensor>& persistent_output_buffer,
     const uint32_t num_links,
     const std::optional<MemoryConfig>& memory_config,
     const ttnn::ccl::Topology topology,
@@ -531,9 +531,9 @@ Tensor all_gather_async(
 
 Tensor all_gather_async(
     const Tensor& input_tensor,
-    Tensor& persistent_output_buffer,
     const uint32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
+    const std::optional<ttnn::Tensor>& persistent_output_buffer,
     const uint32_t num_links,
     const std::optional<MemoryConfig>& memory_config,
     const ttnn::ccl::Topology topology,
@@ -543,9 +543,9 @@ Tensor all_gather_async(
 
     return all_gather_async_impl(
         input_tensor,
-        persistent_output_buffer,
         dim,
         multi_device_global_semaphore,
+        persistent_output_buffer,
         num_links,
         memory_config,
         topology,

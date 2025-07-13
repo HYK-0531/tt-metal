@@ -72,9 +72,9 @@ void bind_all_gather_async(pybind11::module& module, const ccl_operation_t& oper
         ttnn::pybind_overload_t{
             [](const ccl_operation_t& self,
                const ttnn::Tensor& input_tensor,
-               ttnn::Tensor& persistent_output_buffer,
                const int32_t dim,
                const GlobalSemaphoreArg& multi_device_global_semaphore,
+               const std::optional<ttnn::Tensor>& persistent_output_buffer,
                const uint32_t num_links,
                const std::optional<ttnn::MemoryConfig>& memory_config,
                const ttnn::ccl::Topology topology,
@@ -82,9 +82,9 @@ void bind_all_gather_async(pybind11::module& module, const ccl_operation_t& oper
                std::optional<uint32_t> cluster_axis) -> ttnn::Tensor {
                 return self(
                     input_tensor,
-                    persistent_output_buffer,
                     dim,
                     multi_device_global_semaphore.get(),
+                    persistent_output_buffer,
                     num_links,
                     memory_config,
                     topology,
@@ -92,10 +92,10 @@ void bind_all_gather_async(pybind11::module& module, const ccl_operation_t& oper
                     cluster_axis);
             },
             py::arg("input_tensor"),
-            py::arg("persistent_output_buffer"),
             py::arg("dim"),
             py::arg("multi_device_global_semaphore"),
             py::kw_only(),
+            py::arg("persistent_output_buffer") = std::nullopt,
             py::arg("num_links") = 1,
             py::arg("memory_config") = std::nullopt,
             py::arg("topology") = ttnn::ccl::Topology::Ring,

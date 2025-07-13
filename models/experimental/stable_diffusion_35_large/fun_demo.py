@@ -20,6 +20,7 @@ from .tt.parallel_config import StableDiffusionParallelManager
         #        ("medium", 512, 512, 4.5, 40, 333, 1024),
         #        ("medium", 1024, 1024, 4.5, 40, 333, 4096),
         #        ("large", 512, 512, 3.5, 28, 333, 1024),
+        # ("large", 1024, 1024, 3.5, 28),  # , 333, 4096),
         ("large", 1024, 1024, 3.5, 28),  # , 333, 4096),
     ],
 )

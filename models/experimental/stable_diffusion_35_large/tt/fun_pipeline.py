@@ -54,9 +54,20 @@ class TtStableDiffusion3Pipeline:
         self.fun_vae_params = TtVaeDecoderParameters.from_torch(
             torch_vae_decoder=self._vae.decoder,
             dtype=ttnn.bfloat16,
-            device=mesh_device,
-            core_grid=mesh_device.core_grid,
+            device=parallel_manager.submesh_devices[0],  # parallel_manager.mesh_device,
+            core_grid=parallel_manager.submesh_devices[0].core_grid,  # parallel_manager.mesh_device.core_grid,
         )
+        logger.info(f"self.parallel_manager.submesh_devices: {parallel_manager.submesh_devices[0]}")
+
+        # inp = torch.load("torch_latent.pt").permute(0, 3, 1, 2)
+        # logger.info(f"data shape :{inp.shape}")
+        # tt_inp = ttnn.from_torch(inp.permute(0, 2, 3, 1),
+        #                        dtype=ttnn.bfloat16,
+        #                         device=self.fun_vae_params.conv_in.device)
+        # logger.info(" sd vae start...")
+        # tt_out = sd_vae_decode(tt_inp, self.fun_vae_params, None)
+        # logger.info(" tt vae const done ..")
+        # exit(0)
         torch_transformer = SD3Transformer2DModel.from_pretrained(
             checkpoint,
             subfolder="transformer",
@@ -295,7 +306,7 @@ class TtStableDiffusion3Pipeline:
             self._num_channels_latents,
         )
 
-        print(f"Latents shape: {latents_shape}")
+        logger.info(f"Latents shape: {latents_shape}")
 
         logger.info("encoding prompts...")
 
@@ -438,16 +449,17 @@ class TtStableDiffusion3Pipeline:
             assert isinstance(image, torch.Tensor)
 
         image_decoding_end_time = time.time()
-        print(" TT decode")
+        logger.info(" TT decode")
 
         # ttvae
+        ttnn.synchronize_device(self.fun_vae_params.conv_in.device)
         torch.save(latents, "torch_latent.pt")
         tt_latent = ttnn.from_torch(
-            latents.permute([0, 2, 3, 1]), dtype=ttnn.bfloat16, device=self.parallel_manager.submesh_devices[0]
+            latents.permute([0, 2, 3, 1]), dtype=ttnn.bfloat16, device=self.fun_vae_params.conv_in.device
         )
-        print("sd_var_decode")
+        logger.info("sd_var_decode")
         tt_img = sd_vae_decode(tt_latent, self.fun_vae_params, None)
-        print("sd to torch")
+        logger.info("sd to torch")
         torch_img = ttnn.to_torch(tt_img, dtyp=ttnn.bfloat16)
         torch_img = torch_img.permute([0, 3, 1, 2])
         torch_img = self._image_processor.postprocess(torch_img, output_type="pt")

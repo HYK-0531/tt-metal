@@ -30,6 +30,7 @@ struct ReduceScatterMinimalAsync {
     const uint32_t dim;
     const uint32_t num_links;
     const uint32_t ring_size;
+    const MemoryConfig intermediate_mem_config;
     const MemoryConfig output_mem_config;
     const ccl::Topology topology;
     const std::vector<GlobalSemaphore> semaphore;
@@ -41,6 +42,7 @@ struct ReduceScatterMinimalAsync {
         uint32_t dim,
         uint32_t num_links,
         uint32_t ring_size,
+        MemoryConfig intermediate_mem_config,
         MemoryConfig output_mem_config,
         ccl::Topology topology,
         std::vector<GlobalSemaphore> semaphore,
@@ -50,6 +52,7 @@ struct ReduceScatterMinimalAsync {
         dim(dim),
         num_links(num_links),
         ring_size(ring_size),
+        intermediate_mem_config(intermediate_mem_config),
         output_mem_config(output_mem_config),
         topology(topology),
         semaphore(semaphore),
@@ -127,11 +130,12 @@ namespace ccl {
 
 Tensor reduce_scatter_minimal_async(
     const Tensor& input_tensor,
-    Tensor& persistent_intermediate_buffer,
-    Tensor& persistent_output_buffer,
     uint32_t dim,
     const std::vector<GlobalSemaphore>& multi_device_global_semaphore,
+    const std::optional<ttnn::Tensor>& persistent_intermediate_buffer = std::nullopt,
+    const std::optional<ttnn::Tensor>& persistent_output_buffer = std::nullopt,
     uint32_t num_links = 1,
+    const std::optional<MemoryConfig>& intermediate_memory_config = std::nullopt,
     const std::optional<MemoryConfig>& memory_config = std::nullopt,
     ttnn::ccl::Topology topology = ttnn::ccl::Topology::Ring,
     std::optional<tt::tt_metal::SubDeviceId> sub_device_id = std::nullopt,

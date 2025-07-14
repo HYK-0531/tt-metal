@@ -67,6 +67,7 @@ struct ReduceScatterMinimalAsync {
         attrs.emplace_back("dim", dim);
         attrs.emplace_back("num_links", num_links);
         attrs.emplace_back("ring_size", ring_size);
+        attrs.emplace_back("intermediate_mem_config", intermediate_mem_config);
         attrs.emplace_back("output_mem_config", output_mem_config);
         attrs.emplace_back("topology", topology);
         attrs.emplace_back("semaphore", semaphore);

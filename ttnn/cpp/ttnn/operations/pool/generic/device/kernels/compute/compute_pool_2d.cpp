@@ -38,9 +38,9 @@ void MAIN {
     constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(11);
     constexpr uint32_t out_cb_id = get_compile_time_arg_val(12);
     constexpr bool one_scalar_per_core = get_compile_time_arg_val(13);
-    constexpr uint32_t bf16_scalar = get_compile_time_arg_val(14);
+    constexpr uint32_t bf32_scalar = get_compile_time_arg_val(14);
 
-    DPRINT << "bf16_scalar: " << bf16_scalar << ENDL();
+    DPRINT << "bf32_scalar: " << bf32_scalar << ENDL();
 
     constexpr bool is_partial_tile = in_c < 32;
     static_assert((!is_partial_tile || (in_c == 16)), "Partial tile must have c_dim 16");
@@ -99,7 +99,15 @@ void MAIN {
                     if (chunk == interm_reduction_chunks - 1) {
                         // 3x3 kernel -> 1/9 = 1038323257
                         // 9x9 kernel -> 1/81 = 1011500424
-                        mul_unary_tile(math_tile_idx, bf16_scalar);
+                        if constexpr (one_scalar_per_core) {
+                            mul_unary_tile(math_tile_idx, bf32_scalar);
+                        } else {
+                            volatile tt_l1_ptr uint32_t* scalar_ptr;
+                            UNPACK(uint64_t scalar_address = get_local_cb_interface(curr_scalar_cb_id).fifo_rd_ptr);
+                            UNPACK(scalar_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(scalar_address));
+                            UNPACK(DPRINT << "scalar: " << *scalar_ptr << ENDL());
+                            mul_unary_tile(math_tile_idx, *scalar_ptr);
+                        }
                     }
                 }
                 cb_pop_front(curr_in_cb_id, 1);

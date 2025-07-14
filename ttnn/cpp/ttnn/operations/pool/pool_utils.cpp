@@ -188,7 +188,7 @@ uint32_t calculate_L1_usage(
     bool split_reader = true;
 
     // scalar CB as coefficient of reduce
-    uint32_t in_scalar_cb_pagesize = tile_size(in_df);
+    uint32_t in_scalar_cb_pagesize = 1;
     uint32_t in_scalar_cb_npages = 1 * multi_buffering_factor;
     uint32_t in_scalar_cb_size_0 = in_scalar_cb_npages * in_scalar_cb_pagesize;
     uint32_t in_scalar_cb_size_1 = 0;

@@ -152,9 +152,9 @@ FORCE_INLINE void fill_scalar(
     // second half of the condition counter == scalar_start + 1 || counter == scalar_start + 3.
     if (counter < scalar_end && (counter == scalar_start || counter == scalar_start + 1 ||
                                  (split_reader && (counter == scalar_start + 2 || counter == scalar_start + 3)))) {
-        DPRINT << "scalar_value: " << scalar_value << " counter: " << counter << " scalar_start: " << scalar_start
-               << " scalar_end: " << scalar_end << " scalar_index: " << scalar_index << ENDL();
-        fill_with_val(get_write_ptr(in_scalar_cb_id), TILE_WIDTH, scalar_value, false);
+        uint64_t scalar_address = get_write_ptr(in_scalar_cb_id);
+        volatile tt_l1_ptr uint32_t* scalar_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(scalar_address);
+        *scalar_ptr = scalar_value;
     }
     cb_push_back(in_scalar_cb_id, 1);
     counter++;

@@ -104,7 +104,7 @@ def test_moe_gate(hf_config, device, batch_size=32):
     tt_scores_mask = ttnn.reshape(tt_scores_mask, (1, 1, batch_size, 256))
     tt_scores_with_bias = ttnn.mul(tt_scores_with_bias, tt_scores_mask, memory_config=ttnn.L1_MEMORY_CONFIG)
     ttnn.deallocate(tt_scores_mask)
-    topk_experts = reference_model.top_k
+    topk_experts = hf_config.num_experts_per_tok
     tt_top8_temp_values, tt_top8_experts_indices = ttnn.topk(
         tt_scores_with_bias, k=topk_experts, dim=3, largest=True, sorted=True
     )
@@ -130,10 +130,7 @@ def test_moe_gate(hf_config, device, batch_size=32):
     ttnn.deallocate(tt_norm_eps)
 
     tt_expert_scale = ttnn.from_torch(
-        torch.tensor([reference_model.routed_scaling_factor])
-        .repeat(batch_size, topk_experts)
-        .unsqueeze(0)
-        .unsqueeze(0),
+        torch.tensor([hf_config.routed_scaling_factor]).repeat(batch_size, topk_experts).unsqueeze(0).unsqueeze(0),
         device=device,
         dtype=ttnn.bfloat16,
         memory_config=ttnn.DRAM_MEMORY_CONFIG,

@@ -23,10 +23,10 @@ from tests.ttnn.unit_tests.operations.ccl.test_all_to_all_combine_t3000 import (
     "mesh_shape, mesh_device", [pytest.param((4, 8), (4, 8), id="4x8_grid")], indirect=["mesh_device"]
 )
 @pytest.mark.parametrize("axis", [0, 1])
-@pytest.mark.parametrize("batches_per_device", [8])
+@pytest.mark.parametrize("batches_per_device", [32])
 @pytest.mark.parametrize("experts_per_device", [8])
 @pytest.mark.parametrize("select_experts_k", [8])
-@pytest.mark.parametrize("hidden_size", [7000])
+@pytest.mark.parametrize("hidden_size", [7168])
 @pytest.mark.parametrize("seq", [1, 2])
 @pytest.mark.parametrize("num_iters", [2])
 @pytest.mark.parametrize("num_links", [1])
@@ -55,7 +55,7 @@ def test_all_to_all_combine_no_trace(
         pytest.skip("Prefill needs to run in DRAM")
 
     devices = mesh_shape[0] * mesh_shape[1]
-    batch = batches_per_device * devices
+    batch = batches_per_device * mesh_shape[0]
     experts = experts_per_device * devices
 
     run_all_to_all_combine_test(

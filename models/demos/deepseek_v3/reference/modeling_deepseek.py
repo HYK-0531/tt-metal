@@ -440,16 +440,21 @@ class DeepseekV3MoE(nn.Module):
             self.ep_size = 1
             self.experts_per_rank = config.n_routed_experts
             self.ep_rank = 0
-            self.experts = nn.ModuleList(
-                [
-                    DeepseekV3MLP(config, intermediate_size=config.moe_intermediate_size)
-                    for i in range(config.n_routed_experts)
-                ]
-            )
+            # Create one template expert first
+            template_expert = DeepseekV3MLP(config, intermediate_size=config.moe_intermediate_size)
+
+            # Create all experts with same weights
+            self.experts = nn.ModuleList([])
+            for i in range(config.n_routed_experts):
+                expert = DeepseekV3MLP(config, intermediate_size=config.moe_intermediate_size)
+                # Copy weights from template expert
+                expert.load_state_dict(template_expert.state_dict())
+                self.experts.append(expert)
         self.gate = MoEGate(config)
         if config.n_shared_experts is not None:
             intermediate_size = config.moe_intermediate_size * config.n_shared_experts
             self.shared_experts = DeepseekV3MLP(config=config, intermediate_size=intermediate_size)
+        self.training = False
 
     def forward(self, hidden_states):
         identity = hidden_states
@@ -523,7 +528,7 @@ class DeepseekV3MoE(nn.Module):
         final_out = (
             new_x.view(*topk_ids.shape, -1)
             .type(topk_weight.dtype)
-            .mul_(topk_weight.unsqueeze(dim=-1))
+            # .mul_(topk_weight.unsqueeze(dim=-1))
             .sum(dim=1)
             .type(new_x.dtype)
         )

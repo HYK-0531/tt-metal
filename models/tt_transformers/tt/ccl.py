@@ -174,7 +174,7 @@ class TT_CCL:
 
     def get_rs_persistent_buffers(self, persistent_buffer_keys):
         if self.persistent_buffers_configuration is None:
-            return None
+            return (None, None)
 
         assert (
             persistent_buffer_keys in self.rs_persistent_buffers
@@ -239,6 +239,7 @@ def tt_all_reduce(
             dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_rs_semaphore_handles(),
             num_links=num_reduce_scatter_links,
+            intermediate_memory_config=rs_intermediate_memory_config,
             memory_config=rs_output_memory_config,
             topology=topology,
             subdevice_id=tt_ccl.worker_sub_device_id,
@@ -315,6 +316,7 @@ def tt_all_reduce(
             num_links=num_reduce_scatter_links,
             cluster_axis=cluster_axis,
             mesh_device=mesh_device,
+            intermediate_memory_config=rs_intermediate_memory_config,
             memory_config=rs_output_memory_config,
             topology=topology,
             subdevice_id=tt_ccl.worker_sub_device_id,

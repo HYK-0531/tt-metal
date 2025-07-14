@@ -1561,7 +1561,7 @@ std::unique_ptr<Program> create_and_compile_tt_fabric_program(IDevice* device) {
     const auto num_enabled_eth_cores = edm_builders.size();
     const auto num_enabled_risc_cores =
         edm_builders.begin()->second.get_configured_risc_count();  // same across all eth cores
-    size_t num_local_fabric_routers = num_enabled_risc_cores * num_enabled_eth_cores;
+    size_t num_local_fabric_routers = num_enabled_eth_cores;
     for (auto& [eth_chan, edm_builder] : edm_builders) {
         edm_builder.set_wait_for_host_signal(true);
         const std::vector<uint32_t> rt_args = edm_builder.get_runtime_args();

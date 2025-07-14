@@ -1705,22 +1705,32 @@ void kernel_main() {
     const size_t local_sender_channel_0_connection_buffer_index_addr =
         local_sender_channel_0_connection_buffer_index_id;
     //  initialize the statically allocated "semaphores"
-    *reinterpret_cast<volatile uint32_t*>(local_sender_channel_0_connection_semaphore_addr) = 0;
-    *reinterpret_cast<volatile uint32_t*>(local_sender_channel_0_connection_buffer_index_addr) = 0;
-    *sender0_worker_semaphore_ptr = 0;
+    if constexpr (is_sender_channel_serviced[0]) {
+        *reinterpret_cast<volatile uint32_t*>(local_sender_channel_0_connection_semaphore_addr) = 0;
+        *reinterpret_cast<volatile uint32_t*>(local_sender_channel_0_connection_buffer_index_addr) = 0;
+        *sender0_worker_semaphore_ptr = 0;
+    }
     if constexpr (is_2d_fabric) {
-        *reinterpret_cast<volatile uint32_t*>(local_sender_channel_1_connection_semaphore_addr) = 0;
-        *reinterpret_cast<volatile uint32_t*>(local_sender_channel_1_connection_buffer_index_id) = 0;
-        *sender1_worker_semaphore_ptr = 0;
-        *reinterpret_cast<volatile uint32_t*>(local_sender_channel_2_connection_semaphore_addr) = 0;
-        *reinterpret_cast<volatile uint32_t*>(local_sender_channel_2_connection_buffer_index_id) = 0;
-        *sender2_worker_semaphore_ptr = 0;
-        *reinterpret_cast<volatile uint32_t*>(local_sender_channel_3_connection_semaphore_addr) = 0;
-        *reinterpret_cast<volatile uint32_t*>(local_sender_channel_3_connection_buffer_index_id) = 0;
-        *sender3_worker_semaphore_ptr = 0;
-        *reinterpret_cast<volatile uint32_t*>(local_sender_channel_4_connection_semaphore_addr) = 0;
-        *reinterpret_cast<volatile uint32_t*>(local_sender_channel_4_connection_buffer_index_id) = 0;
-        *sender4_worker_semaphore_ptr = 0;
+        if constexpr (is_sender_channel_serviced[1]) {
+            *reinterpret_cast<volatile uint32_t*>(local_sender_channel_1_connection_semaphore_addr) = 0;
+            *reinterpret_cast<volatile uint32_t*>(local_sender_channel_1_connection_buffer_index_id) = 0;
+            *sender1_worker_semaphore_ptr = 0;
+        }
+        if constexpr (is_sender_channel_serviced[2]) {
+            *reinterpret_cast<volatile uint32_t*>(local_sender_channel_2_connection_semaphore_addr) = 0;
+            *reinterpret_cast<volatile uint32_t*>(local_sender_channel_2_connection_buffer_index_id) = 0;
+            *sender2_worker_semaphore_ptr = 0;
+        }
+        if constexpr (is_sender_channel_serviced[3]) {
+            *reinterpret_cast<volatile uint32_t*>(local_sender_channel_3_connection_semaphore_addr) = 0;
+            *reinterpret_cast<volatile uint32_t*>(local_sender_channel_3_connection_buffer_index_id) = 0;
+            *sender3_worker_semaphore_ptr = 0;
+        }
+        if constexpr (is_sender_channel_serviced[4]) {
+            *reinterpret_cast<volatile uint32_t*>(local_sender_channel_4_connection_semaphore_addr) = 0;
+            *reinterpret_cast<volatile uint32_t*>(local_sender_channel_4_connection_buffer_index_id) = 0;
+            *sender4_worker_semaphore_ptr = 0;
+        }
     }
 
     *edm_status_ptr = tt::tt_fabric::EDMStatus::STARTED;
@@ -1908,7 +1918,7 @@ void kernel_main() {
     }
 
     static_assert(!enable_ring_support || !is_2d_fabric, "2D mode does not yet support ring/torus");
-    if constexpr (enable_ring_support) {
+    if constexpr (enable_ring_support && is_receiver_channel_serviced[NUM_USED_RECEIVER_CHANNELS - 1]) {
         if (has_downstream_edm_vc1_buffer_connection) {
             const auto local_sem_address_for_acks =
                 is_2d_fabric ? local_sem_for_acks_from_downstream_edm[NUM_USED_RECEIVER_CHANNELS - 1]
@@ -2081,7 +2091,7 @@ void kernel_main() {
                 connect_ring = (has_downstream_edm_vc0_buffer_connection & (0x1 << eth_chan_directions::NORTH)) != 0;
             }
             if (connect_ring) {
-                if constexpr (is_receiver_channel_serviced[NUM_USED_RECEIVER_CHANNELS - 1]) {
+                if constexpr (enable_ring_support && is_receiver_channel_serviced[NUM_USED_RECEIVER_CHANNELS - 1]) {
                     downstream_edm_noc_interfaces[NUM_USED_RECEIVER_CHANNELS - 1]
                         .template open<true, tt::tt_fabric::worker_handshake_noc>();
                     *downstream_edm_noc_interfaces[NUM_USED_RECEIVER_CHANNELS - 1].from_remote_buffer_free_slots_ptr =

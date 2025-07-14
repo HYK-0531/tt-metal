@@ -109,8 +109,6 @@ void ReduceScatterMinimalAsync::validate_with_output_tensors(
         semaphore.size());
 }
 
-// TODO: (GR) Creating intermediate buffer breaks for sharded input (since output and intermediate mem_configs need to
-// be different), could pass in intermediate mem config though
 std::vector<ttnn::TensorSpec> ReduceScatterMinimalAsync::compute_output_specs(
     const std::vector<Tensor>& input_tensors) const {
     const auto& input_tensor = input_tensors[0];

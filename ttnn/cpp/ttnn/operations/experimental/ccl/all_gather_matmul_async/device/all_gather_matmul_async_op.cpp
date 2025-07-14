@@ -245,13 +245,19 @@ std::vector<ttnn::Tensor> all_gather_matmul_async(
 
     std::vector<std::optional<Tensor>> optional_output_tensors = {persistent_output_buffer};
 
+    TT_FATAL(
+        memory_config_ag.has_value() || persistent_output_buffer.has_value(),
+        "At least one of memory_config_ag or persistent_output_buffer must be provided");
+    MemoryConfig ag_output_memory_config =
+        memory_config_ag.has_value() ? memory_config_ag.value() : persistent_output_buffer.value().memory_config();
+
     /* AllGather setup */
     ttnn::AllGatherAsync all_gather_async_struct = ttnn::AllGatherAsync(
         devices,
         dim,
         num_links,
         devices.size(),
-        memory_config_ag.value_or(input_tensor.memory_config()),
+        ag_output_memory_config,
         topology,
         multi_device_global_semaphore,
         sub_device_id,

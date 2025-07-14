@@ -257,33 +257,31 @@ std::vector<ttnn::Tensor> matmul_reduce_scatter_async(
     ttnn::Tensor matmul_out_tensor =
         matmul_struct.create_output_tensors({input_tensor, weight_tensor}, optional_output_tensors)[0];
 
-    return {};
-
     /* ReduceScatter setup */
-    // ttnn::ReduceScatterMinimalAsync reduce_scatter_minimal_async_struct = ttnn::ReduceScatterMinimalAsync(
-    //     devices,
-    //     dim,
-    //     num_links,
-    //     devices.size(),
-    //     persistent_intermediate_buffer.memory_config(),
-    //     memory_config_rs.value_or(persistent_output_buffer.memory_config()),
-    //     topology,
-    //     multi_device_global_semaphore,
-    //     sub_device_id);
+    ttnn::ReduceScatterMinimalAsync reduce_scatter_minimal_async_struct = ttnn::ReduceScatterMinimalAsync(
+        devices,
+        dim,
+        num_links,
+        devices.size(),
+        persistent_intermediate_buffer.memory_config(),
+        memory_config_rs.value_or(persistent_output_buffer.memory_config()),
+        topology,
+        multi_device_global_semaphore,
+        sub_device_id);
 
-    // std::vector<ttnn::Tensor> full_output = tt::tt_metal::operation::run(
-    //     ttnn::ccl::matmul_reduce_scatter_async_detail::create_matmul_reduce_scatter_async_struct(
-    //         /* Reduce Scatter Params */
-    //         reduce_scatter_minimal_async_struct,
-    //         /* Matmul params */
-    //         matmul_struct,
-    //         /* Fusion params */
-    //         reduce_scatter_core_grid_offset,
-    //         devices),
-    //     {input_tensor, weight_tensor},
-    //     optional_input_tensors,
-    //     optional_output_tensors);
-    // return std::vector<ttnn::Tensor>{full_output.at(0), full_output.at(2)};
+    std::vector<ttnn::Tensor> full_output = tt::tt_metal::operation::run(
+        ttnn::ccl::matmul_reduce_scatter_async_detail::create_matmul_reduce_scatter_async_struct(
+            /* Reduce Scatter Params */
+            reduce_scatter_minimal_async_struct,
+            /* Matmul params */
+            matmul_struct,
+            /* Fusion params */
+            reduce_scatter_core_grid_offset,
+            devices),
+        {input_tensor, weight_tensor},
+        optional_input_tensors,
+        optional_output_tensors);
+    return std::vector<ttnn::Tensor>{full_output.at(0), full_output.at(2)};
 }
 
 }  // namespace ccl

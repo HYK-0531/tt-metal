@@ -88,7 +88,7 @@ def run_conv(
     transpose_shards=False,
     fp32_accum=False,
     packer_l1_acc=False,
-    input_layout=ttnn.ROW_MAJOR_LAYOUT,
+    input_layout=ttnn.TILE_LAYOUT,
     input_dtype=None,
     output_layout=ttnn.TILE_LAYOUT,
     deallocate_activation=False,
@@ -3913,3 +3913,91 @@ def test_conv2d_act_dealloc(
         dtype=output_dtype,
     )
     assert not tt_input_tensor.is_allocated(), "Input tensor is allocated"
+
+@pytest.mark.parametrize("device_params", [{"l1_small_size": 16384}], indirect=True)
+@pytest.mark.parametrize(
+    "batch_size, input_channels , output_channels, input_height, input_width, filter_height, filter_width, stride_h, stride_w, pad_h, pad_w, shard_layout, config_override",
+    (
+        # (6 , 3 , 64 , 384 , 640 , 7 , 7 , 2 , 2 , 3 , 3 , HS, {"act_block_h": 32}),
+        # (6 , 64 , 64 , 96 , 160 , 1 , 1 , 1 , 1 , 0 , 0 , HS, None),
+        # (6 , 64 , 64 , 96 , 160 , 3 , 3 , 1 , 1 , 1 , 1 , HS, None),
+        # (6 , 64 , 256 , 96 , 160 , 1 , 1 , 1 , 1 , 0 , 0 , HS, None),
+        # (6 , 256 , 64 , 96 , 160 , 1 , 1 , 1 , 1 , 0 , 0 , HS, None),
+        # (6 , 256 , 128 , 96 , 160 , 1 , 1 , 1 , 1 , 0 , 0 , HS, None),
+        # (6 , 128 , 128 , 96 , 160 , 3 , 3 , 2 , 2 , 1 , 1 , HS, None),
+        # (6 , 128 , 512 , 48 , 80 , 1 , 1 , 1 , 1 , 0 , 0 , HS, None),
+        (6 , 256 , 512 , 96 , 160 , 1 , 1 , 2 , 2 , 0 , 0 , BS, None),
+        # (6 , 512 , 256 , 48 , 80 , 1 , 1 , 1 , 1 , 0 , 0 , HS, None),
+        # (6 , 256 , 256 , 48 , 80 , 3 , 3 , 2 , 2 , 1 , 1 , HS, None),
+        # (6 , 256 , 1024 , 24 , 40 , 1 , 1 , 1 , 1 , 0 , 0 , HS, None),
+        # (6 , 512 , 1024 , 48 , 80 , 1 , 1 , 2 , 2 , 0 , 0 , BS, None),
+        # (6 , 1024 , 256 , 24 , 40 , 1 , 1 , 1 , 1 , 0 , 0 , HS, None),
+        # (6 , 256 , 256 , 24 , 40 , 3 , 3 , 1 , 1 , 1 , 1 , HS, None),
+        # (6 , 1024 , 512 , 24 , 40 , 1 , 1 , 1 , 1 , 0 , 0 , HS, None),
+        # (6 , 512 , 512 , 24 , 40 , 3 , 3 , 2 , 2 , 1 , 1 , BS, None),
+        # (6 , 512 , 2048 , 12 , 20 , 1 , 1 , 1 , 1 , 0 , 0 , BS, None),
+        # (6 , 1024 , 2048 , 24 , 40 , 1 , 1 , 2 , 2 , 0 , 0 , BS, None),
+        # (6 , 2048 , 512 , 12 , 20 , 1 , 1 , 1 , 1 , 0 , 0 , BS, None),
+        # (6 , 512 , 512 , 12 , 20 , 3 , 3 , 1 , 1 , 1 , 1 , BS, None),
+        # (6 , 2048 , 256 , 12 , 20 , 1 , 1 , 1 , 1 , 0 , 0 , HS, None),
+        # (6 , 256 , 256 , 12 , 20 , 3 , 3 , 1 , 1 , 1 , 1 , HS, None),
+
+
+
+    ),
+)
+@pytest.mark.parametrize(
+    "weights_dtype",
+    [ttnn.bfloat8_b],
+)
+@pytest.mark.parametrize(
+    "activations_dtype",
+    [ ttnn.bfloat8_b],
+)
+@pytest.mark.parametrize("math_fidelity", [ttnn.MathFidelity.LoFi])
+@pytest.mark.parametrize("output_layout", [ttnn.TILE_LAYOUT])
+def test_conv_for_vadv2(
+    device,
+    torch_tensor_map,
+    math_fidelity,
+    activations_dtype,
+    weights_dtype,
+    batch_size,
+    output_channels,
+    input_channels,
+    input_height,
+    input_width,
+    filter_height,
+    filter_width,
+    stride_h,
+    stride_w,
+    pad_h,
+    pad_w,
+    shard_layout,
+    config_override,
+    output_layout,
+):
+    if device.core_grid.y == 7:
+        pytest.skip("This test is not supported for N300")
+    run_conv(
+        device,
+        torch_tensor_map,
+        math_fidelity,
+        activations_dtype,
+        weights_dtype,
+        batch_size,
+        output_channels,
+        input_channels,
+        input_height,
+        input_width,
+        filter_height,
+        filter_width,
+        stride_h,
+        stride_w,
+        (pad_h, pad_w),
+        config_override,
+        shard_layout=shard_layout,
+        groups=1,
+        output_layout=output_layout,
+        has_bias=False,
+    )

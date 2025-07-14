@@ -29,31 +29,43 @@ void MAIN {
 
         cb_reserve_back(cb_out, num_tiles_per_cycle);
 
+        // DPRINT << "cb_condition" << ENDL();
+        // DPRINT << TSLICE(tt::CBIndex::c_0, 0, SliceRange::h0_w0_32()) << ENDL();
+
+        // DPRINT << "cb_true" << ENDL();
+        // DPRINT << TSLICE(tt::CBIndex::c_1, 0, SliceRange::h0_w0_32()) << ENDL();
+
+        // DPRINT << "cb_false" << ENDL();
+        // DPRINT << TSLICE(tt::CBIndex::c_2, 0, SliceRange::h0_w0_32()) << ENDL();
+
         tile_regs_acquire();
 
-        copy_tile_to_dst_init_short_with_dt(cb_pre_in1, cb_pre_in2);
+        copy_tile_to_dst_init_short(cb_pre_in1);
         for (uint32_t i = 0; i < num_tiles_per_cycle; ++i) {
             copy_tile(cb_pre_in1, i, i * 2);  // Copy to dst reg 0
         }
-        copy_tile_to_dst_init_short_with_dt(cb_pre_in2, cb_pre_in3);
+        copy_tile_to_dst_init_short(cb_pre_in2);
         for (uint32_t i = 0; i < num_tiles_per_cycle; ++i) {
             copy_tile(cb_pre_in2, i, i * 2 + 1);  // Copy to dst reg 1
         }
-        copy_tile_to_dst_init_short_with_dt(cb_pre_in3, cb_pre_in1);
+        copy_tile_to_dst_init_short(cb_pre_in3);
         for (uint32_t i = 0; i < num_tiles_per_cycle; ++i) {
             copy_tile(cb_pre_in3, i, i * 2 + 2);  // Copy to dst reg 2
             // TODO: Use the where op LLK API here
+            where_tile_init();
+            WHERE_LLK(i * 2, i * 2 + 1, i * 2 + 2);
         }
-        where_tile(0, 1, 2);
-
         tile_regs_commit();
         tile_regs_wait();
 
         for (uint32_t i = 0; i < num_tiles_per_cycle; ++i) {
-            pack_tile(i * 2, cb_out);
+            pack_tile(0, cb_out);
         }
 
         tile_regs_release();
+
+        DPRINT << "cb_out" << ENDL();
+        DPRINT << TSLICE(tt::CBIndex::c_3, 0, SliceRange::h0_w0_32()) << ENDL();
 
         cb_push_back(cb_out, num_tiles_per_cycle);
         cb_pop_front(cb_pre_in1, num_tiles_per_cycle);

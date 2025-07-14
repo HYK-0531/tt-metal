@@ -102,10 +102,19 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
 
     auto* device = predicate_tensor.device();
 
-    auto predicate_data_format = datatype_to_dataformat_converter(predicate_tensor.dtype());
-    auto value_true_data_format = datatype_to_dataformat_converter(value_true_tensor.dtype());
-    auto value_false_data_format = datatype_to_dataformat_converter(value_false_tensor.dtype());
-    auto output_data_format = datatype_to_dataformat_converter(output.dtype());
+    // auto predicate_data_format = datatype_to_dataformat_converter(predicate_tensor.dtype());
+    // auto value_true_data_format = datatype_to_dataformat_converter(value_true_tensor.dtype());
+    // auto value_false_data_format = datatype_to_dataformat_converter(value_false_tensor.dtype());
+    // auto output_data_format = datatype_to_dataformat_converter(output.dtype());
+
+    auto predicate_data_format = datatype_to_dataformat_converter(
+        predicate_tensor.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : predicate_tensor.dtype());
+    auto value_true_data_format = datatype_to_dataformat_converter(
+        value_true_tensor.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : value_true_tensor.dtype());
+    auto value_false_data_format = datatype_to_dataformat_converter(
+        value_false_tensor.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : value_false_tensor.dtype());
+    auto output_data_format =
+        datatype_to_dataformat_converter(output.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : output.dtype());
 
     uint32_t predicate_single_tile_size = tt_metal::detail::TileSize(predicate_data_format);
     uint32_t value_true_single_tile_size = tt_metal::detail::TileSize(value_true_data_format);
@@ -206,6 +215,14 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
     std::vector<uint32_t> compute_kernel_args = {
         num_tiles_per_cycle,
     };
+
+    std::map<std::string, std::string> kernel_defines;
+    kernel_defines["WHERE_LLK"] = "where_tile";
+
+    if (predicate_tensor.dtype() == DataType::FLOAT32) {
+        kernel_defines["WHERE_LLK"] = "where_fp32_tile";
+    }
+
     auto compute_kernel_id = tt_metal::CreateKernel(
         program,
         "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/compute/eltwise_ternary_sfpu_no_bcast.cpp",
@@ -213,7 +230,8 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
         tt_metal::ComputeConfig{
             .fp32_dest_acc_en = fp32_dest_acc_en,
             .unpack_to_dest_mode = unpack_to_dest_mode,
-            .compile_args = compute_kernel_args});
+            .compile_args = compute_kernel_args,
+            .defines = kernel_defines});
 
     auto set_runtime_args = [](Program& program, KernelHandle kernel_id, CoreCoord core, auto&& args) {
         tt_metal::SetRuntimeArgs(program, kernel_id, core, args);

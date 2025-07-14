@@ -18,7 +18,7 @@ Index 64 ( Tile 2 ) -> false tensor
 */
 
 template <bool APPROXIMATION_MODE, int ITERATIONS = 8>
-inline void calculate_where_fp16_b() {
+inline void _calculate_where_fp16_b() {
     constexpr uint dst_tile_size = 32;
 
     sfpi::vFloat output_tensor = 0;
@@ -47,7 +47,7 @@ inline void calculate_where_fp16_b() {
 }
 
 template <bool APPROXIMATION_MODE, int ITERATIONS = 8>
-inline void calculate_where_fp32() {
+inline void _calculate_where_fp32() {
     constexpr uint dst_tile_size = 32;
 
     sfpi::vFloat output_tensor = 0;
@@ -66,6 +66,15 @@ inline void calculate_where_fp32() {
 
         sfpi::dst_reg[0] = output_tensor;
         sfpi::dst_reg++;
+    }
+}
+
+template <bool APPROXIMATION_MODE, uint8_t data_format>
+inline void calculate_where() {
+    if (data_format == 0) {
+        _calculate_where_fp32<APPROXIMATION_MODE>();
+    } else {
+        _calculate_where_fp16_b<APPROXIMATION_MODE>();
     }
 }
 

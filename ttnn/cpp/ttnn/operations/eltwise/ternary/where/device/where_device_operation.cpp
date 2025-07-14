@@ -107,6 +107,8 @@ Tensor WhereDeviceOperation::create_output_tensors(
 tt::stl::hash::hash_t WhereDeviceOperation::compute_program_hash(
     const operation_attributes_t& args, const tensor_args_t& tensor_args) {
     const auto& predicate_tensor = tensor_args.predicate;
+    const auto& value_true = tensor_args.value_true;
+    const auto& value_false = tensor_args.value_false;
     const auto& predicate_shape = predicate_tensor.padded_shape();
 
     auto program_factory = select_program_factory(args, tensor_args);
@@ -115,6 +117,12 @@ tt::stl::hash::hash_t WhereDeviceOperation::compute_program_hash(
         program_factory.index(),
         predicate_tensor.dtype(),
         predicate_tensor.memory_config(),
+        value_true.dtype(),
+        value_true.memory_config(),
+        value_true.dtype(),
+        value_true.memory_config(),
+        value_false.dtype(),
+        value_false.memory_config(),
         predicate_shape.volume());
 
     return hash;

@@ -55,8 +55,8 @@ void bind_reduce_scatter_minimal_async(pybind11::module& module, const ccl_opera
             py::arg("dim"),
             py::arg("multi_device_global_semaphore"),
             py::kw_only(),
-            py::arg("persistent_intermediate_buffer"),
-            py::arg("persistent_output_buffer"),
+            py::arg("persistent_intermediate_buffer"),  // TODO: (GR) Need to have nullopt
+            py::arg("persistent_output_buffer"),        // TODO: (GR) Need to have nullopt
             py::arg("num_links") = 1,
             py::arg("intermediate_memory_config") = std::nullopt,
             py::arg("memory_config") = std::nullopt,

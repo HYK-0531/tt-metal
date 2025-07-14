@@ -316,7 +316,7 @@ class TtCLIPEmbedding:
             input_ids = input_ids[:, : self._max_position_embeddings]
             seq_length = self._max_position_embeddings
 
-        position_ids = torch.arange(0, seq_length).repeat((1, -1))
+        position_ids = torch.arange(seq_length).expand((1, -1))
         position_ids = ttnn.from_torch(position_ids, dtype=ttnn.uint32, layout=ttnn.TILE_LAYOUT, device=device)
 
         input_embeddings = ttnn.embedding(input_ids, self._token_embedding, layout=ttnn.TILE_LAYOUT)

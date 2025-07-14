@@ -432,7 +432,6 @@ void DeviceProfiler::readControlBufferForCore(
 
     const auto& rtoptions = tt::tt_metal::MetalContext::instance().rtoptions();
     if (rtoptions.get_profiler_trace_profiler()) {
-        std::cout << "MOOO:" << core_control_buffers.at(virtual_core)[kernel_profiler::CURRENT_TRACE_ID] << std::endl;
         if (core_control_buffers.at(virtual_core)[kernel_profiler::CURRENT_TRACE_ID] != 0) {
             wasTraceReplay = true;
         }
@@ -499,6 +498,13 @@ void DeviceProfiler::readRiscProfilerResults(
         }
     }
 
+    std::string readTxt = fmt::format(
+        "TRACE PROFILER REGISTER: {}, {}, {}",
+        worker_core.x,
+        worker_core.y,
+        control_buffer[kernel_profiler::CURRENT_TRACE_ID]);
+    ZoneText(readTxt.c_str(), readTxt.size());
+
     chip_id_t device_id = device->id();
 
     const uint32_t coreFlatID =
@@ -530,14 +536,12 @@ void DeviceProfiler::readRiscProfilerResults(
         }
         uint32_t riscType;
 
-        if (rtoptions.get_profiler_trace_profiler() && wasTraceReplay) {
+        if (rtoptions.get_profiler_trace_profiler() && wasTraceReplay && CoreType == HalProgrammableCoreType::TENSIX) {
             riscType = 6;
+        } else if (CoreType == HalProgrammableCoreType::TENSIX) {
+            riscType = riscEndIndex;
         } else {
-            if (CoreType == HalProgrammableCoreType::TENSIX) {
-                riscType = riscEndIndex;
-            } else {
-                riscType = 5;
-            }
+            riscType = 5;
         }
 
         if (bufferEndIndex > 0) {

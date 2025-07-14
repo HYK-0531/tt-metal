@@ -434,8 +434,9 @@ struct profileScopeGuaranteed {
     static_assert(start_index < CUSTOM_MARKERS);
     static_assert(end_index < CUSTOM_MARKERS);
     inline __attribute__((always_inline)) profileScopeGuaranteed() {
-#if (PROFILE_KERNEL & PROFILER_OPT_DO_TRACE_ONLY)
+#if (PROFILE_KERNEL & PROFILER_OPT_DO_TRACE_ONLY) && !(defined(COMPILE_FOR_ERISC) || defined(COMPILE_FOR_IDLE_ERISC))
         if constexpr (index == 0) {
+#if !defined(COMPILE_FOR_TRISC)
             if (profiler_control_buffer[CURRENT_TRACE_ID] & TRACE_ID_SET_BIT) {
                 mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
                 profiler_control_buffer[CURRENT_TRACE_ID] = TRACE_ID_KERNEL_SET_BIT;
@@ -444,6 +445,7 @@ struct profileScopeGuaranteed {
                 init_profiler();
                 mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
             }
+#endif
 
         } else {
             if (profiler_control_buffer[CURRENT_TRACE_ID] & TRACE_ID_KERNEL_SET_BIT) {
@@ -461,7 +463,7 @@ struct profileScopeGuaranteed {
 #endif
     }
     inline __attribute__((always_inline)) ~profileScopeGuaranteed() {
-#if (PROFILE_KERNEL & PROFILER_OPT_DO_TRACE_ONLY)
+#if (PROFILE_KERNEL & PROFILER_OPT_DO_TRACE_ONLY) && !(defined(COMPILE_FOR_ERISC) || defined(COMPILE_FOR_IDLE_ERISC))
         if (profiler_control_buffer[CURRENT_TRACE_ID] & TRACE_STARTED_BIT) {
             mark_time_at_index_inlined(end_index, get_const_id(timer_id, ZONE_END));
         } else {

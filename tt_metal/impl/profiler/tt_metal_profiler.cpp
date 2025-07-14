@@ -787,7 +787,7 @@ void DumpDeviceProfileResults(
             const CoreCoord curr_core = device->worker_core_from_logical_core(core);
             virtual_cores.push_back(curr_core);
         }
-        for (const CoreCoord& core : device->get_active_ethernet_cores(true)) {
+        for (const CoreCoord& core : device->get_active_ethernet_cores(false)) {
             const CoreCoord curr_core = device->virtual_core_from_logical_core(core, CoreType::ETH);
             virtual_cores.push_back(curr_core);
         }
@@ -825,7 +825,6 @@ void ShareTraceIDwithProfiler(chip_id_t device_id, uint32_t trace_id) {
                 &traceControl, tt_cxy_pair(device_id, core.first), control_addr);
         }
     }
-    std::cout << "TRTRTRTRTRTRTRTRTRTRTRTRTRTRTRTRTRTR: " << device_id << std::endl;
 #endif
 }
 

@@ -13,6 +13,7 @@
 #include <umd/device/types/cluster_descriptor_types.h>  // chip_id_t
 #include <vector>
 #include <umd/device/tt_core_coordinates.h>
+#include <optional>
 
 namespace tt {
 namespace tt_metal {
@@ -104,5 +105,16 @@ namespace experimental {
 size_t get_number_of_available_routing_planes(
     const tt::tt_metal::distributed::MeshDevice& mesh_device, size_t cluster_axis, size_t row_or_col);
 }
+
+void initialize_edm_fabric(
+    tt::tt_metal::distributed::MeshDevice* mesh_device,
+    bool wrap_fabric_around_mesh = false,
+    std::optional<size_t> context_switch_interval_override = std::nullopt,
+    Topology topology = Topology::Linear);
+
+void teardown_edm_fabric(
+    tt::tt_metal::distributed::MeshDevice* mesh_device,
+    bool wrap_fabric_around_mesh = false,
+    Topology topology = Topology::Linear);
 
 }  // namespace tt::tt_fabric

@@ -168,7 +168,7 @@ class MultiCommandQueueMultiDeviceBufferFixture : public MultiCommandQueueMultiD
 class MultiCommandQueueMultiDeviceEventFixture : public MultiCommandQueueMultiDeviceFixture {};
 
 class MultiCommandQueueMultiDeviceOnFabricFixture : public MultiCommandQueueMultiDeviceFixture,
-                                                    public ::testing::WithParamInterface<tt::tt_metal::FabricConfig> {
+                                                    public ::testing::WithParamInterface<tt::tt_fabric::FabricConfig> {
 private:
     // Save the result to reduce UMD calls
     inline static bool should_skip_ = false;
@@ -194,7 +194,7 @@ protected:
 
     void TearDown() override {
         MultiCommandQueueMultiDeviceFixture::TearDown();
-        tt::tt_metal::detail::SetFabricConfig(FabricConfig::DISABLED);
+        tt::tt_fabric::SetFabricConfig(tt::tt_fabric::FabricConfig::DISABLED);
     }
 };
 

@@ -257,7 +257,7 @@ class CommandQueueMultiDeviceProgramFixture : public CommandQueueMultiDeviceFixt
 class CommandQueueMultiDeviceBufferFixture : public CommandQueueMultiDeviceFixture {};
 
 class CommandQueueMultiDeviceOnFabricFixture : public CommandQueueMultiDeviceFixture,
-                                               public ::testing::WithParamInterface<tt::tt_metal::FabricConfig> {
+                                               public ::testing::WithParamInterface<tt::tt_fabric::FabricConfig> {
 private:
     inline static ARCH arch_ = tt::ARCH::Invalid;
     inline static bool is_galaxy_ = false;
@@ -286,7 +286,7 @@ protected:
             return;
         }
         CommandQueueMultiDeviceFixture::TearDown();
-        tt::tt_metal::detail::SetFabricConfig(FabricConfig::DISABLED);
+        tt::tt_fabric::SetFabricConfig(tt::tt_fabric::FabricConfig::DISABLED);
     }
 };
 

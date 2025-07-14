@@ -165,8 +165,7 @@ void Allocator::deallocate_buffers() {
 
 const std::unordered_set<Buffer*>& Allocator::get_allocated_buffers() const { return allocated_buffers_; }
 
-uint32_t Allocator::get_num_banks(const BufferType& buffer_type) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+uint32_t Allocator::get_num_banks_locked(const BufferType& buffer_type) const {
     switch (buffer_type) {
         case BufferType::DRAM: return dram_manager_->num_banks();
         case BufferType::L1: return l1_manager_->num_banks();
@@ -177,6 +176,11 @@ uint32_t Allocator::get_num_banks(const BufferType& buffer_type) const {
         }
     }
     return 0;
+}
+
+uint32_t Allocator::get_num_banks(const BufferType& buffer_type) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return get_num_banks_locked(buffer_type);
 }
 
 DeviceAddr Allocator::get_bank_size(const BufferType& buffer_type) const {
@@ -193,16 +197,24 @@ DeviceAddr Allocator::get_bank_size(const BufferType& buffer_type) const {
     return 0;
 }
 
-uint32_t Allocator::get_dram_channel_from_bank_id(uint32_t bank_id) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+uint32_t Allocator::get_dram_channel_from_bank_id_locked(uint32_t bank_id) const {
     TT_ASSERT(bank_id_to_dram_channel_.find(bank_id) != bank_id_to_dram_channel_.end());
     return bank_id_to_dram_channel_.at(bank_id);
 }
 
-CoreCoord Allocator::get_logical_core_from_bank_id(uint32_t bank_id) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+CoreCoord Allocator::get_logical_core_from_bank_id_locked(uint32_t bank_id) const {
     TT_ASSERT(bank_id_to_logical_core_.find(bank_id) != bank_id_to_logical_core_.end());
     return bank_id_to_logical_core_.at(bank_id);
+}
+
+uint32_t Allocator::get_dram_channel_from_bank_id(uint32_t bank_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return get_dram_channel_from_bank_id_locked(bank_id);
+}
+
+CoreCoord Allocator::get_logical_core_from_bank_id(uint32_t bank_id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return get_logical_core_from_bank_id_locked(bank_id);
 }
 
 int32_t Allocator::get_bank_offset(BufferType buffer_type, uint32_t bank_id) const {
@@ -218,22 +230,32 @@ int32_t Allocator::get_bank_offset(BufferType buffer_type, uint32_t bank_id) con
     }
 }
 
-const std::vector<uint32_t>& Allocator::get_bank_ids_from_dram_channel(uint32_t dram_channel) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+const std::vector<uint32_t>& Allocator::get_bank_ids_from_dram_channel_locked(uint32_t dram_channel) const {
     if (dram_channel_to_bank_ids_.find(dram_channel) == dram_channel_to_bank_ids_.end()) {
         TT_THROW("No DRAM bank exists for DRAM channel {}", dram_channel);
     }
     return dram_channel_to_bank_ids_.at(dram_channel);
 }
 
-const std::vector<uint32_t>& Allocator::get_bank_ids_from_logical_core(
+const std::vector<uint32_t>& Allocator::get_bank_ids_from_logical_core_locked(
     BufferType buffer_type, const CoreCoord& logical_core) const {
-    std::lock_guard<std::mutex> lock(mutex_);
     if (logical_core_to_bank_ids_.at(buffer_type).find(logical_core) ==
         logical_core_to_bank_ids_.at(buffer_type).end()) {
         TT_THROW("No {} bank exists for core {}", magic_enum::enum_name(buffer_type), logical_core.str());
     }
     return logical_core_to_bank_ids_.at(buffer_type).at(logical_core);
+}
+
+const std::vector<uint32_t>& Allocator::get_bank_ids_from_dram_channel(uint32_t dram_channel) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return get_bank_ids_from_dram_channel_locked(dram_channel);
+}
+
+
+const std::vector<uint32_t>& Allocator::get_bank_ids_from_logical_core(
+    BufferType buffer_type, const CoreCoord& logical_core) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return get_bank_ids_from_logical_core_locked(buffer_type, logical_core);
 }
 
 const AllocatorConfig& Allocator::get_config() const { return config_; }

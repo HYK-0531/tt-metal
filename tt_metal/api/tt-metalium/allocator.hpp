@@ -42,14 +42,20 @@ public:
     // lock must be held while using the returned reference
     const std::unordered_set<Buffer*>& get_allocated_buffers() const;
 
+    uint32_t get_num_banks_locked(const BufferType& buffer_type) const;
     uint32_t get_num_banks(const BufferType& buffer_type) const;
     DeviceAddr get_bank_size(const BufferType& buffer_type) const;
 
+    uint32_t get_dram_channel_from_bank_id_locked(uint32_t bank_id) const;
+    CoreCoord get_logical_core_from_bank_id_locked(uint32_t bank_id) const;
     uint32_t get_dram_channel_from_bank_id(uint32_t bank_id) const;
     CoreCoord get_logical_core_from_bank_id(uint32_t bank_id) const;
 
     int32_t get_bank_offset(BufferType buffer_type, uint32_t bank_id) const;
 
+    const std::vector<uint32_t>& get_bank_ids_from_dram_channel_locked(uint32_t dram_channel) const;
+    const std::vector<uint32_t>& get_bank_ids_from_logical_core_locked(
+        BufferType buffer_type, const CoreCoord& logical_core) const;
     const std::vector<uint32_t>& get_bank_ids_from_dram_channel(uint32_t dram_channel) const;
     const std::vector<uint32_t>& get_bank_ids_from_logical_core(
         BufferType buffer_type, const CoreCoord& logical_core) const;

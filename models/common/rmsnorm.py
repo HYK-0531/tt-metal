@@ -148,7 +148,7 @@ class RMSNorm(LightweightModule):
         # Run distributed rmsnorm part 1
         tt_stats = ttnn.rms_norm_pre_all_gather(inp, compute_kernel_config=compute_kernel_config, dtype=ttnn.bfloat16)
         # AllGather stats
-        peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
+        peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_buffer_key(
             tt_stats.shape, tt_stats.dtype, ttnn.DRAM_MEMORY_CONFIG, 3
         )
         tt_stats = ttnn.experimental.all_gather_async(

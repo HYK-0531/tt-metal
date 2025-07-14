@@ -145,64 +145,62 @@ class MLP(LightweightModule):
             #     w1_out = ttnn.to_memory_config(w1_out, ttnn.DRAM_MEMORY_CONFIG)
             #     w3_out = ttnn.to_memory_config(w3_out, ttnn.DRAM_MEMORY_CONFIG)
             if self.dim == 8192 or mode == "prefill":
-                cluster_axis = 1
                 input_mem_cfg = w1_out.memory_config()
-                peristent_intermediate_buffer_key = self.tt_ccl.create_rs_persistent_intermediate_buffer_key(
+
+                dim = 3
+                cluster_axis = 1
+                rs_intermediate_memory_config = ttnn.L1_MEMORY_CONFIG
+                rs_output_memory_config = (
+                    self.model_config["FF1_OUT_REDUCE_SCATTER_MEMCFG"] if mode == "decode" else None
+                )
+                rs_persistent_buffer_keys = self.tt_ccl.create_rs_persistent_buffer_keys(
                     w1_out.shape,
                     w1_out.dtype,
-                    ttnn.L1_MEMORY_CONFIG,
-                    3,
+                    rs_intermediate_memory_config,
+                    rs_output_memory_config,
+                    dim,
                     cluster_axis,
                 )
-                peristent_output_buffer_key = self.tt_ccl.create_rs_persistent_output_buffer_key(
-                    w1_out.shape,
-                    w1_out.dtype,
-                    self.model_config["FF1_OUT_REDUCE_SCATTER_MEMCFG"] if mode == "decode" else None,
-                    3,
-                    cluster_axis,
-                )
+                rs_persistent_buffers = self.tt_ccl.get_rs_persistent_buffers(rs_persistent_buffer_keys)
                 w1_out = ttnn.experimental.reduce_scatter_minimal_async(
                     w1_out,
-                    persistent_intermediate_buffer=self.tt_ccl.get_rs_persistent_intermediate_buffer(
-                        peristent_intermediate_buffer_key
-                    ),
-                    persistent_output_buffer=self.tt_ccl.get_rs_persistent_output_buffer(peristent_output_buffer_key),
-                    dim=3,
+                    persistent_intermediate_buffer=rs_persistent_buffers[0],
+                    persistent_output_buffer=rs_persistent_buffers[1],
+                    dim=dim,
                     multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
                     num_links=self.args.num_reduce_scatter_links,
                     cluster_axis=cluster_axis,
                     mesh_device=self.mesh_device,
-                    memory_config=self.model_config["FF1_OUT_REDUCE_SCATTER_MEMCFG"] if mode == "decode" else None,
+                    memory_config=rs_output_memory_config,
                     topology=ttnn.Topology.Linear,
                     subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )
 
-                peristent_intermediate_buffer_key = self.tt_ccl.create_rs_persistent_intermediate_buffer_key(
+                dim = 3
+                cluster_axis = 1
+                rs_intermediate_memory_config = ttnn.L1_MEMORY_CONFIG
+                rs_output_memory_config = (
+                    self.model_config["FF1_OUT_REDUCE_SCATTER_MEMCFG"] if mode == "decode" else None
+                )
+                rs_persistent_buffer_keys = self.tt_ccl.create_rs_persistent_buffer_keys(
                     w3_out.shape,
                     w3_out.dtype,
-                    ttnn.L1_MEMORY_CONFIG,
-                    3,
+                    rs_intermediate_memory_config,
+                    rs_output_memory_config,
+                    dim,
                     cluster_axis,
                 )
-                peristent_output_buffer_key = self.tt_ccl.create_rs_persistent_output_buffer_key(
-                    w3_out.shape,
-                    w3_out.dtype,
-                    self.model_config["FF1_OUT_REDUCE_SCATTER_MEMCFG"] if mode == "decode" else None,
-                    3,
-                    cluster_axis,
-                )
+                rs_persistent_buffers = self.tt_ccl.get_rs_persistent_buffers(rs_persistent_buffer_keys)
                 w3_out = ttnn.experimental.reduce_scatter_minimal_async(
                     w3_out,
-                    persistent_intermediate_buffer=self.tt_ccl.get_rs_persistent_intermediate_buffer(
-                        peristent_intermediate_buffer_key
-                    ),
-                    persistent_output_buffer=self.tt_ccl.get_rs_persistent_output_buffer(peristent_output_buffer_key),
-                    dim=3,
+                    persistent_intermediate_buffer=rs_persistent_buffers[0],
+                    persistent_output_buffer=rs_persistent_buffers[1],
+                    dim=dim,
                     multi_device_global_semaphore=self.tt_ccl.get_and_cycle_rs_semaphore_handles(),
                     num_links=1,
                     cluster_axis=cluster_axis,
                     mesh_device=self.mesh_device,
-                    memory_config=self.model_config["FF1_OUT_REDUCE_SCATTER_MEMCFG"] if mode == "decode" else None,
+                    memory_config=rs_output_memory_config,
                     topology=ttnn.Topology.Linear,
                     subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )
@@ -245,20 +243,22 @@ class MLP(LightweightModule):
             ttnn.deallocate(w1_out)
 
         if TG and (self.dim == 8192 or mode == "prefill"):
+            ag_memory_config = input_mem_cfg
+            dim = 3
             cluster_axis = 1
-            peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
-                w2_in.shape, w2_in.dtype, input_mem_cfg, 3, cluster_axis
+            ag_peristent_buffer_key = self.tt_ccl.create_ag_persistent_buffer_key(
+                w2_in.shape, w2_in.dtype, ag_memory_config, dim, cluster_axis
             )
             w2_in = ttnn.experimental.all_gather_async(
                 w2_in,
-                persistent_output_buffer=self.tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
-                dim=3,
+                persistent_output_buffer=self.tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
+                dim=dim,
                 multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 num_links=2,
                 cluster_axis=cluster_axis,
                 mesh_device=self.mesh_device,
                 topology=ttnn.Topology.Linear,
-                memory_config=input_mem_cfg,
+                memory_config=ag_memory_config,
                 subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
 

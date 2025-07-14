@@ -6,9 +6,8 @@
 import ttnn
 from models.tt_transformers.tt.persistent_buffers import (
     PersistentBufferKey,
-    create_ag_persistent_output_buffers,
-    create_rs_persistent_intermediate_buffers,
-    create_rs_persistent_output_buffers,
+    select_and_create_ag_persistent_buffers,
+    select_and_create_rs_persistent_buffers,
 )
 
 
@@ -56,9 +55,10 @@ class TT_CCL:
                     ttnn.create_global_semaphore(self.mesh_device, self.sub_device_crs, 0)
                 )
 
-        self.ag_persistent_output_buffers = self.create_ag_persistent_output_buffers()
-        self.rs_persistent_intermediate_buffers = self.create_rs_persistent_intermediate_buffers()
-        self.rs_persistent_output_buffers = self.create_rs_persistent_output_buffers()
+        self.ag_persistent_buffers = self.create_ag_persistent_buffers()  # dict[PersistentBufferKey, ttnn_tensor]
+        self.rs_persistent_buffers = (
+            self.create_rs_persistent_buffers()
+        )  # dict[tuple(PersistentBufferKey, PersistentBufferKey), ttnn_tensor] - intermediate_buffer, output_buffer
 
         # TODO: (GR) Is this setup correct?
         worker_sub_device = ttnn.SubDevice([self.sub_device_crs])
@@ -66,12 +66,10 @@ class TT_CCL:
         self.mesh_device.load_sub_device_manager(sub_device_manager)
         self.mesh_device.set_sub_device_stall_group([self.worker_sub_device_id])
 
-        self.ag_output_persistent_buffer_keys = set()
-        self.rs_intermediate_persistent_buffer_keys = set()
-        self.rs_output_persistent_buffer_keys = set()
-
-    def is_using_preallocated_persistent_buffers(self):
-        return self.persistent_buffers_configuration is not None
+        self.ag_persistent_buffer_keys = set()  # set(PersistentBufferKey)
+        self.rs_persistent_buffer_keys = (
+            set()
+        )  # set(tuple(PersistentBufferKey, PersistentBufferKey)) - intermediate_buffer, output_buffer
 
     def get_and_cycle_ag_semaphore_handles(self):
         current_idx = self.ag_semaphores_idx
@@ -83,7 +81,26 @@ class TT_CCL:
         self.rs_semaphores_idx = (self.rs_semaphores_idx + 1) % 2
         return self.rs_semaphore_handles[current_idx]
 
-    def create_ag_persistent_output_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=None):
+    def is_using_preallocated_persistent_buffers(self):
+        return self.persistent_buffers_configuration is not None
+
+    def create_ag_persistent_buffers(self):
+        if self.persistent_buffers_configuration is None:
+            return {}
+        else:
+            return select_and_create_ag_persistent_buffers(
+                mesh_device=self.mesh_device, persistent_buffers_configuration=self.persistent_buffers_configuration
+            )
+
+    def create_rs_persistent_buffers(self):
+        if self.persistent_buffers_configuration is None:
+            return {}
+        else:
+            return select_and_create_rs_persistent_buffers(
+                mesh_device=self.mesh_device, persistent_buffers_configuration=self.persistent_buffers_configuration
+            )
+
+    def create_ag_persistent_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=None):
         # TODO: (GR) Need custom hash because certain runtime memory_configs have both shard_spec and nd_shard_spec fields
         # defined, and we can't manually define this kind of memory config for a preallocated buffer
         to_hash_memory_config = ttnn.MemoryConfig(
@@ -102,123 +119,78 @@ class TT_CCL:
         )
 
         if self.extract_shapes:
-            self.ag_output_persistent_buffer_keys.add(persistent_buffer_key)
+            self.ag_persistent_buffer_keys.add(persistent_buffer_key)
 
         return persistent_buffer_key
 
-    def create_ag_persistent_output_buffers(self):
-        if self.persistent_buffers_configuration is None:
-            return {}
-        else:
-            return create_ag_persistent_output_buffers(
-                mesh_device=self.mesh_device, persistent_buffers_configuration=self.persistent_buffers_configuration
-            )
-
-    def get_ag_persistent_output_buffer(self, persistent_buffer_key):
-        if self.persistent_buffers_configuration is None:
-            return None
-
-        assert (
-            persistent_buffer_key in self.ag_persistent_output_buffers
-        ), f"AG persistent output buffer does not exist for key: `{persistent_buffer_key}`"
-        return self.ag_persistent_output_buffers[persistent_buffer_key]
-
-    # TODO: Can these indices be hardcoded?, Are we indeed restricted to dim 3?
-    def create_rs_persistent_intermediate_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=None):
-        assert dim == 3, "RS dim is not 3"
+    def create_rs_persistent_buffer_keys(
+        self, input_shape, dtype, intermediate_memory_config, output_memory_config, dim, cluster_axis=None
+    ):
+        assert dim == 3, "RS only supports dim 3"
 
         # TODO: (GR) Need custom hash because certain runtime memory_configs have both shard_spec and nd_shard_spec fields
         # defined, and we can't manually define this kind of memory config for a preallocated buffer
-        to_hash_memory_config = ttnn.MemoryConfig(
-            memory_config.memory_layout,
-            memory_config.buffer_type,
-            memory_config.shard_spec,
+        hash_intermediate_memory_config = ttnn.MemoryConfig(
+            intermediate_memory_config.memory_layout,
+            intermediate_memory_config.buffer_type,
+            intermediate_memory_config.shard_spec,
         )
-
-        intermediate_shape = list(input_shape)
-        num_batches = intermediate_shape[0]
-        intermediate_shape[2] //= num_batches
-        persistent_buffer_key = PersistentBufferKey(
-            shape=tuple(intermediate_shape), dtype=dtype, memory_config=to_hash_memory_config
-        )
-
-        if self.extract_shapes:
-            self.rs_intermediate_persistent_buffer_keys.add(persistent_buffer_key)
-
-        return persistent_buffer_key
-
-    def create_rs_persistent_intermediate_buffers(self):
-        if self.persistent_buffers_configuration is None:
-            return {}
-        else:
-            return create_rs_persistent_intermediate_buffers(
-                mesh_device=self.mesh_device, persistent_buffers_configuration=self.persistent_buffers_configuration
-            )
-
-    def get_rs_persistent_intermediate_buffer(self, persistent_buffer_key):
-        if self.persistent_buffers_configuration is None:
-            return None
-
-        assert (
-            persistent_buffer_key in self.rs_persistent_intermediate_buffers
-        ), f"RS persistent intermediate buffer does not exist for key: `{persistent_buffer_key}`"
-        return self.rs_persistent_intermediate_buffers[persistent_buffer_key]
-
-    def create_rs_persistent_output_buffer_key(self, input_shape, dtype, memory_config, dim, cluster_axis=None):
-        assert dim == 3, "RS dim is not 3"
-
-        # TODO: (GR) Need custom hash because certain runtime memory_configs have both shard_spec and nd_shard_spec fields
-        # defined, and we can't manually define this kind of memory config for a preallocated buffer
-        to_hash_memory_config = ttnn.MemoryConfig(
-            memory_config.memory_layout,
-            memory_config.buffer_type,
-            memory_config.shard_spec,
+        hash_output_memory_config = ttnn.MemoryConfig(
+            output_memory_config.memory_layout,
+            output_memory_config.buffer_type,
+            output_memory_config.shard_spec,
         )
 
         ring_size = (
             self.mesh_device.get_num_devices() if cluster_axis is None else list(self.mesh_device.shape)[cluster_axis]
         )
-        rs_output_shape = list(input_shape)
-        rs_output_shape[dim] //= ring_size
-        persistent_buffer_key = PersistentBufferKey(
-            shape=tuple(rs_output_shape), dtype=dtype, memory_config=to_hash_memory_config
+
+        intermediate_shape = list(input_shape)
+        num_batches = intermediate_shape[0]
+        intermediate_shape[2] //= num_batches
+        intermediate_persistent_buffer_key = PersistentBufferKey(
+            shape=tuple(intermediate_shape), dtype=dtype, memory_config=hash_intermediate_memory_config
+        )
+
+        output_shape = list(input_shape)
+        output_shape[dim] //= ring_size
+        output_persistent_buffer_key = PersistentBufferKey(
+            shape=tuple(output_shape), dtype=dtype, memory_config=hash_output_memory_config
         )
 
         if self.extract_shapes:
-            self.rs_output_persistent_buffer_keys.add(persistent_buffer_key)
+            self.rs_persistent_buffer_keys.add((intermediate_persistent_buffer_key, output_persistent_buffer_key))
 
-        return persistent_buffer_key
+        return (intermediate_persistent_buffer_key, output_persistent_buffer_key)
 
-    def create_rs_persistent_output_buffers(self):
-        if self.persistent_buffers_configuration is None:
-            return {}
-        else:
-            return create_rs_persistent_output_buffers(
-                mesh_device=self.mesh_device, persistent_buffers_configuration=self.persistent_buffers_configuration
-            )
-
-    def get_rs_persistent_output_buffer(self, persistent_buffer_key):
+    def get_ag_persistent_buffer(self, persistent_buffer_key):
         if self.persistent_buffers_configuration is None:
             return None
 
         assert (
-            persistent_buffer_key in self.rs_persistent_output_buffers
-        ), f"RS persistent output buffer does not exist for key: `{persistent_buffer_key}`"
-        return self.rs_persistent_output_buffers[persistent_buffer_key]
+            persistent_buffer_key in self.ag_persistent_buffers
+        ), f"AG persistent output buffer does not exist for key: `{persistent_buffer_key}`"
+        return self.ag_persistent_buffers[persistent_buffer_key]
+
+    def get_rs_persistent_buffers(self, persistent_buffer_keys):
+        if self.persistent_buffers_configuration is None:
+            return None
+
+        assert (
+            persistent_buffer_keys in self.rs_persistent_buffers
+        ), f"RS persistent buffers do not exist for key pair: `{persistent_buffer_keys}`"
+        return self.rs_persistent_buffers[persistent_buffer_keys]
 
     def close(self):
         if self.extract_shapes:
-            print("AG OUTPUT SHAPES")
-            for e in self.ag_output_persistent_buffer_keys:
-                print(e)
+            print("AG SHAPES")
+            for e in self.ag_persistent_buffer_keys:
+                print(f"Output Buffer Key: {e}")
 
-            print("RS INTERMEDIATE SHAPES")
-            for e in self.rs_intermediate_persistent_buffer_keys:
-                print(e)
-
-            print("RS OUTPUT SHAPES")
-            for e in self.rs_output_persistent_buffer_keys:
-                print(e)
+            print("RS SHAPES")
+            for e in self.rs_persistent_buffer_keys:
+                print(f"Intermediate Buffer Key: {e[0]}")
+                print(f"Output Buffer Key: {e[1]}")
 
         self.mesh_device.reset_sub_device_stall_group()
 
@@ -254,22 +226,20 @@ def tt_all_reduce(
             input_tensor_sharded = input_tensor
             input_tensor = ttnn.sharded_to_interleaved(input_tensor_sharded, ttnn.L1_MEMORY_CONFIG)
             input_tensor_sharded.deallocate(True)
-        peristent_intermediate_buffer_key = tt_ccl.create_rs_persistent_intermediate_buffer_key(
-            input_tensor.shape, input_tensor.dtype, ttnn.L1_MEMORY_CONFIG, dim
+        rs_intermediate_memory_config = ttnn.L1_MEMORY_CONFIG
+        rs_output_memory_config = memory_config
+        rs_persistent_buffer_keys = tt_ccl.create_rs_persistent_buffer_keys(
+            input_tensor.shape, input_tensor.dtype, rs_intermediate_memory_config, rs_output_memory_config, dim
         )
-        peristent_output_buffer_key = tt_ccl.create_rs_persistent_output_buffer_key(
-            input_tensor.shape, input_tensor.dtype, memory_config, dim
-        )
+        rs_persistent_buffers = tt_ccl.get_rs_persistent_buffers(rs_persistent_buffer_keys)
         reduced = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
-            persistent_intermediate_buffer=tt_ccl.get_rs_persistent_intermediate_buffer(
-                peristent_intermediate_buffer_key
-            ),
-            persistent_output_buffer=tt_ccl.get_rs_persistent_output_buffer(peristent_output_buffer_key),
+            persistent_intermediate_buffer=rs_persistent_buffers[0],
+            persistent_output_buffer=rs_persistent_buffers[1],
             dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_rs_semaphore_handles(),
             num_links=num_reduce_scatter_links,
-            memory_config=memory_config,
+            memory_config=rs_output_memory_config,
             topology=topology,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
@@ -288,23 +258,24 @@ def tt_all_reduce(
         input_tensor = ttnn.to_memory_config(input_tensor, ttnn.DRAM_MEMORY_CONFIG)
 
     if not use_composite:
-        peristent_output_buffer_key = tt_ccl.create_ag_persistent_output_buffer_key(
+        ag_memory_config = ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config
+        ag_peristent_buffer_key = tt_ccl.create_ag_persistent_buffer_key(
             input_tensor.shape,
             input_tensor.dtype,
-            ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
+            ag_memory_config,
             dim,
             cluster_axis,
         )
         gathered_tensor = ttnn.experimental.all_gather_async(
             input_tensor,
-            persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
+            persistent_output_buffer=tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
             dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=num_all_gather_links,
             cluster_axis=cluster_axis,
             mesh_device=mesh_device,
             topology=topology,
-            memory_config=ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
+            memory_config=ag_memory_config,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
 
@@ -323,49 +294,46 @@ def tt_all_reduce(
             gathered_tensor.deallocate(True)
     else:
         input_mem_cfg = input_tensor.memory_config()
-        peristent_intermediate_buffer_key = tt_ccl.create_rs_persistent_intermediate_buffer_key(
+
+        rs_intermediate_memory_config = ttnn.L1_MEMORY_CONFIG
+        rs_output_memory_config = ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config
+        rs_persistent_buffer_keys = tt_ccl.create_rs_persistent_buffer_keys(
             input_tensor.shape,
             input_tensor.dtype,
-            ttnn.L1_MEMORY_CONFIG,
+            rs_intermediate_memory_config,
+            rs_output_memory_config,
             dim,
             cluster_axis,
         )
-        peristent_output_buffer_key = tt_ccl.create_rs_persistent_output_buffer_key(
-            input_tensor.shape,
-            input_tensor.dtype,
-            ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
-            dim,
-            cluster_axis,
-        )
+        rs_persistent_buffers = tt_ccl.get_rs_persistent_buffers(rs_persistent_buffer_keys)
         reduced_tensor = ttnn.experimental.reduce_scatter_minimal_async(
             input_tensor,
-            persistent_intermediate_buffer=tt_ccl.get_rs_persistent_intermediate_buffer(
-                peristent_intermediate_buffer_key
-            ),
-            persistent_output_buffer=tt_ccl.get_rs_persistent_output_buffer(peristent_output_buffer_key),
+            persistent_intermediate_buffer=rs_persistent_buffers[0],
+            persistent_output_buffer=rs_persistent_buffers[1],
             dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_rs_semaphore_handles(),
             num_links=num_reduce_scatter_links,
             cluster_axis=cluster_axis,
             mesh_device=mesh_device,
-            memory_config=ttnn.DRAM_MEMORY_CONFIG if not sharded else memory_config,
+            memory_config=rs_output_memory_config,
             topology=topology,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
 
-        peristent_output_buffer_key = tt_ccl.create_ag_persistent_output_buffer_key(
-            reduced_tensor.shape, reduced_tensor.dtype, input_mem_cfg, dim, cluster_axis
+        ag_memory_config = input_mem_cfg
+        ag_peristent_buffer_key = tt_ccl.create_ag_persistent_buffer_key(
+            reduced_tensor.shape, reduced_tensor.dtype, ag_memory_config, dim, cluster_axis
         )
         reduced_tensor = ttnn.experimental.all_gather_async(
             reduced_tensor,
-            persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
+            persistent_output_buffer=tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
             dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=num_all_gather_links,
             cluster_axis=cluster_axis,
             mesh_device=mesh_device,
             topology=topology,
-            memory_config=input_mem_cfg,
+            memory_config=ag_memory_config,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
 
@@ -401,34 +369,35 @@ def tt_all_gather(
         if sharded and memory_config is not None:
             input_tensor = ttnn.to_memory_config(input_tensor, memory_config, dtype)  # to sharded
 
+    ag_memory_config = memory_config
     if cluster_axis is None:
-        peristent_output_buffer_key = tt_ccl.create_ag_persistent_output_buffer_key(
-            input_tensor.shape, input_tensor.dtype, memory_config, dim
+        ag_peristent_buffer_key = tt_ccl.create_ag_persistent_buffer_key(
+            input_tensor.shape, input_tensor.dtype, ag_memory_config, dim
         )
         gathered = ttnn.experimental.all_gather_async(
             input_tensor,
-            persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
+            persistent_output_buffer=tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
             dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=num_links,
             topology=topology,
-            memory_config=memory_config,
+            memory_config=ag_memory_config,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
     else:
-        peristent_output_buffer_key = tt_ccl.create_ag_persistent_output_buffer_key(
-            input_tensor.shape, input_tensor.dtype, memory_config, dim, cluster_axis
+        ag_peristent_buffer_key = tt_ccl.create_ag_persistent_buffer_key(
+            input_tensor.shape, input_tensor.dtype, ag_memory_config, dim, cluster_axis
         )
         gathered = ttnn.experimental.all_gather_async(
             input_tensor,
-            persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
+            persistent_output_buffer=tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
             dim=dim,
             multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=num_links,
             cluster_axis=cluster_axis,
             mesh_device=mesh_device,
             topology=topology,
-            memory_config=memory_config,
+            memory_config=ag_memory_config,
             subdevice_id=tt_ccl.worker_sub_device_id,
         )
     input_tensor.deallocate(True)
@@ -473,20 +442,22 @@ def tt_sharded_distributed_rmsnorm(
     tt_stats = ttnn.rms_norm_pre_all_gather(inp, program_config=ln_sharded_progcfg)
 
     # All gather stats
+    ag_memory_config = ln_sharded_stats_memcfg
+    dim = 3
     cluster_axis = 1
-    peristent_output_buffer_key = tt_ccl.create_ag_persistent_output_buffer_key(
-        tt_stats.shape, tt_stats.dtype, ln_sharded_stats_memcfg, 3, cluster_axis
+    ag_peristent_buffer_key = tt_ccl.create_ag_persistent_buffer_key(
+        tt_stats.shape, tt_stats.dtype, ag_memory_config, dim, cluster_axis
     )
     tt_stats = ttnn.experimental.all_gather_async(
         tt_stats,
-        persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
-        dim=3,
+        persistent_output_buffer=tt_ccl.get_ag_persistent_output_buffer(ag_peristent_buffer_key),
+        dim=dim,
         multi_device_global_semaphore=tt_ccl.get_and_cycle_ag_semaphore_handles(),
         num_links=1,
         cluster_axis=cluster_axis,
         mesh_device=mesh_device,
         topology=ttnn.Topology.Linear,
-        memory_config=ln_sharded_stats_memcfg,
+        memory_config=ag_memory_config,
         subdevice_id=tt_ccl.worker_sub_device_id,
     )
 

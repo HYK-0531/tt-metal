@@ -341,31 +341,37 @@ class Transformer(LightweightModule):
         # Gather the output across all devices and untilize the tensor (for argmax)
         if self.args.num_devices > 1:
             if self.args.is_galaxy:
+                ag_memory_config = tt_logits.memory_config()
+                dim = 3
                 cluster_axis = 0
-                peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
-                    tt_logits.shape, tt_logits.dtype, tt_logits.memory_config(), 3, cluster_axis
+                ag_peristent_buffer_key = self.tt_ccl.create_ag_persistent_buffer_key(
+                    tt_logits.shape, tt_logits.dtype, ag_memory_config, dim, cluster_axis
                 )
                 tt_logits = ttnn.experimental.all_gather_async(
                     tt_logits,
-                    persistent_output_buffer=self.tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
-                    dim=3,
+                    persistent_output_buffer=self.tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
+                    dim=dim,
                     multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                     num_links=2,
+                    memory_config=ag_memory_config,
                     cluster_axis=cluster_axis,
                     mesh_device=self.mesh_device,
                     topology=self.args.ccl_topology(),
                     subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )
             else:
-                peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
-                    tt_logits.shape, tt_logits.dtype, tt_logits.memory_config(), 3
+                ag_memory_config = tt_logits.memory_config()
+                dim = 3
+                ag_peristent_buffer_key = self.tt_ccl.create_ag_persistent_buffer_key(
+                    tt_logits.shape, tt_logits.dtype, ag_memory_config, dim
                 )
                 tt_logits = ttnn.experimental.all_gather_async(
                     tt_logits,
-                    persistent_output_buffer=self.tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
-                    dim=3,
+                    persistent_output_buffer=self.tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
+                    dim=dim,
                     multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                     num_links=1,
+                    memory_config=ag_memory_config,
                     topology=self.args.ccl_topology(),
                     subdevice_id=self.tt_ccl.worker_sub_device_id,
                 )

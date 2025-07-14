@@ -73,17 +73,19 @@ class DistributedNorm(LightweightModule):
 
         # Distributed norm already performs a gather
         if self.args.is_multichip and not self.args.is_distributed_norm(mode):
-            peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
-                x.shape, x.dtype, input_mem_cfg, 3
+            ag_memory_config = input_mem_cfg
+            dim = 3
+            ag_peristent_buffer_key = self.tt_ccl.create_ag_persistent_buffer_key(
+                x.shape, x.dtype, ag_memory_config, dim
             )
             x = ttnn.experimental.all_gather_async(
                 x,
-                persistent_output_buffer=self.tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
-                dim=3,
+                persistent_output_buffer=self.tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
+                dim=dim,
                 multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 num_links=1,
                 topology=self.args.ccl_topology(),
-                memory_config=input_mem_cfg,
+                memory_config=ag_memory_config,
                 subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
         else:
@@ -93,16 +95,19 @@ class DistributedNorm(LightweightModule):
 
         # Distributed norm requires a gather
         if self.args.is_distributed_norm(mode):
-            peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
-                x.shape, x.dtype, x.memory_config(), 3
+            ag_memory_config = x.memory_config()
+            dim = 3
+            ag_peristent_buffer_key = self.tt_ccl.create_ag_persistent_buffer_key(
+                x.shape, x.dtype, ag_memory_config, dim
             )
             x = ttnn.experimental.all_gather_async(
                 x,
-                persistent_output_buffer=self.tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
-                dim=3,
+                persistent_output_buffer=self.tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
+                dim=dim,
                 multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 num_links=1,
                 topology=self.args.ccl_topology(),
+                memory_config=ag_memory_config,
                 subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
 

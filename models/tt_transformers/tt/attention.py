@@ -538,24 +538,27 @@ class Attention(LightweightModule):
             attn_output_cat = ttnn.to_memory_config(
                 attn_output_cat, self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"]
             )
-            peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
+
+            ag_memory_config = self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"]
+            dim = 3
+            ag_peristent_buffer_key = self.tt_ccl.create_ag_persistent_buffer_key(
                 attn_output_cat.shape,
                 attn_output_cat.dtype,
-                self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"],
-                3,
+                ag_memory_config,
+                dim,
             )
             _, dense_out_sharded = ttnn.experimental.all_gather_matmul_async(
                 attn_output_cat,
                 self.wo,
-                persistent_output_buffer=self.tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
-                dim=3,
+                persistent_output_buffer=self.tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
+                dim=dim,
                 multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 all_gather_core_grid_offset=(0, 4),
                 num_links=1,
                 subdevice_id=self.tt_ccl.worker_sub_device_id,
                 program_config=self.model_config["ATTN_ALL_GATHER_MATMUL_PROGCFG"],
                 compute_kernel_config=self.li_o_decode_compute_kernel_cfg,
-                memory_config_ag=self.model_config["ATTN_ALL_GATHER_MATMUL_OUTPUT_MEMCFG"],
+                memory_config_ag=ag_memory_config,
                 memory_config_mm=self.model_config["DECODE_RESIDUAL_MEMCFG"],
             )
             if not self.tt_ccl.is_using_preallocated_persistent_buffers():
@@ -832,17 +835,19 @@ class Attention(LightweightModule):
 
         # Non fused All Gather Matmul
         if self.use_fused_all_gather_matmul:  # is true for Ring topology
-            peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_output_buffer_key(
-                attn_output_11SH.shape, attn_output_11SH.dtype, ttnn.DRAM_MEMORY_CONFIG, 3
+            ag_memory_config = ttnn.DRAM_MEMORY_CONFIG
+            dim = 3
+            ag_peristent_buffer_key = self.tt_ccl.create_ag_persistent_buffer_key(
+                attn_output_11SH.shape, attn_output_11SH.dtype, ag_memory_config, dim
             )
             attn_output_11SH = ttnn.experimental.all_gather_async(
                 attn_output_11SH,
-                persistent_output_buffer=self.tt_ccl.get_ag_persistent_output_buffer(peristent_output_buffer_key),
-                dim=3,
+                persistent_output_buffer=self.tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
+                dim=dim,
                 multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
                 num_links=1,
                 topology=self.ccl_topology,
-                memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                memory_config=ag_memory_config,
                 subdevice_id=self.tt_ccl.worker_sub_device_id,
             )
 

@@ -1,213 +1,403 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-import torch
+# adapted from https://github.com/huggingface/transformers/blob/main/src/transformers/models/clip/modeling_clip.py
+
+from __future__ import annotations
+
 from dataclasses import dataclass
+
+import torch
+import ttnn
+
+from linear import TtLinear, TtLinearParameters
+from substate import indexed_substates, substate
+from utils import from_torch_fast
 
 
 @dataclass
-class CLIPTextConfig:
+class TtCLIPConfig:
     vocab_size: int
-    hidden_size: int
-    intermediate_size: int
-    num_hidden_layers: int
+    d_model: int  # embedding dim
+    d_ff: int  # mlp dim
     num_heads: int
+    num_layers: int  # num transformer blocks
     max_position_embeddings: int
     layer_norm_eps: float
     attention_dropout: float
 
 
-# adapted from https://github.com/huggingface/transformers/blob/v4.47.0/src/transformers/models/clip/modeling_clip.py
-# ensure tokens can only attend to previous tokens
-def _create_4d_causal_attention_mask(input_shape, dtype, device):
-    batch_size, tgt_len = input_shape
-    mask = torch.full((tgt_len, tgt_len), torch.finfo(dtype).min, device=device)
-    mask_cond = torch.arange(mask.size(-1), device=device)
-    mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
-    mask = mask.to(dtype)
-    return mask[None, None, :, :].expand(batch_size, 1, tgt_len, tgt_len)
+@dataclass
+class TtCLIPAttentionParameters:
+    q_proj: TtLinearParameters
+    k_proj: TtLinearParameters
+    v_proj: TtLinearParameters
+    o_proj: TtLinearParameters
 
-
-# adapted from https://github.com/huggingface/transformers/blob/v4.47.0/src/transformers/models/clip/modeling_clip.py
-class CLIPTextEmbeddings(torch.nn.Module):
-    def __init__(self, config: CLIPTextConfig):
-        super().__init__()
-        embed_dim = config.hidden_size
-
-        # initialize embedding lookup tables
-        self.token_embedding = torch.nn.Embedding(config.vocab_size, embed_dim)
-        self.position_embedding = torch.nn.Embedding(config.max_position_embeddings, embed_dim)
-        self.register_buffer(
-            "position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)), persistent=False
+    @classmethod
+    def from_torch(
+        cls,
+        state: dict[str, torch.Tensor],
+        *,
+        dtype: ttnn.DataType | None = None,
+        device: ttnn.Device,
+    ) -> TtCLIPAttentionParameters:
+        return cls(
+            q_proj=TtLinearParameters.from_torch(substate(state, "q_proj"), dtype=dtype, device=device),
+            k_proj=TtLinearParameters.from_torch(substate(state, "k_proj"), dtype=dtype, device=device),
+            v_proj=TtLinearParameters.from_torch(substate(state, "v_proj"), dtype=dtype, device=device),
+            o_proj=TtLinearParameters.from_torch(substate(state, "out_proj"), dtype=dtype, device=device),
         )
 
-    def forward(self, input_ids: torch.LongTensor) -> torch.Tensor:
+
+class TtCLIPAttention:
+    def __init__(
+        self,
+        parameters: TtCLIPAttentionParameters,
+        config: TtCLIPConfig,
+    ) -> None:
+        self._num_heads = config.num_heads
+        self._embed_dim = config.d_model
+        self._head_dim = config.d_model // config.num_heads
+        self._scale = self._head_dim**-0.5
+        self._attention_dropout = config.attention_dropout
+
+        self._q_proj = TtLinear(parameters.q_proj)
+        self._k_proj = TtLinear(parameters.k_proj)
+        self._v_proj = TtLinear(parameters.v_proj)
+        self._o_proj = TtLinear(parameters.o_proj)
+
+    def __call__(self, hidden_states: ttnn.Tensor, causal_mask: ttnn.Tensor) -> ttnn.Tensor:
+        batch_size, seq_length, _ = hidden_states.shape
+
+        q = self._q_proj(hidden_states)
+        k = self._k_proj(hidden_states)
+        v = self._v_proj(hidden_states)
+
+        q = q * self._scale
+
+        # reshape for multihead attention
+        q = ttnn.reshape(q, (batch_size, seq_length, self._num_heads, self._head_dim))
+        k = ttnn.reshape(k, (batch_size, seq_length, self._num_heads, self._head_dim))
+        v = ttnn.reshape(v, (batch_size, seq_length, self._num_heads, self._head_dim))
+
+        # transpose to [batch_size, num_heads, seq_length, head_dim]
+        q = ttnn.transpose(q, 1, 2)
+        k = ttnn.transpose(k, 1, 2)
+        v = ttnn.transpose(v, 1, 2)
+
+        scores = ttnn.matmul(q, ttnn.transpose(k, -2, -1))
+
+        if causal_mask is not None:
+            scores = scores + causal_mask
+
+        attn_weights = ttnn.softmax(scores, dim=-1)
+
+        # TODO: replace with ttnn.dropout once it's supported
+        # attn_weights = ttnn.experimental.dropout(attn_weights, self._attention_dropout)
+
+        attn_output = ttnn.matmul(attn_weights, v)
+
+        # transpose back and reshape
+        attn_output = ttnn.transpose(attn_output, 1, 2)
+        attn_output = ttnn.reshape(attn_output, (batch_size, seq_length, self._embed_dim))
+
+        return self._o_proj(attn_output)
+
+
+@dataclass
+class TtCLIPMLPParameters:
+    fc1: TtLinearParameters
+    fc2: TtLinearParameters
+
+    @classmethod
+    def from_torch(
+        cls,
+        state: dict[str, torch.Tensor],
+        *,
+        dtype: ttnn.DataType | None = None,
+        device: ttnn.Device,
+    ) -> TtCLIPMLPParameters:
+        return cls(
+            fc1=TtLinearParameters.from_torch(substate(state, "fc1"), dtype=dtype, device=device),
+            fc2=TtLinearParameters.from_torch(substate(state, "fc2"), dtype=dtype, device=device),
+        )
+
+
+class TtCLIPMLP:
+    def __init__(self, parameters: TtCLIPMLPParameters) -> None:
+        self._fc1 = TtLinear(parameters.fc1)
+        self._fc2 = TtLinear(parameters.fc2)
+
+    def __call__(self, hidden_states: ttnn.Tensor) -> ttnn.Tensor:
+        hidden_states = self._fc1(hidden_states)
+
+        hidden_states = gelu(hidden_states)
+        hidden_states = self._fc2(hidden_states)
+        return hidden_states
+
+
+def gelu(x: ttnn.Tensor) -> ttnn.Tensor:
+    return x * ttnn.sigmoid(1.702 * x)
+
+
+@dataclass
+class TtCLIPEncoderLayerParameters:
+    self_attn: TtCLIPAttentionParameters
+    mlp: TtCLIPMLPParameters
+    layer_norm1_weight: ttnn.Tensor
+    layer_norm1_bias: ttnn.Tensor
+    layer_norm2_weight: ttnn.Tensor
+    layer_norm2_bias: ttnn.Tensor
+
+    @classmethod
+    def from_torch(
+        cls,
+        state: dict[str, torch.Tensor],
+        *,
+        dtype: ttnn.DataType | None = None,
+        device: ttnn.Device,
+    ) -> TtCLIPEncoderLayerParameters:
+        return cls(
+            self_attn=TtCLIPAttentionParameters.from_torch(substate(state, "self_attn"), dtype=dtype, device=device),
+            mlp=TtCLIPMLPParameters.from_torch(substate(state, "mlp"), dtype=dtype, device=device),
+            layer_norm1_weight=from_torch_fast(
+                state["layer_norm1.weight"], dtype=dtype, device=device, layout=ttnn.TILE_LAYOUT
+            ),
+            layer_norm1_bias=from_torch_fast(
+                state["layer_norm1.bias"], dtype=dtype, device=device, layout=ttnn.TILE_LAYOUT
+            ),
+            layer_norm2_weight=from_torch_fast(
+                state["layer_norm2.weight"], dtype=dtype, device=device, layout=ttnn.TILE_LAYOUT
+            ),
+            layer_norm2_bias=from_torch_fast(
+                state["layer_norm2.bias"], dtype=dtype, device=device, layout=ttnn.TILE_LAYOUT
+            ),
+        )
+
+
+class TtCLIPEncoderLayer:
+    def __init__(
+        self,
+        parameters: TtCLIPEncoderLayerParameters,
+        config: TtCLIPConfig,
+    ) -> None:
+        self._self_attn = TtCLIPAttention(parameters.self_attn, config)
+        self._mlp = TtCLIPMLP(parameters.mlp)
+        self._layer_norm1 = parameters.layer_norm1_weight
+        self._layer_norm1_bias = parameters.layer_norm1_bias
+        self._layer_norm2 = parameters.layer_norm2_weight
+        self._layer_norm2_bias = parameters.layer_norm2_bias
+        self._layer_norm_eps = config.layer_norm_eps
+
+    def __call__(self, hidden_states: ttnn.Tensor, causal_attention_mask: ttnn.Tensor) -> ttnn.Tensor:
+        # self attention block
+        residual = hidden_states
+        hidden_states = ttnn.layer_norm(
+            hidden_states, weight=self._layer_norm1, bias=self._layer_norm1_bias, epsilon=self._layer_norm_eps
+        )
+        attn_output = self._self_attn(hidden_states, causal_attention_mask)
+        hidden_states = residual + attn_output
+
+        # mlp block
+        residual = hidden_states
+        hidden_states = ttnn.layer_norm(
+            hidden_states, weight=self._layer_norm2, bias=self._layer_norm2_bias, epsilon=self._layer_norm_eps
+        )
+        mlp_output = self._mlp(hidden_states)
+        hidden_states = residual + mlp_output
+
+        return hidden_states
+
+
+@dataclass
+class TtCLIPTransformerParameters:
+    layers: List[TtCLIPEncoderLayerParameters]
+
+    @classmethod
+    def from_torch(
+        cls,
+        state: dict[str, torch.Tensor],
+        *,
+        dtype: ttnn.DataType | None = None,
+        device: ttnn.Device,
+    ) -> TtCLIPTransformerParameters:
+        layers = []
+        layer_states = indexed_substates(state, "layers")
+        for layer_state in layer_states:
+            layers.append(TtCLIPEncoderLayerParameters.from_torch(layer_state, dtype=dtype, device=device))
+
+        return cls(
+            layers=layers,
+        )
+
+
+class TtCLIPTransformer:
+    def __init__(self, parameters: TtCLIPTransformerParameters, config: TtCLIPConfig) -> None:
+        self._config = config
+        self._layers = [TtCLIPEncoderLayer(layer_params, config) for layer_params in parameters.layers]
+
+    def __call__(self, hidden_states: ttnn.Tensor, causal_attention_mask: ttnn.Tensor) -> ttnn.Tensor:
+        for layer in self._layers:
+            hidden_states = layer(hidden_states, causal_attention_mask)
+
+        return hidden_states
+
+
+@dataclass
+class TtCLIPEncoderParameters:
+    text_model: TtCLIPTransformerParameters
+
+    @classmethod
+    def from_torch(
+        cls,
+        state: dict[str, torch.Tensor],
+        *,
+        dtype: ttnn.DataType | None = None,
+        device: ttnn.Device,
+    ) -> TtCLIPEncoderParameters:
+        return cls(
+            text_model=TtCLIPTransformerParameters.from_torch(
+                state, dtype=dtype, device=device  # state is already the encoder substate
+            )
+        )
+
+
+class TtCLIPEncoder:
+    def __init__(self, parameters: TtCLIPEncoderParameters, config: TtCLIPConfig) -> None:
+        self._text_model = TtCLIPTransformer(parameters.text_model, config)
+
+    def __call__(self, hidden_states: ttnn.Tensor, causal_attention_mask: ttnn.Tensor) -> ttnn.Tensor:
+        return self._text_model(hidden_states, causal_attention_mask)
+
+
+@dataclass
+class TtCLIPEmbeddingParameters:
+    token_embedding: ttnn.Tensor
+    position_embedding: ttnn.Tensor
+
+    @classmethod
+    def from_torch(
+        cls,
+        state: dict[str, torch.Tensor],
+        *,
+        dtype: ttnn.DataType | None = None,
+        device: ttnn.Device,
+    ) -> TtCLIPEmbeddingParameters:
+        # weights must be BFLOAT16 for ttnn.embedding ops
+        embedding_dtype = ttnn.bfloat16
+        return cls(
+            token_embedding=from_torch_fast(
+                state["token_embedding.weight"],
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                dtype=embedding_dtype,
+                device=device,
+            ),
+            position_embedding=from_torch_fast(
+                state["position_embedding.weight"],
+                layout=ttnn.ROW_MAJOR_LAYOUT,
+                dtype=embedding_dtype,
+                device=device,
+            ),
+        )
+
+
+class TtCLIPEmbedding:
+    def __init__(self, parameters: TtCLIPEmbeddingParameters, config: TtCLIPConfig) -> None:
+        self._token_embedding = parameters.token_embedding
+        self._position_embedding = parameters.position_embedding
+        self._max_position_embeddings = config.max_position_embeddings
+
+    def __call__(self, input_ids: ttnn.Tensor, device: ttnn.Device) -> ttnn.Tensor:
         seq_length = input_ids.shape[-1]
-        position_ids = self.position_ids[:, :seq_length]
 
-        # embed tokens and add position embeddings
-        inputs_embeds = self.token_embedding(input_ids)
-        position_embeddings = self.position_embedding(position_ids)
-        embeddings = inputs_embeds + position_embeddings
+        # truncate seq if >max_position_embeddings
+        if seq_length > self._max_position_embeddings:
+            input_ids = input_ids[:, : self._max_position_embeddings]
+            seq_length = self._max_position_embeddings
 
-        return embeddings
+        position_ids = torch.arange(seq_length).expand((1, -1))
+        position_ids = ttnn.from_torch(position_ids, dtype=ttnn.uint32, layout=ttnn.TILE_LAYOUT, device=device)
 
+        input_embeddings = ttnn.embedding(input_ids, self._token_embedding, layout=ttnn.TILE_LAYOUT)
+        position_embeddings = ttnn.embedding(position_ids, self._position_embedding, layout=ttnn.TILE_LAYOUT)
 
-# adapted from https://github.com/huggingface/transformers/blob/v4.47.0/src/transformers/models/clip/modeling_clip.py
-class CLIPAttention(torch.nn.Module):
-    def __init__(self, config: CLIPTextConfig):
-        super().__init__()
-        self.embed_dim = config.hidden_size
-        self.num_heads = config.num_heads
-        self.head_dim = self.embed_dim // self.num_heads
-        # if self.head_dim * self.num_heads != self.embed_dim:
-        #     raise ValueError(
-        #         f"embed_dim must be divisible by num_heads (got `embed_dim`: {self.embed_dim} and `num_heads`: {self.num_heads})."
-        #     )
-        self.scale = self.head_dim**-0.5
-        self.dropout = config.attention_dropout
-
-        self.W_k = torch.nn.Linear(self.embed_dim, self.embed_dim)
-        self.W_v = torch.nn.Linear(self.embed_dim, self.embed_dim)
-        self.W_q = torch.nn.Linear(self.embed_dim, self.embed_dim)
-        self.W_o = torch.nn.Linear(self.embed_dim, self.embed_dim)
-
-    def _shape(self, tensor: torch.Tensor, seq_len: int, batch_size: int):
-        return tensor.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
-
-    def forward(self, hidden_states: torch.Tensor, causal_attention_mask: torch.Tensor) -> torch.Tensor:
-        batch_size, seq_len, _ = hidden_states.shape
-
-        q = self.W_q(hidden_states) * self.scale
-        k = self.W_k(hidden_states)
-        v = self.W_v(hidden_states)
-
-        q = self._shape(q, seq_len, batch_size)
-        k = self._shape(k, seq_len, batch_size)
-        v = self._shape(v, seq_len, batch_size)
-
-        # reshape for batch matmul
-        proj_shape = (batch_size * self.num_heads, -1, self.head_dim)
-        query_states = q.view(*proj_shape)
-        key_states = k.view(*proj_shape)
-        value_states = v.view(*proj_shape)
-
-        attn_weights = torch.bmm(query_states, key_states.transpose(1, 2))
-
-        # apply causal mask
-        if causal_attention_mask is not None:
-            attn_weights = attn_weights.view(batch_size, self.num_heads, seq_len, seq_len) + causal_attention_mask
-            attn_weights = attn_weights.view(batch_size * self.num_heads, seq_len, seq_len)
-
-        attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1)
-        attn_probs = torch.nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
-
-        attn_output = torch.bmm(attn_probs, value_states)
-        attn_output = attn_output.view(batch_size, self.num_heads, seq_len, self.head_dim)
-        attn_output = attn_output.transpose(1, 2)
-        attn_output = attn_output.reshape(batch_size, seq_len, self.embed_dim)
-
-        attn_output = self.W_o(attn_output)
-        return attn_output
+        return input_embeddings + position_embeddings
 
 
-class CLIPMLP(torch.nn.Module):
-    def __init__(self, config: CLIPTextConfig):
-        super().__init__()
-        self.config = config
-        self.activation_fn = torch.nn.GELU()
-        self.fc1 = torch.nn.Linear(config.hidden_size, config.intermediate_size)
-        self.fc2 = torch.nn.Linear(config.intermediate_size, config.hidden_size)
+@dataclass
+class TtCLIPTextTransformerParameters:
+    embeddings: TtCLIPEmbeddingParameters
+    encoder: TtCLIPEncoderParameters
+    final_layer_norm_weight: ttnn.Tensor
+    final_layer_norm_bias: ttnn.Tensor
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        hidden_states = self.fc1(hidden_states)
-        hidden_states = self.activation_fn(hidden_states)
-        hidden_states = self.fc2(hidden_states)
-        return hidden_states
+    @classmethod
+    def from_torch(
+        cls,
+        state: dict[str, torch.Tensor],
+        *,
+        dtype: ttnn.DataType | None = None,
+        device: ttnn.Device,
+    ) -> TtCLIPTextTransformerParameters:
+        text_model_state = substate(state, "text_model")
 
-
-class CLIPEncoderLayer(torch.nn.Module):
-    def __init__(self, config: CLIPTextConfig):
-        super().__init__()
-        self.embed_dim = config.hidden_size
-        self.self_attn = CLIPAttention(config)
-        self.layer_norm1 = torch.nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
-        self.mlp = CLIPMLP(config)
-        self.layer_norm2 = torch.nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
-
-    def forward(self, hidden_states: torch.Tensor, causal_attention_mask: torch.Tensor) -> torch.Tensor:
-        residual = hidden_states
-
-        hidden_states = self.layer_norm1(hidden_states)
-        hidden_states = self.self_attn(hidden_states, causal_attention_mask)
-        hidden_states = residual + hidden_states
-
-        residual = hidden_states
-        hidden_states = self.layer_norm2(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
-
-        return hidden_states
+        return cls(
+            embeddings=TtCLIPEmbeddingParameters.from_torch(
+                substate(text_model_state, "embeddings"), dtype=dtype, device=device
+            ),
+            encoder=TtCLIPEncoderParameters.from_torch(
+                substate(text_model_state, "encoder"), dtype=dtype, device=device
+            ),
+            final_layer_norm_weight=from_torch_fast(
+                text_model_state["final_layer_norm.weight"], dtype=dtype, device=device, layout=ttnn.TILE_LAYOUT
+            ),
+            final_layer_norm_bias=from_torch_fast(
+                text_model_state["final_layer_norm.bias"], dtype=dtype, device=device, layout=ttnn.TILE_LAYOUT
+            ),
+        )
 
 
-class CLIPEncoder(torch.nn.Module):
-    def __init__(self, config: CLIPTextConfig):
-        super().__init__()
-        self.config = config
-        self.layers = torch.nn.ModuleList([CLIPEncoderLayer(config) for _ in range(config.num_hidden_layers)])
+class TtCLIPTextTransformer:
+    def __init__(
+        self,
+        parameters: TtCLIPTextTransformerParameters,
+        config: TtCLIPConfig,
+    ) -> None:
+        self._config = config
+        self._embeddings = TtCLIPEmbedding(parameters.embeddings, config)
+        self._encoder = TtCLIPEncoder(parameters.encoder, config)
+        self._final_layer_norm = parameters.final_layer_norm_weight
+        self._final_layer_norm_bias = parameters.final_layer_norm_bias
+        self._layer_norm_eps = config.layer_norm_eps
 
-    def forward(self, inputs_embeds: torch.Tensor, causal_attention_mask: torch.Tensor) -> torch.Tensor:
-        hidden_states = inputs_embeds
-        for encoder_layer in self.layers:
-            hidden_states = encoder_layer(hidden_states, causal_attention_mask)
-        return hidden_states
+    def __call__(self, input_ids: ttnn.Tensor, device: ttnn.Device) -> tuple[ttnn.Tensor, ttnn.Tensor]:
+        batch_size, seq_length = input_ids.shape
 
+        hidden_states = self._embeddings(input_ids, device)
 
-class CLIPTextTransformer(torch.nn.Module):
-    def __init__(self, config: CLIPTextConfig):
-        super().__init__()
-        self.config = config
-        embed_dim = config.hidden_size
-        self.embeddings = CLIPTextEmbeddings(config)
-        # self.embeddings)
-        self.encoder = CLIPEncoder(config)
-        # print(self.encoder)
-        self.final_layer_norm = torch.nn.LayerNorm(embed_dim, eps=config.layer_norm_eps)
-
-    def forward(self, input_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        input_shape = input_ids.shape
-        input_ids = input_ids.view(-1, input_shape[-1])
-
-        hidden_states = self.embeddings(input_ids=input_ids)
-
-        # create causal attention mask
         causal_attention_mask = _create_4d_causal_attention_mask(
-            input_shape, hidden_states.dtype, device=hidden_states.device
+            input_ids.shape, device, dtype=hidden_states.get_dtype()
         )
 
-        encoder_outputs = self.encoder(
-            inputs_embeds=hidden_states,
-            causal_attention_mask=causal_attention_mask,
+        hidden_states = self._encoder(hidden_states, causal_attention_mask)
+
+        sequence_embeddings = ttnn.layer_norm(
+            hidden_states, weight=self._final_layer_norm, bias=self._final_layer_norm_bias, epsilon=self._layer_norm_eps
         )
+        pooled_output = sequence_embeddings[:, -1, :]
 
-        # sequence embedding output
-        last_hidden_state = encoder_outputs
-        last_hidden_state = self.final_layer_norm(last_hidden_state)
-
-        # pooled embedding output - single vector per sequence
-        pooled_output = last_hidden_state[
-            torch.arange(last_hidden_state.shape[0], device=last_hidden_state.device),
-            input_ids.to(dtype=torch.int, device=last_hidden_state.device).argmax(dim=-1),
-        ]
-        # print("POOLED" + str(pooled_output.shape))
-        # print("LAST HIDDEN STATE" + str(last_hidden_state.shape))
-        return last_hidden_state, pooled_output
+        return sequence_embeddings, pooled_output
 
 
-class CLIPTextEncoder(torch.nn.Module):
-    def __init__(self, config: CLIPTextConfig):
-        super().__init__()
-        self.text_model = CLIPTextTransformer(config)
-
-    def encode(self, input_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.text_model(input_ids)
+# adapted from https://github.com/huggingface/transformers/blob/main/src/transformers/models/clip/modeling_clip.py
+def _create_4d_causal_attention_mask(
+    input_shape: tuple[int, int], device: ttnn.Device, dtype: ttnn.DataType
+) -> ttnn.Tensor:
+    """Create a 4D causal attention mask for the given input shape."""
+    batch_size, tgt_len = input_shape
+    mask = torch.full((tgt_len, tgt_len), float("-inf"))
+    mask_cond = torch.arange(mask.size(-1))
+    mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
+    mask = mask[None, None, :, :].expand(batch_size, 1, tgt_len, tgt_len)
+    return ttnn.from_torch(mask, dtype=dtype, device=device, layout=ttnn.TILE_LAYOUT)

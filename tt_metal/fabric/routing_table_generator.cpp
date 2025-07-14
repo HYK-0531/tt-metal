@@ -299,7 +299,7 @@ void RoutingTableGenerator::generate_intermesh_routing_table(
                     //    }
                     //  }
                 }
-                exit_nodes_routing_to_mesh_[dst_mesh_id].push_back(FabricNodeId(MeshId{src_mesh_id}, exit_chip_id));
+                mesh_to_exit_nodes_[dst_mesh_id].push_back(FabricNodeId(MeshId{src_mesh_id}, exit_chip_id));
             }
         }
     }
@@ -341,8 +341,8 @@ void RoutingTableGenerator::print_routing_tables() const {
 }
 
 const std::vector<FabricNodeId>& RoutingTableGenerator::get_exit_nodes_routing_to_mesh(MeshId mesh_id) const {
-    auto it = this->exit_nodes_routing_to_mesh_.find(mesh_id);
-    if (it != this->exit_nodes_routing_to_mesh_.end()) {
+    auto it = this->mesh_to_exit_nodes_.find(mesh_id);
+    if (it != this->mesh_to_exit_nodes_.end()) {
         return it->second;
     } else {
         TT_THROW("No exit nodes found for mesh_id {}", *mesh_id);

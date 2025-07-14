@@ -8,7 +8,7 @@ void kernel_main() {
     uint32_t dst_addr = get_arg_val<uint32_t>(0);
     const uint32_t tiles_offset = get_arg_val<uint32_t>(1);
 
-    constexpr uint32_t cb_out = tt::CBIndex::c_1;
+    constexpr uint32_t cb_out = tt::CBIndex::c_2;
 
     const uint32_t input_tile_size = get_tile_size(cb_out);
     const DataFormat input_data_format = get_dataformat(cb_out);

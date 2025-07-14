@@ -15,14 +15,12 @@ void bind_example_multiple_return_operation(py::module& module) {
     bind_registered_operation(
         module,
         ttnn::prim::example_multiple_return,
-        R"doc(example_multiple_return(input_tensor: ttnn.Tensor) -> std::vector<std::optional<ttnn.Tensor>>)doc",
-        ttnn::pybind_arguments_t{py::arg("input_tensor"), py::arg("return_output1"), py::arg("return_output2")});
-
-    bind_registered_operation(
-        module,
-        ttnn::composite_example_multiple_return,
-        R"doc(composite_example_multiple_return(input_tensor: ttnn.Tensor) -> std::vector<std::optional<Tensor>>)doc",
-        ttnn::pybind_arguments_t{py::arg("input_tensor"), py::arg("return_output1"), py::arg("return_output2")});
+        R"doc(example_multiple_return(input: ttnn.Tensor, other: ttnn.Tensor)doc",
+        ttnn::pybind_arguments_t{
+            py::arg("input"),
+            py::arg("other"),
+            py::arg("output"),
+        });
 }
 
 }  // namespace ttnn::operations::examples

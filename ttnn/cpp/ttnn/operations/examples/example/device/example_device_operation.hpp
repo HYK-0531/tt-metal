@@ -27,27 +27,8 @@ struct ExampleDeviceOperation {
     // tensors, etc.
     struct tensor_args_t {
         // This example will use a tensor that can only be used as an input
-        const Tensor& input_tensor;
-
-        // However, the following examples show what else can be done with tensor_args_t
-
-        // An example of the tensor that can be used for input/output or just for pre-allocated output
-        // Tensor& io_tensor;
-
-        // An example of an optional tensor
-        // std::optional<Tensor> optional_output_tensor;
-
-        // An example of a vector of tensors
-        // std::vector<Tensor> vector_of_tensors;
-
-        // An example of a tuple of tensors
-        // std::tuple<Tensor, ...> tuple_of_tensors;
-
-        // An example of a vector of optional tensors
-        // std::vector<std::optional<Tensor>> vector_of_optional_tensors;
-
-        // An example of a tuple of tensors
-        // std::tuple<std::vector<std::optional<Tensor>>, std::optional<Tensor>> some_crazy_tuple_of_tensors;
+        const Tensor& input;
+        const Tensor& output;
     };
 
     // Define the return types for the spec(s) of the operation
@@ -62,26 +43,6 @@ struct ExampleDeviceOperation {
     // Note spec_return_value_t and tensor_return_value_t should follow the same pattern
     // i.e. if spec_return_value_t is a std::vector<std::optional<ttnn::TensorSpec>> then tensor_return_value_t should
     // be std::vector<std::optional<Tensor>>
-
-    struct SingleCore {
-        // Shared variables are the variables that are shared between the create and override_runtime_arguments methods
-        struct shared_variables_t {
-            tt::tt_metal::KernelHandle unary_reader_kernel_id;
-            tt::tt_metal::KernelHandle unary_writer_kernel_id;
-        };
-        using cached_program_t = ttnn::device_operation::CachedProgram<shared_variables_t>;
-
-        static cached_program_t create(
-            const operation_attributes_t& operation_attributes,
-            const tensor_args_t& tensor_args,
-            tensor_return_value_t& tensor_return_value);
-
-        static void override_runtime_arguments(
-            cached_program_t& cached_program,
-            const operation_attributes_t& operation_attributes,
-            const tensor_args_t& tensor_args,
-            tensor_return_value_t& tensor_return_value);
-    };
 
     struct MultiCore {
         // Shared variables are the variables that are shared between the create and override_runtime_arguments methods
@@ -105,7 +66,7 @@ struct ExampleDeviceOperation {
             tensor_return_value_t& tensor_return_value);
     };
 
-    using program_factory_t = std::variant<SingleCore, MultiCore>;
+    using program_factory_t = std::variant<MultiCore>;
 
     // Mandatory methods
 
@@ -130,7 +91,7 @@ struct ExampleDeviceOperation {
     // ttnn::prim::example(input_tensor)` after the op is registered Keep in mind that the the overload with `queue_id`
     // argument will be added automatically for primitive operations So, the user can also call this operation using
     // `tensor_return_value_t output = ttnn::prim::example(queue_id, input_tensor)`
-    static std::tuple<operation_attributes_t, tensor_args_t> invoke(const Tensor& input_tensor);
+    static std::tuple<operation_attributes_t, tensor_args_t> invoke(const Tensor& input, const Tensor& output);
 
     // Optional methods
 

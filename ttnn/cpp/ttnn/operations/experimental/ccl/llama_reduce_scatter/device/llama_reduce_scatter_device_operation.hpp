@@ -16,6 +16,7 @@
 #include "ttnn/global_semaphore.hpp"
 #include <tt-metalium/sub_device.hpp>
 #include <tt-metalium/fabric_edm_types.hpp>
+#include "ttnn/operations/ccl/ccl_op_fusion.hpp"
 
 namespace ttnn::operations::experimental::ccl {
 
@@ -76,7 +77,8 @@ struct LlamaReduceScatterDeviceOperation {
             const ttnn::MeshCoordinate& mesh_coordinate,
             const tensor_args_t& tensor_args,
             tensor_return_value_t& tensor_return_value,
-            tt::tt_metal::Program& program);
+            tt::tt_metal::Program& program,
+            const std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> signaler);
         static void override_runtime_arguments_per_program(
             const shared_variables_t& shared_variables,
             tt::tt_metal::Program& program,

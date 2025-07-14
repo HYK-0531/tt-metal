@@ -18,6 +18,7 @@
 #include "ttnn/operations/ccl/common/host/ccl_worker_builder.hpp"
 #include <tt-metalium/sub_device.hpp>
 #include <tt-metalium/fabric.hpp>
+#include "ttnn/operations/ccl/ccl_op_fusion.hpp"
 
 namespace ttnn::operations::experimental::ccl {
 
@@ -283,9 +284,11 @@ LlamaReduceScatterDeviceOperation::LlamaReduceScatterAdd::create_at(
     const tensor_args_t& tensor_args,
     tensor_return_value_t& tensor_return_value,
     tt::tt_metal::Program& program) {
+    std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> empty_fused_op_signaler = std::nullopt;
     return {
         std::move(program),
-        create_at_program_processing(operation_attributes, mesh_coordinate, tensor_args, tensor_return_value, program)};
+        create_at_program_processing(
+            operation_attributes, mesh_coordinate, tensor_args, tensor_return_value, program, empty_fused_op_signaler)};
 }
 
 std::tuple<CoreRangeSet, CoreRangeSet> LlamaReduceScatterDeviceOperation::get_rs_core_grids(
@@ -333,7 +336,8 @@ LlamaReduceScatterDeviceOperation::LlamaReduceScatterAdd::create_at_program_proc
     const ttnn::MeshCoordinate& mesh_coordinate,
     const tensor_args_t& tensor_args,
     tensor_return_value_t& tensor_return_value,
-    tt::tt_metal::Program& program) {
+    tt::tt_metal::Program& program,
+    std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> signaler) {
     using namespace tt;
     using namespace tt::tt_metal;
     using namespace tt::tt_fabric;

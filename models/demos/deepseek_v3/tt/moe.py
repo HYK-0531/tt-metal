@@ -36,7 +36,7 @@ class TT_MoE(nn.Module):
             device=mesh_device,
             mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
             dtype=ttnn.bfloat16,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
         self.all_to_all_dispatch_metadata_tensors = ttnn.from_torch(
@@ -44,7 +44,7 @@ class TT_MoE(nn.Module):
             device=mesh_device,
             mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
             dtype=ttnn.uint16,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
         # Create a one hot vector of shape (self.batch_size*4, self.experts_per_device)
@@ -56,7 +56,7 @@ class TT_MoE(nn.Module):
             device=mesh_device,
             mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
             dtype=ttnn.uint16,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
 
@@ -114,13 +114,13 @@ class TT_MoE(nn.Module):
         experts_output = self.tt_experts(post_all_to_all_dispatch_output)
         ttnn.deallocate(post_all_to_all_dispatch_output)
         experts_output = ttnn.to_layout(experts_output, ttnn.ROW_MAJOR_LAYOUT)
-        experts_output = ttnn.reshape(experts_output, (self.experts_per_device, self.batch_size * 4, 1, 7168))
+        experts_output = ttnn.permute(experts_output, (1, 2, 0, 3))
         # Combine the experts output Shape([8, 32, 1, 7168])
         before_combine = ttnn.to_torch(ttnn.get_device_tensors(experts_output)[0])
         if torch.any(before_combine > 10000000):
             print("experts_output has values greater than 10000000")
             print(before_combine[torch.where(before_combine > 10000000)])
-        combine_out_tensor = ttnn.all_to_all_combine(
+        ttnn.all_to_all_combine(
             experts_output,
             self.expert_mapping_tensors,
             self.all_to_all_dispatch_metadata_tensors,
@@ -131,7 +131,7 @@ class TT_MoE(nn.Module):
             axis=0,
             optional_output_tensor=self.all_to_all_combine_output_tensors,
         )
-        after_combine = ttnn.to_torch(ttnn.get_device_tensors(combine_out_tensor)[0])
+        after_combine = ttnn.to_torch(ttnn.get_device_tensors(self.all_to_all_combine_output_tensors)[0])
         if torch.any(after_combine > 10000000):
             print("all_to_all_combine_output_tensors has values greater than 10000000")
             print(after_combine[torch.where(after_combine > 10000000)])

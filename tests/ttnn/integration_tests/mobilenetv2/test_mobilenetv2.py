@@ -58,11 +58,20 @@ def test_mobilenetv2(device, use_pretrained_weight, batch_size, reset_seeds):
     torch_input_tensor, ttnn_input_tensor = create_mobilenetv2_input_tensors(
         batch=batch_size, input_height=224, input_width=224
     )
+    n, c, h, w = torch_input_tensor.shape
+    if c == 3:
+        c = 16
+    input_mem_config = ttnn.create_sharded_memory_config(
+        [n, c, h, w],
+        ttnn.CoreGrid(x=8, y=8),
+        ttnn.ShardStrategy.HEIGHT,
+    )
     torch_output_tensor = torch_model(torch_input_tensor)
 
     model_parameters = create_mobilenetv2_model_parameters(torch_model, device=device)
 
     ttnn_model = ttnn_mobilenetv2.TtMobileNetV2(model_parameters, device, batchsize=batch_size)
+    ttnn_input_tensor = ttnn_input_tensor.to(device, input_mem_config)
     output_tensor = ttnn_model(ttnn_input_tensor)
 
     output_tensor = ttnn.to_torch(output_tensor)

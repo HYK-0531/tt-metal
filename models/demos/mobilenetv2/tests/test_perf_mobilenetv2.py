@@ -20,14 +20,14 @@ from tests.ttnn.integration_tests.mobilenetv2.test_mobilenetv2 import MOBILENETV
 
 
 def get_expected_times(name):
-    base = {"mobilenetv2": (63.3, 0.14)}
+    base = {"mobilenetv2": (47.8, 0.02)}
     return base[name]
 
 
 @pytest.mark.models_performance_bare_metal
 @pytest.mark.models_performance_virtual_machine
 @pytest.mark.parametrize("device_params", [{"l1_small_size": MOBILENETV2_L1_SMALL_SIZE}], indirect=True)
-@pytest.mark.parametrize("input_tensor", [torch.rand((1, 224, 224, 3))], ids=["input_tensor"])
+@pytest.mark.parametrize("input_tensor", [torch.rand((1, 3, 224, 224))], ids=["input_tensor"])
 @pytest.mark.parametrize(
     "use_pretrained_weight",
     [True, False],

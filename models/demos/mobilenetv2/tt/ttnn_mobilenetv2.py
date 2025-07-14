@@ -229,10 +229,19 @@ class TtMobileNetV2:
         self.l1_weight = model_params["classifier_1_weight"]
         self.l1_bias = model_params["classifier_1_bias"]
 
-    def __call__(
-        self,
-        x,
-    ):
+    def __call__(self, input, min_channels=8):
+        print("input shape is", input.shape)
+        if input.is_sharded():
+            input_interleaved = ttnn.sharded_to_interleaved(input, ttnn.L1_MEMORY_CONFIG)
+            ttnn.deallocate(input)
+        else:
+            input_interleaved = input
+        n, c, h, w = input.shape
+        channel_padding_needed = min_channels - c
+        x = ttnn.pad(input_interleaved, ((0, 0), (0, channel_padding_needed), (0, 0), (0, 0)), value=0.0)
+        ttnn.deallocate(input_interleaved)
+        x = ttnn.permute(x, (0, 2, 3, 1))
+        x = ttnn.reshape(x, (1, 1, n * h * w, min_channels))
         output_tensor, h, w = self.conv1(x)
         output_tensor, h, w = self.conv2(output_tensor)
         output_tensor, h, w = self.conv3(output_tensor)

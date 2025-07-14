@@ -23,7 +23,7 @@ from tests.ttnn.unit_tests.operations.ccl.test_all_to_all_dispatch_t3000 import 
 )
 
 
-def _get_experts_on_device(num_experts, expert_mapping, device):
+def get_experts_on_device(num_experts, expert_mapping, device):
     return [e for e in range(num_experts) if expert_mapping[0, 0, e, device] == 1]
 
 
@@ -84,7 +84,7 @@ def get_input_sparse_contribs(
 
     token_expert_count = 0
     for d in range(devices):
-        experts_on_device = _get_experts_on_device(experts, expert_mapping, d)
+        experts_on_device = get_experts_on_device(experts, expert_mapping, d)
         assert len(experts_on_device) == experts_per_device
         for b in range(batch):
             for k in range(selected_experts_k):
@@ -140,7 +140,7 @@ def get_output_combined_contribs(
     for m0 in range(mesh_shape[0]):
         for m1 in range(mesh_shape[1]):
             d = m0 * mesh_shape[1] + m1
-            device_expert_list = _get_experts_on_device(experts, expert_mapping, d)
+            device_expert_list = get_experts_on_device(experts, expert_mapping, d)
 
             for b in range(batch):
                 for s in range(seq):
@@ -253,7 +253,16 @@ def trace_all_to_all_combine(
     )
 
     _, input_contrib, expert_mapping, metadata_tensor, output_contrib_tensor, data_map = gen_tensors(
-        batch, experts, select_experts_k, hidden_size, seq, mesh_shape, axis, devices, scheme=scheme
+        batch,
+        experts,
+        select_experts_k,
+        hidden_size,
+        seq,
+        mesh_shape,
+        axis,
+        devices,
+        scheme=scheme,
+        local_reduce=local_reduce,
     )
 
     ccl_semaphore_handle = ttnn.create_global_semaphore(mesh_device, subdevice_shard_cores_grid, 0)

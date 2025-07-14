@@ -49,7 +49,8 @@ public:
     RoutingTable get_inter_mesh_table() const { return this->inter_mesh_table_; }
 
     void print_routing_tables() const;
-
+    // Return a list of all exit nodes, across all meshes that are connected to the requested
+    // MeshID.
     const std::vector<FabricNodeId>& get_exit_nodes_routing_to_mesh(MeshId mesh_id) const;
 
     std::unique_ptr<MeshGraph> mesh_graph;

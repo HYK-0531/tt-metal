@@ -102,11 +102,17 @@ void MAIN {
                         if constexpr (one_scalar_per_core) {
                             mul_unary_tile(math_tile_idx, bf32_scalar);
                         } else {
-                            volatile tt_l1_ptr uint32_t* scalar_ptr;
-                            UNPACK(uint64_t scalar_address = get_local_cb_interface(curr_scalar_cb_id).fifo_rd_ptr);
-                            UNPACK(scalar_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(scalar_address));
-                            UNPACK(DPRINT << "scalar: " << *scalar_ptr << ENDL());
-                            mul_unary_tile(math_tile_idx, *scalar_ptr);
+                            uint64_t scalar_address = 0;
+                            UNPACK(scalar_address = get_local_cb_interface(curr_scalar_cb_id).fifo_rd_ptr);
+                            constexpr uint32_t COMPUTE_ADDR_FACTOR = 16;
+                            UNPACK(
+                                volatile tt_l1_ptr uint32_t* scalar_ptr =
+                                    reinterpret_cast<volatile tt_l1_ptr uint32_t*>(
+                                        COMPUTE_ADDR_FACTOR * scalar_address));
+                            UNPACK(
+                                DPRINT << "scalar_address: " << scalar_address << " scalar value: " << *scalar_ptr
+                                       << ENDL());
+                            // mul_unary_tile(math_tile_idx, *scalar_ptr);
                         }
                     }
                 }

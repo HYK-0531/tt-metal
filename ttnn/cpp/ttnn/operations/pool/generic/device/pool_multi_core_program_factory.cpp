@@ -26,9 +26,9 @@ struct ScalarInfo {
     // for (uint32_t i = 0; i < nsticks_per_core; ++i), start is first stick which should be reduced and multiplied by
     // scalar value, end is the first stick which should not be reduced and multiplied by scalar value. So the interval
     // [start, end) is the range of sticks that should be reduced and multiplied by scalar value.
-    uint16_t start;
-    uint16_t value;
-    uint16_t end;
+    uint32_t start;
+    uint32_t value;
+    uint32_t end;
 };
 
 // This function generates a vector of elements of type ScalarInfo. It is called once per core and generates the
@@ -103,7 +103,10 @@ std::vector<ScalarInfo> get_bf16_avg_pool_config_scalars(
             if (!scalars.empty()) {
                 scalars.back().end = i;
             }
-            scalars.push_back({i, bfloat16(value).to_packed(), i});
+            printf("value: %f\n", value);
+            uint32_t int_value = *(reinterpret_cast<uint32_t*>(&value));
+            printf("int_value: %u\n", int_value);
+            scalars.push_back({i, int_value, i});
             first_scalar = false;
         }
         last_pool_area = static_cast<uint32_t>(pool_area);
@@ -120,7 +123,7 @@ std::vector<ScalarInfo> get_bf16_avg_pool_config_scalars(
 }
 
 static void push_back_scalar_info_or_zero(
-    std::vector<uint16_t>& config_vector,
+    std::vector<uint32_t>& config_vector,
     const std::vector<ScalarInfo>& scalars,
     uint32_t max_scalars_cnt,
     uint32_t repeats) {
@@ -145,7 +148,7 @@ static Tensor create_scalar_config_tensor(
     uint32_t n_dim,
     uint32_t num_shards_c,
     uint32_t num_cores) {
-    std::vector<uint16_t> config_vector;
+    std::vector<uint32_t> config_vector;
 
     size_t max_scalars_cnt = 0;
     std::vector<std::vector<ScalarInfo>> scalars_per_core = {};
@@ -216,7 +219,7 @@ static Tensor create_scalar_config_tensor(
 
     ttnn::Shape config_shape = ttnn::Shape({tt::div_up(config_vector.size(), entries_per_core), entries_per_core});
     tt::tt_metal::HostBuffer buffer(std::move(config_vector));
-    return Tensor(std::move(buffer), config_shape, DataType::UINT16, Layout::ROW_MAJOR);
+    return Tensor(std::move(buffer), config_shape, DataType::UINT32, Layout::ROW_MAJOR);
 }
 
 Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_new(

@@ -31,6 +31,7 @@ class TT_MoE_Gate(nn.Module):
         self.tt_bias_correction_weights = ttnn.from_torch(
             state_dict["e_score_correction_bias"].repeat(self.batch_size, 1).unsqueeze(0).unsqueeze(0),
             device=mesh_device,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
             dtype=ttnn.float32,
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
             layout=ttnn.TILE_LAYOUT,

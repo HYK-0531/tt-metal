@@ -346,22 +346,6 @@ static SubdeviceInfo create_subdevices(const std::vector<IDevice*>& devices) {
     return subdevice_info;
 }
 
-static SubdeviceInfo create_worker_subdevices(const std::vector<IDevice*>& devices) {
-    SubdeviceInfo subdevice_info;
-    std::unordered_map<chip_id_t, SubDeviceManagerId> sub_device_manager_ids;
-    for (auto device : devices) {
-        const auto& tensix_sub_device =
-            tt_metal::SubDevice(std::array{device->worker_cores(HalProgrammableCoreType::TENSIX, SubDeviceId{0})});
-        subdevice_info.sub_device_managers.insert(
-            {device->id(), device->create_sub_device_manager({tensix_sub_device}, 0)});
-        device->load_sub_device_manager(subdevice_info.sub_device_managers.at(device->id()));
-        subdevice_info.worker_subdevice_id.insert(
-            {device->id(), device->get_sub_device_ids().at(TEST_WORKERS_SUBDEVICE_INDEX)});
-        device->set_sub_device_stall_group({subdevice_info.worker_subdevice_id.at(device->id())});
-    }
-
-    return subdevice_info;
-}
 
 static Correctness run_output_check(
     const std::vector<uint32_t>& all_zeros,

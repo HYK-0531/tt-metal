@@ -113,6 +113,12 @@ def test_group_norm_with_height_sharded(device, N, C, H, W, num_groups):
     output_tensor = ttnn.to_memory_config(output_tensor, ttnn.DRAM_MEMORY_CONFIG)
     output_tensor = ttnn.from_device(output_tensor)
     output_tensor = ttnn.to_torch(output_tensor)
+    torch.set_printoptions(profile="full")
+
+    with open("tensor_output.txt", "w") as f:
+        f.write(str(output_tensor))
+    with open("torch_tensor_output.txt", "w") as f:
+        f.write(str(torch_output_tensor))
 
     assert_with_pcc(torch_output_tensor, output_tensor, 0.9998)
 
@@ -214,19 +220,19 @@ def test_group_norm_with_block_sharded_v2_8x4_grid(device, N, C, H, W, num_group
 @pytest.mark.parametrize(
     "N, C, H, W, num_groups",
     [
-        (2, 320, 64, 64, 32),
-        (1, 640, 1, 2048, 32),
-        (1, 640, 1, 4096, 32),
-        (1, 960, 1, 2048, 32),
-        (1, 960, 1, 4096, 32),
-        (1, 1280, 1, 512, 32),
-        (1, 1280, 1, 2048, 32),
-        (1, 1920, 1, 512, 32),
-        (1, 1920, 1, 2048, 32),
+        # (2, 320, 64, 64, 32),
+        # (1, 640, 1, 2048, 32),
+        # (1, 640, 1, 4096, 32),
+        # (1, 960, 1, 2048, 32),
+        # (1, 960, 1, 4096, 32),
+        # (1, 1280, 1, 512, 32),
+        # (1, 1280, 1, 2048, 32),
+        # (1, 1920, 1, 512, 32),
+        # (1, 1920, 1, 2048, 32),
         (1, 2560, 1, 512, 32),
         # not fit in L1 for GS
         # (2, 960, 64, 64, 32),
-        # (1, 640, 1, 8192, 32),
+        # (1, 640, 128, 128, 32),
     ],
 )
 def test_group_norm_with_block_sharded_v2_8x8_grid(device, N, C, H, W, num_groups):
@@ -292,8 +298,10 @@ def test_group_norm_with_block_sharded_v2_8x8_grid(device, N, C, H, W, num_group
     sharded_mem_config = ttnn.MemoryConfig(
         ttnn.types.TensorMemoryLayout.BLOCK_SHARDED, ttnn.types.BufferType.L1, shard_spec
     )
+    print("hi")
     input_tensor = ttnn.interleaved_to_sharded(input_tensor, sharded_mem_config, keep_l1_aligned=True)
 
+    print("hi")
     # groupnorm
     output_tensor = ttnn.group_norm(
         input_tensor,

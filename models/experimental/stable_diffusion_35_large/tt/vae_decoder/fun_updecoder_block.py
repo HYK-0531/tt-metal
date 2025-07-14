@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from loguru import logger
 from typing import TYPE_CHECKING
 
 import ttnn
@@ -49,10 +50,12 @@ class TtUpDecoderBlock2DParameters:
 def updecoder_block(
     x: ttnn.Tensor, parameters: TtUpDecoderBlock2DParameters, parallel_manager: StableDiffusionParallelManager | None
 ) -> ttnn.Tensor:
-    for resnet_params in parameters.resnets:
+    for idx, resnet_params in enumerate(parameters.resnets):
+        logger.info(f"resnet: {idx} <-> {x.shape}")
         x = resnet_block(x, resnet_params, None)
 
-    for upsample_params in parameters.upsamplers:
+    for idx, upsample_params in enumerate(parameters.upsamplers):
+        logger.info(f"upsample: {idx} <-> {x.shape}")
         x = vae_upsample2d(x, upsample_params)
 
     return x

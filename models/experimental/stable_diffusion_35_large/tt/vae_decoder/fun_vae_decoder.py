@@ -15,7 +15,6 @@ from .fun_unet_mid_block import unet_mid_block, TtUNetMidBlock2DParameters
 from .fun_updecoder_block import updecoder_block, TtUpDecoderBlock2DParameters
 from .fun_group_norm import vae_group_norm, TtGroupNormParameters
 from ..parallel_config import StableDiffusionParallelManager
-from loguru import logger
 
 if TYPE_CHECKING:
     import torch
@@ -66,18 +65,14 @@ def sd_vae_decode(
     parameters: TtVaeDecoderParameters,
     parallel_manager: StableDiffusionParallelManager,
 ) -> ttnn.Tensor:
-    logger.info("vae_conv2d", x.shape)
+    # logger.info("vae_conv2d", x.shape)
     x = vae_conv2d(x, parameters.conv_in)
-    logger.info("unet_mid_block")
     x = unet_mid_block(x, parameters.mid_block, None)
 
-    logger.info("updecoder_block")
     for up_block_params in parameters.up_blocks:
         x = updecoder_block(x, up_block_params, None)
 
-    logger.info("vae_group_norm")
     x = vae_group_norm(x, parameters.conv_norm_out)
-    logger.info("vae_conv2d")
     x = ttnn.silu(x)
     x = vae_conv2d(x, parameters.conv_out)
 

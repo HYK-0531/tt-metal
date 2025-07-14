@@ -58,6 +58,7 @@ class TtStableDiffusion3Pipeline:
             core_grid=parallel_manager.submesh_devices[0].core_grid,  # parallel_manager.mesh_device.core_grid,
         )
         logger.info(f"self.parallel_manager.submesh_devices: {parallel_manager.submesh_devices[0]}")
+        logger.info(f"self.parallel_manager.mesh_device: {parallel_manager.mesh_device}")
 
         # inp = torch.load("torch_latent.pt").permute(0, 3, 1, 2)
         # logger.info(f"data shape :{inp.shape}")

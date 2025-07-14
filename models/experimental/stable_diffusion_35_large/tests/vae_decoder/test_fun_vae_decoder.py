@@ -12,6 +12,7 @@ from ...tt.vae_decoder.fun_vae_decoder import sd_vae_decode, TtVaeDecoderParamet
 from ...tt.utils import assert_quality, to_torch
 from models.utility_functions import comp_allclose, comp_pcc
 from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
+from ...tt.parallel_config import StableDiffusionParallelManager
 
 
 def print_stats(label, data: torch.Tensor, device=None):
@@ -27,7 +28,23 @@ def print_stats(label, data: torch.Tensor, device=None):
 # @pytest.mark.parametrize("device_params", [{"trace_region_size": 40960}], indirect=True)
 # @pytest.mark.parametrize("device_params", [{"l1_small_size": 0}], indirect=True)
 # @pytest.mark.usefixtures("use_program_cache")
-@pytest.mark.parametrize("device_params", [{"l1_small_size": 32768}])
+@pytest.mark.parametrize(
+    "mesh_device, cfg, sp, tp, topology",
+    [
+        [(2, 4), (2, 1), (2, 0), (2, 1), ttnn.Topology.Linear],
+        [(4, 8), (2, 1), (4, 0), (4, 1), ttnn.Topology.Linear],
+    ],
+    ids=[
+        "t3k_cfg2_sp2_tp2",
+        "tg_cfg2_sp4_tp4",
+    ],
+    indirect=["mesh_device"],
+)
+@pytest.mark.parametrize(
+    "device_params",
+    [{"fabric_config": ttnn.FabricConfig.FABRIC_1D, "l1_small_size": 8284, "trace_region_size": 15210496}],
+    indirect=True,
+)
 @pytest.mark.parametrize(
     (
         "batch",
@@ -45,6 +62,7 @@ def print_stats(label, data: torch.Tensor, device=None):
         (1, 16, 3, 2, 128, 128, 32, (128, 256, 512, 512), 8, 8),  # slice 128, output blocks 32. Need to parametize
     ],
 )
+@pytest.mark.usefixtures("use_program_cache")
 def test_vae_decoder(
     *,
     mesh_device: ttnn.MeshDevice,
@@ -58,12 +76,32 @@ def test_vae_decoder(
     block_out_channels: list[int] | tuple[int, ...],
     cores_y: int,
     cores_x: int,
+    cfg,
+    sp,
+    tp,
+    topology,
 ) -> None:
+    cfg_factor, cfg_axis = cfg
+    sp_factor, sp_axis = sp
+    tp_factor, tp_axis = tp
+    parallel_manager = StableDiffusionParallelManager(
+        mesh_device,
+        cfg_factor,
+        sp_factor,
+        tp_factor,
+        sp_factor,
+        tp_factor,
+        topology,
+        cfg_axis=cfg_axis,
+        sp_axis=sp_axis,
+        tp_axis=tp_axis,
+    )
     # mesh_device = device
     # torch_dtype = torch.float32
     torch_dtype = torch.bfloat16
     ttnn_dtype = ttnn.bfloat16
     torch.manual_seed(0)
+    mesh_device = parallel_manager.submesh_devices[0]
     logger.info(f"Device: {mesh_device}, {mesh_device.core_grid}")
 
     torch_model = VaeDecoder(
@@ -88,10 +126,18 @@ def test_vae_decoder(
 
     # inp = torch.randn(batch, in_channels, height, width)
     # inp = torch.normal(1, 2, (batch, in_channels, height, width))
-    inp = torch.load("torch_latent.pt").permute(0, 3, 1, 2)
+    inp = torch.load("torch_latent.pt")  # .permute(0, 3, 1, 2)
     logger.info(f"data shape :{inp.shape}")
 
-    tt_inp = ttnn.from_torch(inp.permute(0, 2, 3, 1), dtype=ttnn_dtype, device=mesh_device)
+    tt_inp = ttnn.from_torch(
+        inp.permute(0, 2, 3, 1),
+        dtype=ttnn_dtype,
+        device=mesh_device,
+        mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
+    )
+
+    # ttnn.visualize_mesh_device(mesh_device, tensor=tt_inp)
+    # breakpoint(0)
 
     logger.info(print_stats("torch_input", inp))
     logger.info(print_stats("tt_input", tt_inp, device=mesh_device))

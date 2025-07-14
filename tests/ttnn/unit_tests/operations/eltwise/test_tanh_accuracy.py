@@ -5,7 +5,7 @@
 import pytest
 import torch
 import ttnn
-from tests.ttnn.utils_for_testing import assert_with_pcc
+from tests.ttnn.utils_for_testing import assert_with_pcc, assert_with_ulp
 
 
 def test_tanh_range(device):
@@ -269,3 +269,33 @@ def test_tanh_sharded(device, high, low, input_mem_config):
 
     pcc, pcc_msg = assert_with_pcc(golden_tensor, output_tensor, 0.999)
     assert pcc
+
+
+@pytest.mark.parametrize("hw", [1024])
+def test_unary_tanh_op(hw, device):
+    torch.manual_seed(0)
+    tor_a = torch.rand([1, 1, 32, 32], dtype=torch.bfloat16)
+    print("tor_a ", tor_a)
+
+    tor_res = torch.tanh(tor_a)
+    mem = ttnn.MemoryConfig(
+        memory_layout=ttnn.TensorMemoryLayout.INTERLEAVED, buffer_type=ttnn.BufferType.L1, shard_spec=None
+    )
+
+    tt_a = ttnn.from_torch(tor_a, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT, device=device, memory_config=mem)
+
+    result = ttnn.tanh(tt_a, accuracy=True)
+
+    tt_res = ttnn.to_torch(result)
+    torch.set_printoptions(linewidth=200, threshold=10000, precision=5, sci_mode=False, edgeitems=17)
+    print("tt_res", tt_res)
+    print("tor_res", tor_res)
+    abs_diff = torch.abs(tt_res - tor_res)
+    # print("abs_diff", abs_diff)
+    print("max diff", torch.max(abs_diff))
+    print("min diff", torch.min(abs_diff))
+
+    assert torch.allclose(tor_res, tt_res, atol=0.016, equal_nan=False)
+    # pcc, pcc_msg = assert_with_pcc(tor_res, tt_res, 0.999)
+    # assert pcc
+    # assert assert_with_ulp(tor_res, tt_res)

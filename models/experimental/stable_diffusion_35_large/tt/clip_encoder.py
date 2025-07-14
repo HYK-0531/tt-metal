@@ -10,9 +10,9 @@ from dataclasses import dataclass
 import torch
 import ttnn
 
-from linear import TtLinear, TtLinearParameters
-from substate import indexed_substates, substate
-from utils import from_torch_fast
+from .linear import TtLinear, TtLinearParameters
+from .substate import indexed_substates, substate
+from .utils import from_torch_fast
 
 
 @dataclass
@@ -212,7 +212,7 @@ class TtCLIPEncoderLayer:
 
 @dataclass
 class TtCLIPTransformerParameters:
-    layers: List[TtCLIPEncoderLayerParameters]
+    layers: list[TtCLIPEncoderLayerParameters]
 
     @classmethod
     def from_torch(

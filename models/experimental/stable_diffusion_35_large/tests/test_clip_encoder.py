@@ -91,5 +91,5 @@ def test_clip_encoder(*, device: ttnn.Device, use_program_cache: bool, model_nam
     assert pooled_output.shape == tt_pooled_output_torch.shape
 
     # check quality
-    assert_quality(sequence_output, tt_sequence_output_torch, pcc=0.95)
-    assert_quality(pooled_output, tt_pooled_output_torch, pcc=0.95)
+    assert_quality(sequence_output, tt_sequence_output_torch, pcc=0.98)
+    assert_quality(pooled_output, tt_pooled_output_torch, pcc=0.98)

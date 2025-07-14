@@ -1024,14 +1024,14 @@ void DeviceProfiler::logNocTracePacketDataToJson(
     }
 }
 
-void DeviceProfiler::emitCSVHeader(
-    std::ofstream& log_file_ofs, const tt::ARCH& device_architecture, int device_core_frequency) const {
-    log_file_ofs << "ARCH: " << get_string_lowercase(device_architecture)
-                 << ", CHIP_FREQ[MHz]: " << device_core_frequency << std::endl;
-    log_file_ofs << "PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset], data, "
-                    "run host ID,  zone name, type, source line, source file, meta data"
-                 << std::endl;
-}
+// void DeviceProfiler::emitCSVHeader(
+//     std::ofstream& log_file_ofs, const tt::ARCH& device_architecture, int device_core_frequency) const {
+//     log_file_ofs << "ARCH: " << get_string_lowercase(device_architecture)
+//                  << ", CHIP_FREQ[MHz]: " << device_core_frequency << std::endl;
+//     log_file_ofs << "PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset], data, "
+//                     "run host ID,  zone name, type, source line, source file, meta data"
+//                  << std::endl;
+// }
 
 void DeviceProfiler::serializeJsonNocTraces(
     const nlohmann::ordered_json& noc_trace_json_log,
@@ -1327,64 +1327,10 @@ void DeviceProfiler::setOutputDir(const std::string& new_output_dir) {
 #endif
 }
 
-void DeviceProfiler::setDeviceArchitecture(tt::ARCH device_arch) {
+std::filesystem::path DeviceProfiler::getOutputDir() const {
 #if defined(TRACY_ENABLE)
-    device_architecture = device_arch;
+    return output_dir;
 #endif
-}
-
-uint32_t DeviceProfiler::hash32CT(const char* str, size_t n, uint32_t basis) {
-    return n == 0 ? basis : hash32CT(str + 1, n - 1, (basis ^ str[0]) * UINT32_C(16777619));
-}
-
-uint16_t DeviceProfiler::hash16CT(const std::string& str) {
-    uint32_t res = hash32CT(str.c_str(), str.length());
-    return ((res & 0xFFFF) ^ ((res & 0xFFFF0000) >> 16)) & 0xFFFF;
-}
-
-void DeviceProfiler::populateZoneSrcLocations(
-    const std::string& new_log_name, const std::string& log_name, const bool push_new) {
-    std::ifstream log_file_read(new_log_name);
-    std::string line;
-    while (std::getline(log_file_read, line)) {
-        std::string delimiter = "'#pragma message: ";
-        int delimiter_index = line.find(delimiter) + delimiter.length();
-        std::string zone_src_location = line.substr(delimiter_index, line.length() - delimiter_index - 1);
-
-        uint16_t hash_16bit = hash16CT(zone_src_location);
-
-        auto did_insert = zone_src_locations.insert(zone_src_location);
-        if (did_insert.second && (hash_to_zone_src_locations.find(hash_16bit) != hash_to_zone_src_locations.end())) {
-            TT_THROW("Source location hashes are colliding, two different locations are having the same hash");
-        }
-
-        std::stringstream ss(zone_src_location);
-        std::string zone_name;
-        std::string source_file;
-        std::string line_num_str;
-        std::getline(ss, zone_name, ',');
-        std::getline(ss, source_file, ',');
-        std::getline(ss, line_num_str, ',');
-
-        ZoneDetails details(zone_name, source_file, std::stoull(line_num_str));
-
-        auto ret = hash_to_zone_src_locations.emplace(hash_16bit, details);
-        if (ret.second && push_new) {
-            std::ofstream log_file_write(log_name, std::ios::app);
-            log_file_write << line << std::endl;
-            log_file_write.close();
-        }
-    }
-    log_file_read.close();
-}
-
-void DeviceProfiler::generateZoneSourceLocationsHashes() {
-    // Load existing zones from previous runs
-    populateZoneSrcLocations(tt::tt_metal::PROFILER_ZONE_SRC_LOCATIONS_LOG);
-
-    // Load new zones from the current run
-    populateZoneSrcLocations(
-        tt::tt_metal::NEW_PROFILER_ZONE_SRC_LOCATIONS_LOG, tt::tt_metal::PROFILER_ZONE_SRC_LOCATIONS_LOG, true);
 }
 
 void DeviceProfiler::dumpResults(
@@ -1401,38 +1347,35 @@ void DeviceProfiler::dumpResults(
         fmt::format("{}-{}-{}", device_id, magic_enum::enum_name(state), magic_enum::enum_name(data_source));
     ZoneName(zone_name.c_str(), zone_name.size());
 
-    device_core_frequency = tt::tt_metal::MetalContext::instance().get_cluster().get_device_aiclk(device_id);
+    // FabricRoutingLookup routing_lookup;
+    // if (state == ProfilerDumpState::NORMAL && rtoptions.get_profiler_noc_events_enabled()) {
+    //     routing_lookup = FabricRoutingLookup(device);
+    // }
 
-    generateZoneSourceLocationsHashes();
+    // Move this to tt_metal_profiler.cpp
+    // if (tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_noc_events_enabled()) {
+    //     log_warning(
+    //         tt::LogAlways, "Profiler NoC events are enabled; this can add 1-15% cycle overhead to typical
+    //         operations!");
+    // }
 
-    const auto& rtoptions = tt::tt_metal::MetalContext::instance().rtoptions();
+    // // open CSV log file
+    // std::filesystem::path log_path = output_dir / DEVICE_SIDE_LOG;
+    // std::ofstream log_file_ofs;
 
-    FabricRoutingLookup routing_lookup;
-    if (state == ProfilerDumpState::NORMAL && rtoptions.get_profiler_noc_events_enabled()) {
-        routing_lookup = FabricRoutingLookup(device);
-    }
+    // // NOT THREAD SAFE
+    // // append to existing CSV log file if it already exists
+    // if (std::filesystem::exists(log_path)) {
+    //     log_file_ofs.open(log_path, std::ios_base::app);
+    // } else {
+    //     log_file_ofs.open(log_path);
+    //     emitCSVHeader(log_file_ofs, device_architecture, device_core_frequency);
+    // }
 
-    if (rtoptions.get_profiler_noc_events_enabled()) {
-        log_warning(
-            tt::LogAlways, "Profiler NoC events are enabled; this can add 1-15% cycle overhead to typical operations!");
-    }
-
-    // open CSV log file
-    std::filesystem::path log_path = output_dir / DEVICE_SIDE_LOG;
-    std::ofstream log_file_ofs;
-
-    // append to existing CSV log file if it already exists
-    if (std::filesystem::exists(log_path)) {
-        log_file_ofs.open(log_path, std::ios_base::app);
-    } else {
-        log_file_ofs.open(log_path);
-        emitCSVHeader(log_file_ofs, device_architecture, device_core_frequency);
-    }
-
-    if (!log_file_ofs) {
-        log_error(tt::LogMetal, "Could not open kernel profiler dump file '{}'", log_path);
-        return;
-    }
+    // if (!log_file_ofs) {
+    //     log_error(tt::LogMetal, "Could not open kernel profiler dump file '{}'", log_path);
+    //     return;
+    // }
 
     // create nlohmann json log object
     nlohmann::ordered_json noc_trace_json_log = nlohmann::json::array();
@@ -1482,19 +1425,20 @@ void DeviceProfiler::dumpResults(
     }
 
     // if defined, used profiler_noc_events_report_path to write json log. otherwise use output_dir
-    std::string rpt_path = rtoptions.get_profiler_noc_events_report_path();
-    if (rpt_path.empty()) {
-        rpt_path = output_dir.string();
-    }
+    // std::string rpt_path = rtoptions.get_profiler_noc_events_report_path();
+    // if (rpt_path.empty()) {
+    //     rpt_path = output_dir.string();
+    // }
 
+    // NOT THREAD SAFE
     // serialize noc traces only in normal state, to avoid overwriting individual trace files
-    if (state == ProfilerDumpState::NORMAL && rtoptions.get_profiler_noc_events_enabled()) {
-        serializeJsonNocTraces(noc_trace_json_log, rpt_path, device_id, routing_lookup);
-        dumpClusterCoordinatesAsJson(std::filesystem::path(rpt_path) / "cluster_coordinates.json");
-        dumpRoutingInfo(std::filesystem::path(rpt_path) / "topology.json");
-    }
+    // if (state == ProfilerDumpState::NORMAL && rtoptions.get_profiler_noc_events_enabled()) {
+    //     serializeJsonNocTraces(noc_trace_json_log, rpt_path, device_id, routing_lookup);
+    //     dumpClusterCoordinatesAsJson(std::filesystem::path(rpt_path) / "cluster_coordinates.json");
+    //     dumpRoutingInfo(std::filesystem::path(rpt_path) / "topology.json");
+    // }
 
-    log_file_ofs.close();
+    // log_file_ofs.close();
 #endif
 }
 

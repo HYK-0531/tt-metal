@@ -18,7 +18,6 @@
 #include <filesystem>
 #include <limits>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <ostream>
 #include <set>
@@ -48,6 +47,7 @@
 #include "profiler_paths.hpp"
 #include "profiler_state.hpp"
 #include "profiler_types.hpp"
+#include "tools/profiler/noc_event_profiler_utils.hpp"
 #include "tt-metalium/program.hpp"
 #include <tt-metalium/device_pool.hpp>
 #include "rtoptions.hpp"
@@ -56,23 +56,12 @@
 #include <tt-metalium/distributed.hpp>
 #include <umd/device/tt_core_coordinates.h>
 #include <umd/device/tt_xy_pair.h>
+#include <umd/device/types/cluster_descriptor_types.h>
 #include <umd/device/types/xy_pair.h>
 
 namespace tt {
 
 namespace tt_metal {
-
-void DumpMeshDeviceProfileResults(
-    distributed::MeshDevice& mesh_device,
-    ProfilerDumpState state,
-    const std::optional<ProfilerOptionalMetadata>& metadata) {
-#if defined(TRACY_ENABLE)
-    ZoneScoped;
-    for (IDevice* device : mesh_device.get_devices()) {
-        detail::DumpDeviceProfileResults(device, state, metadata);
-    }
-#endif
-}
 
 namespace detail {
 
@@ -83,11 +72,81 @@ std::unordered_map<chip_id_t, uint64_t> smallestHostime;
 
 std::unordered_map<chip_id_t, std::unordered_map<chip_id_t, std::vector<std::pair<uint64_t, uint64_t>>>>
     deviceDeviceTimePair;
-std::mutex device_mutex;
 
 bool do_sync_on_close = true;
 std::unordered_set<chip_id_t> sync_set_devices;
 constexpr CoreCoord SYNC_CORE = {0, 0};
+
+// 32bit FNV-1a hashing
+uint32_t hash32CT(const char* str, size_t n, uint32_t basis) {
+    return n == 0 ? basis : hash32CT(str + 1, n - 1, (basis ^ str[0]) * UINT32_C(16777619));
+}
+
+// XORe'd 16-bit FNV-1a hashing functions
+uint16_t hash16CT(const std::string& str) {
+    uint32_t res = hash32CT(str.c_str(), str.length(), UINT32_C(2166136261));
+    return ((res & 0xFFFF) ^ ((res & 0xFFFF0000) >> 16)) & 0xFFFF;
+}
+
+void populateZoneSrcLocations(
+    const std::string& new_log_name,
+    const std::string& log_name,
+    bool push_new,
+    std::unordered_map<uint16_t, ZoneDetails>& hash_to_zone_src_locations,
+    std::unordered_set<std::string>& zone_src_locations) {
+    std::ifstream log_file_read(new_log_name);
+    std::string line;
+    while (std::getline(log_file_read, line)) {
+        std::string delimiter = "'#pragma message: ";
+        int delimiter_index = line.find(delimiter) + delimiter.length();
+        std::string zone_src_location = line.substr(delimiter_index, line.length() - delimiter_index - 1);
+
+        uint16_t hash_16bit = hash16CT(zone_src_location);
+
+        auto did_insert = zone_src_locations.insert(zone_src_location);
+        if (did_insert.second && (hash_to_zone_src_locations.find(hash_16bit) != hash_to_zone_src_locations.end())) {
+            TT_THROW("Source location hashes are colliding, two different locations are having the same hash");
+        }
+
+        std::stringstream ss(zone_src_location);
+        std::string zone_name;
+        std::string source_file;
+        std::string line_num_str;
+        std::getline(ss, zone_name, ',');
+        std::getline(ss, source_file, ',');
+        std::getline(ss, line_num_str, ',');
+
+        ZoneDetails details(zone_name, source_file, std::stoull(line_num_str));
+
+        auto ret = hash_to_zone_src_locations.emplace(hash_16bit, details);
+        if (ret.second && push_new) {
+            std::ofstream log_file_write(log_name, std::ios::app);
+            log_file_write << line << std::endl;
+            log_file_write.close();
+        }
+    }
+    log_file_read.close();
+}
+
+// Iterate through all zone source locations and generate hash
+std::unordered_map<uint16_t, ZoneDetails> generateZoneSourceLocationsHashes() {
+    std::unordered_map<uint16_t, ZoneDetails> hash_to_zone_src_locations;
+    std::unordered_set<std::string> zone_src_locations;
+
+    // Load existing zones from previous runs
+    populateZoneSrcLocations(
+        tt::tt_metal::PROFILER_ZONE_SRC_LOCATIONS_LOG, "", false, hash_to_zone_src_locations, zone_src_locations);
+
+    // Load new zones from the current run
+    populateZoneSrcLocations(
+        tt::tt_metal::NEW_PROFILER_ZONE_SRC_LOCATIONS_LOG,
+        tt::tt_metal::PROFILER_ZONE_SRC_LOCATIONS_LOG,
+        true,
+        hash_to_zone_src_locations,
+        zone_src_locations);
+
+    return hash_to_zone_src_locations;
+}
 
 void setControlBuffer(IDevice* device, std::vector<uint32_t>& control_buffer) {
 #if defined(TRACY_ENABLE)
@@ -693,19 +752,20 @@ void DumpDeviceProfileResults(
     IDevice* device,
     const std::vector<CoreCoord>& virtual_cores,
     ProfilerDumpState state,
-    const std::optional<ProfilerOptionalMetadata>& metadata) {
+    const std::optional<ProfilerOptionalMetadata>& metadata,
+    bool is_parallel_dump) {
 #if defined(TRACY_ENABLE)
     ZoneScoped;
-
-    std::scoped_lock<std::mutex> lock(device_mutex);
 
     if (getDeviceProfilerState()) {
         if (state != ProfilerDumpState::ONLY_DISPATCH_CORES) {
             if (tt::DevicePool::instance().is_dispatch_firmware_active() && !isGalaxyMMIODevice(device)) {
-                if (auto mesh_device = device->get_mesh_device()) {
-                    mesh_device->mesh_command_queue().finish();
-                } else {
-                    Finish(device->command_queue());
+                for (uint8_t cq_id = 0; cq_id < device->num_hw_cqs(); ++cq_id) {
+                    if (auto mesh_device = device->get_mesh_device()) {
+                        mesh_device->mesh_command_queue(cq_id).finish();
+                    } else {
+                        Finish(device->command_queue(cq_id));
+                    }
                 }
             }
         } else if (onlyProfileDispatchCores(state)) {
@@ -754,9 +814,10 @@ void DumpDeviceProfileResults(
         auto profiler_it = tt_metal_device_profiler_map.find(device->id());
         if (profiler_it != tt_metal_device_profiler_map.end()) {
             DeviceProfiler& profiler = profiler_it->second;
-            profiler.setDeviceArchitecture(device->arch());
+            // profiler.setDeviceArchitecture(device->arch());
             profiler.dumpResults(device, virtual_cores, state, ProfilerDataBufferSource::DRAM, metadata);
             if (tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_tracy_mid_run_push()) {
+                // wrap this with mutex
                 profiler.pushTracyDeviceResults();
             }
         }
@@ -826,6 +887,85 @@ uint32_t EncodePerDeviceProgramID(uint32_t base_program_id, uint32_t device_id, 
 }
 
 }  // namespace detail
+
+void DumpMeshDeviceProfileResults(
+    distributed::MeshDevice& mesh_device,
+    ProfilerDumpState state,
+    const std::optional<ProfilerOptionalMetadata>& metadata) {
+#if defined(TRACY_ENABLE)
+    ZoneScoped;
+
+    const std::unordered_map<uint16_t, ZoneDetails> hash_to_zone_src_locations =
+        detail::generateZoneSourceLocationsHashes();
+
+    // open CSV log file
+    std::filesystem::path output_dir = detail::tt_metal_device_profiler_map.at(mesh_device.build_id()).getOutputDir();
+    std::filesystem::path log_path = output_dir / DEVICE_SIDE_LOG;
+    std::ofstream log_file_ofs(log_path);
+    log_file_ofs << "ARCH: " << get_string_lowercase(mesh_device.arch()) << ", CHIP_FREQ[MHz]: "
+                 << tt::tt_metal::MetalContext::instance().get_cluster().get_device_aiclk(mesh_device.build_id())
+                 << std::endl;
+    log_file_ofs << "PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset], data, "
+                    "run host ID,  zone name, type, source line, source file, meta data"
+                 << std::endl;
+
+    // NOT THREAD SAFE
+    // append to existing CSV log file if it already exists
+    // if (std::filesystem::exists(log_path)) {
+    //     log_file_ofs.open(log_path, std::ios_base::app);
+    // } else {
+    //     log_file_ofs.open(log_path);
+    //     emitCSVHeader(log_file_ofs, mesh_device.arch(), device_core_frequency);
+    // }
+
+    if (!log_file_ofs) {
+        log_error(tt::LogMetal, "Could not open kernel profiler dump file '{}'", log_path);
+        return;
+    }
+
+    if (tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_noc_events_enabled()) {
+        log_warning(
+            tt::LogAlways, "Profiler NoC events are enabled; this can add 1-15% cycle overhead to typical operations!");
+    }
+
+    for (auto& [_, device_profiler] : detail::tt_metal_device_profiler_map) {
+        // device_profiler.device_core_frequency =
+        //     tt::tt_metal::MetalContext::instance().get_cluster().get_device_aiclk(mesh_device.build_id());
+        device_profiler.hash_to_zone_src_locations = hash_to_zone_src_locations;
+    }
+
+    for (IDevice* device : mesh_device.get_devices()) {
+        // call version that takes in virtual cores as parameter
+        detail::DumpDeviceProfileResults(device, state, metadata);
+    }
+
+    std::unordered_map<chip_id_t, std::vector<DeviceProfilerDataPoint>> device_profiler_data;
+
+    // serialize noc traces only in normal state, to avoid overwriting individual trace files
+    if (state == ProfilerDumpState::NORMAL &&
+        tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_noc_events_enabled()) {
+        for (auto& [device_id, device_profiler] : detail::tt_metal_device_profiler_map) {
+            // if defined, used profiler_noc_events_report_path to write json log. otherwise use output_dir
+            std::string rpt_path =
+                tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_noc_events_report_path();
+            if (rpt_path.empty()) {
+                rpt_path = device_profiler.getOutputDir().string();
+            }
+            FabricRoutingLookup routing_lookup(tt::DevicePool::instance().get_active_device(device_id));
+
+            // convert data from all devices to nlohmann json format
+
+            serializeJsonNocTraces(noc_trace_json_log, rpt_path, device_id, routing_lookup);
+            dumpClusterCoordinatesAsJson(std::filesystem::path(rpt_path) / "cluster_coordinates.json");
+            dumpRoutingInfo(std::filesystem::path(rpt_path) / "topology.json");
+        }
+    }
+
+    // write data for all devices to csv file
+
+    log_file_ofs.close();
+#endif
+}
 
 }  // namespace tt_metal
 

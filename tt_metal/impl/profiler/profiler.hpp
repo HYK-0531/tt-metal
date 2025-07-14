@@ -118,12 +118,6 @@ struct SyncInfo {
 
 class DeviceProfiler {
 private:
-    // Device architecture
-    tt::ARCH device_architecture;
-
-    // Device frequency
-    int device_core_frequency;
-
     // Smallest timestamp
     uint64_t smallest_timestamp = (1lu << 63);
 
@@ -133,12 +127,6 @@ private:
     // Device-Core tracy context
     std::unordered_map<std::pair<uint16_t, CoreCoord>, TracyTTCtx, pair_hash<uint16_t, CoreCoord>>
         device_tracy_contexts;
-
-    // Hash to zone source locations
-    std::unordered_map<uint16_t, ZoneDetails> hash_to_zone_src_locations;
-
-    // Zone sourece locations
-    std::unordered_set<std::string> zone_src_locations;
 
     // Iterator on the current zone being processed
     std::unordered_set<tracy::TTDeviceEvent>::iterator current_zone_it;
@@ -158,18 +146,6 @@ private:
     // Storage for all core's control buffers
     std::unordered_map<CoreCoord, std::vector<uint32_t>> core_control_buffers;
 
-    // 32bit FNV-1a hashing
-    uint32_t hash32CT(const char* str, size_t n, uint32_t basis = UINT32_C(2166136261));
-
-    // XORe'd 16-bit FNV-1a hashing functions
-    uint16_t hash16CT(const std::string& str);
-
-    void populateZoneSrcLocations(
-        const std::string& new_log_name, const std::string& log_name = "", bool push_new = false);
-
-    // Iterate through all zone source locations and generate hash
-    void generateZoneSourceLocationsHashes();
-
     // serialize all noc trace data into per-op json trace files
     void serializeJsonNocTraces(
         const nlohmann::ordered_json& noc_trace_json_log,
@@ -177,8 +153,8 @@ private:
         chip_id_t device_id,
         const FabricRoutingLookup& routing_lookup);
 
-    void emitCSVHeader(
-        std::ofstream& log_file_ofs, const tt::ARCH& device_architecture, int device_core_frequency) const;
+    // void emitCSVHeader(
+    //     std::ofstream& log_file_ofs, const tt::ARCH& device_architecture, int device_core_frequency) const;
 
     // translates potentially-virtual coordinates recorded on Device into physical coordinates
     CoreCoord getPhysicalAddressFromVirtual(chip_id_t device_id, const CoreCoord& c) const;
@@ -312,6 +288,12 @@ public:
 
     std::set<tracy::TTDeviceEvent> device_sync_new_events;
 
+    // Hash to zone source locations
+    std::unordered_map<uint16_t, ZoneDetails> hash_to_zone_src_locations;
+
+    // Device frequency
+    int device_core_frequency;
+
     // shift
     int64_t shift = 0;
 
@@ -321,11 +303,11 @@ public:
     // Freshen device logs
     void freshDeviceLog();
 
-    // Set the device architecture
-    void setDeviceArchitecture(tt::ARCH device_arch);
-
     // Change the output dir of device profile logs
     void setOutputDir(const std::string& new_output_dir);
+
+    // Get the output dir of device profile logs
+    std::filesystem::path getOutputDir() const;
 
     // Traverse all cores on the device and dump the device profile results
     void dumpResults(

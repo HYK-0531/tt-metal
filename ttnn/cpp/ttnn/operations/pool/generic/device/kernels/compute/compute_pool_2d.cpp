@@ -37,6 +37,9 @@ void MAIN {
     constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(10);
     constexpr uint32_t out_cb_id = get_compile_time_arg_val(11);
     constexpr bool one_scalar_per_core = get_compile_time_arg_val(12);
+    constexpr uint32_t bf16_scalar = get_compile_time_arg_val(13);
+
+    DPRINT << "bf16_scalar: " << bf16_scalar << ENDL();
 
     constexpr bool is_partial_tile = in_c < 32;
     static_assert((!is_partial_tile || (in_c == 16)), "Partial tile must have c_dim 16");
@@ -49,7 +52,6 @@ void MAIN {
     // otherwise we can reduce 8 tiles at a time.
     constexpr bool is_large_kernel = window_size_hw > max_rows_for_reduction;
     constexpr uint32_t MAX_TILES_PER_REDUCTION = (is_avg_pool && is_large_kernel) ? 4 : 8;
-    MATH(DPRINT << "MAX_TILES_PER_REDUCTION = " << MAX_TILES_PER_REDUCTION << ENDL());
     constexpr uint32_t max_tiles_per_iter =
         in_ntiles_c < MAX_TILES_PER_REDUCTION ? in_ntiles_c : MAX_TILES_PER_REDUCTION;
     constexpr uint32_t partial_iter_output_tiles =
@@ -95,12 +97,10 @@ void MAIN {
                     face_r_dim);
                 for (uint32_t math_tile_idx = 0; math_tile_idx < max_tiles_per_iter; ++math_tile_idx) {
                     reduce_tile_math(math_tile_idx, num_faces_in_input_tile);
-                    MATH(DPRINT << "REDUCE" << ENDL());
                     if (chunk == interm_reduction_chunks - 1) {
-                        MATH(DPRINT << "MUL" << ENDL());
                         // 3x3 kernel -> 1/9 = 1038323257
                         // 9x9 kernel -> 1/81 = 1011500424
-                        mul_unary_tile(math_tile_idx, 1011500424);
+                        mul_unary_tile(math_tile_idx, bf16_scalar);
                     }
                 }
                 cb_pop_front(curr_in_cb_id, 1);

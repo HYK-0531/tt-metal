@@ -6,7 +6,7 @@
 #include <cstdint>
 #include "dataflow_api.h"
 
-#define ENABLE_DEBUG_PRINT 0
+#define ENABLE_DEBUG_PRINT 1
 
 #if ENABLE_DEBUG_PRINT == 1
 #include "debug/dprint.h"
@@ -182,25 +182,24 @@ void kernel_main() {
     constexpr uint32_t split_reader = get_compile_time_arg_val(7);
     constexpr uint32_t reader_id = get_compile_time_arg_val(8);
 
-    constexpr uint32_t bf16_scalar = get_compile_time_arg_val(9);
-    constexpr uint32_t bf16_init_value = get_compile_time_arg_val(10);
+    constexpr uint32_t bf16_init_value = get_compile_time_arg_val(9);
 
-    constexpr uint32_t in_nblocks_c = get_compile_time_arg_val(11);
-    constexpr uint32_t in_cb_sz = get_compile_time_arg_val(12);
-    constexpr uint32_t max_rows_for_reduction = get_compile_time_arg_val(13);
-    constexpr uint32_t ceil_pad_w = get_compile_time_arg_val(14);
+    constexpr uint32_t in_nblocks_c = get_compile_time_arg_val(10);
+    constexpr uint32_t in_cb_sz = get_compile_time_arg_val(11);
+    constexpr uint32_t max_rows_for_reduction = get_compile_time_arg_val(12);
+    constexpr uint32_t ceil_pad_w = get_compile_time_arg_val(13);
 
-    constexpr uint32_t in_cb_id = (reader_id == 1) ? get_compile_time_arg_val(16) : get_compile_time_arg_val(15);
-    constexpr uint32_t in_shard_cb_id = get_compile_time_arg_val(17);
-    constexpr uint32_t in_reader_indices_cb_id = get_compile_time_arg_val(18);
-    constexpr uint32_t in_scalar_cb_id_0 = get_compile_time_arg_val(19);
-    constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(20);
-    constexpr uint32_t clear_value_cb_id = get_compile_time_arg_val(21);
-    constexpr bool is_avg_pool = (bool)get_compile_time_arg_val(22);
-    constexpr bool one_scalar_per_core = get_compile_time_arg_val(23);
-    constexpr uint32_t config_cb_id = get_compile_time_arg_val(24);
-    constexpr uint32_t multi_buffering_factor = get_compile_time_arg_val(25);
-    constexpr uint32_t stride_w = get_compile_time_arg_val(26);
+    constexpr uint32_t in_cb_id = (reader_id == 1) ? get_compile_time_arg_val(15) : get_compile_time_arg_val(14);
+    constexpr uint32_t in_shard_cb_id = get_compile_time_arg_val(16);
+    constexpr uint32_t in_reader_indices_cb_id = get_compile_time_arg_val(17);
+    constexpr uint32_t in_scalar_cb_id_0 = get_compile_time_arg_val(18);
+    constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(19);
+    constexpr uint32_t clear_value_cb_id = get_compile_time_arg_val(20);
+    constexpr bool is_avg_pool = (bool)get_compile_time_arg_val(21);
+    constexpr bool one_scalar_per_core = get_compile_time_arg_val(22);
+    constexpr uint32_t config_cb_id = get_compile_time_arg_val(23);
+    constexpr uint32_t multi_buffering_factor = get_compile_time_arg_val(24);
+    constexpr uint32_t stride_w = get_compile_time_arg_val(25);
 
     constexpr uint32_t in_scalar_cb_id =
         split_reader && reader_id == 1 && !one_scalar_per_core ? in_scalar_cb_id_1 : in_scalar_cb_id_0;
@@ -232,7 +231,7 @@ void kernel_main() {
 
     // initialize the scalar CB
     if constexpr (reader_id == 0 && one_scalar_per_core) {
-        fill_with_val(get_write_ptr(in_scalar_cb_id_0), TILE_WIDTH, bf16_scalar >> 16);
+        fill_with_val(get_write_ptr(in_scalar_cb_id_0), TILE_WIDTH, 0x3F80);
         cb_push_back(in_scalar_cb_id_0, 1);
     }
 

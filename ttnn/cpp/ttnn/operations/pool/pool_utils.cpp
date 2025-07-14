@@ -29,8 +29,7 @@ uint32_t get_bf16_pool_scalar(
             break;
         default: TT_FATAL(false, "Unsupported pool operation type");
     }
-    value = 1.0;
-    return bfloat16(value).to_packed() << 16;
+    return *(reinterpret_cast<uint32_t*>(&value));
 }
 
 // Return a single bf16 init value for the pool type in u32 (packed in the least 16 bits)

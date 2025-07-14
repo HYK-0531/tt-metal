@@ -460,7 +460,6 @@ Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_
         input_shape[3] / num_shards_c,
         split_reader,  // enable split reader
         0,             // split reader id
-        bf16_scalar,
         bf16_init_value,
         in_nblocks_c,
         in_cb_sz,
@@ -515,7 +514,8 @@ Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_
         in_scalar_cb_id_0,
         in_scalar_cb_id_1,
         out_cb_id,
-        one_scalar_per_core};
+        one_scalar_per_core,
+        bf16_scalar};
 
     auto compute_config = tt::tt_metal::ComputeConfig{
         .math_fidelity = MathFidelity::HiFi4,

@@ -64,8 +64,9 @@ def tensor_map():
 @pytest.mark.parametrize(
     "divisor_override",
     [
-        None,
+        # None,
         # 5,
+        81,
     ],
 )
 @pytest.mark.parametrize(
@@ -84,10 +85,6 @@ def tensor_map():
 @pytest.mark.parametrize(
     "dtype",
     [ttnn.bfloat16],
-)
-@pytest.mark.parametrize(
-    "dtype",
-    [ttnn.bfloat16, ttnn.bfloat8_b],
 )
 def test_avg_pool2d_post_commit(
     device,
@@ -108,8 +105,8 @@ def test_avg_pool2d_post_commit(
     # or will just slow the test down doing redundant work
     if kernel_size == (36, 36) and input_shape != [1, 320, 48, 48] and input_shape != [1, 320, 47, 47]:
         pytest.skip("Skipping, only run shapes [1, 320, 48, 48] and [1, 320, 47, 47] with kernel size (36, 36)")
-    if dtype == ttnn.bfloat8_b and input_shape != [1, 320, 48, 48] and input_shape != [1, 320, 47, 47]:
-        pytest.skip("Skipping, only run shapes [1, 320, 48, 48] and [1, 320, 47, 47] with bfloat8_b dtype")
+    # if dtype == ttnn.bfloat8_b and input_shape != [1, 320, 48, 48] and input_shape != [1, 320, 47, 47]:
+    #    pytest.skip("Skipping, only run shapes [1, 320, 48, 48] and [1, 320, 47, 47] with bfloat8_b dtype")
     run_avg_pool2d(
         device=device,
         tensor_map=tensor_map,

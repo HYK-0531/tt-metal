@@ -453,19 +453,25 @@ class TtStableDiffusion3Pipeline:
         logger.info(" TT decode")
 
         # ttvae
-        ttnn.synchronize_device(self.fun_vae_params.conv_in.device)
         torch.save(latents, "torch_latent.pt")
         tt_latent = ttnn.from_torch(
-            latents.permute([0, 2, 3, 1]), dtype=ttnn.bfloat16, device=self.fun_vae_params.conv_in.device
+            latents.permute([0, 2, 3, 1]),
+            dtype=ttnn.bfloat16,
+            device=self.fun_vae_params.conv_in.device,
+            mesh_mapper=ttnn.ReplicateTensorToMesh(self.fun_vae_params.conv_in.device),
         )
         logger.info("sd_var_decode")
         tt_img = sd_vae_decode(tt_latent, self.fun_vae_params, None)
         logger.info("sd to torch")
-        torch_img = ttnn.to_torch(tt_img, dtyp=ttnn.bfloat16)
+        tt_img = ttnn.get_device_tensors(tt_img)[0]
+        torch_img = ttnn.to_torch(
+            tt_img, device=self.fun_vae_params.conv_in.device, mesh_composer=None
+        )  # Tensor is replicated. Need to fix
+        # torch_img = ttnn.to_torch(tt_img)
         torch_img = torch_img.permute([0, 3, 1, 2])
         torch_img = self._image_processor.postprocess(torch_img, output_type="pt")
         tt_pil = self._image_processor.numpy_to_pil(self._image_processor.pt_to_numpy(torch_img))
-        tt_pil.save("SD_tt_image.png")
+        tt_pil[0].save("SD_tt_image.png")
         # ttvae end
 
         output = self._image_processor.numpy_to_pil(self._image_processor.pt_to_numpy(image))

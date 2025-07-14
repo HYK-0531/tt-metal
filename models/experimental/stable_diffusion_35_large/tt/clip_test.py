@@ -3,7 +3,7 @@ import ttnn
 import torch.nn.functional as F
 from transformers import CLIPTextModel, CLIPTokenizer
 
-from clip_encoder_v2 import TtCLIPTextTransformer, TtCLIPTextTransformerParameters, TtCLIPConfig
+from clip_encoder import TtCLIPTextTransformer, TtCLIPTextTransformerParameters, TtCLIPConfig
 
 
 class CLIPEmbeddingTester:
@@ -89,24 +89,19 @@ class CLIPEmbeddingTester:
         print(f"Sequence cosine similarity: {seq_mean:.4f}")
         print(f"Pooled cosine similarity: {pooled_mean:.4f}")
 
-        return seq_mean > 0.8 and pooled_mean > 0.8  # what should threshold be?
+        return seq_mean > 0.99 and pooled_mean > 0.99  # what should threshold be?
 
 
 def test_clip():
     tester = CLIPEmbeddingTester()
 
-    texts = ["A photo of a cat", "A beautiful sunset"]
+    texts = ["The coffee shop on Main Street serves excellent pastries and opens at 7 AM on weekdays"]
     hf_inputs, ttnn_inputs = tester.prepare_inputs(texts)
 
     hf_seq, hf_pooled, ttnn_seq, ttnn_pooled = tester.get_embeddings(hf_inputs, ttnn_inputs)
 
     shape_pass = tester.check_shapes(hf_seq, hf_pooled, ttnn_seq, ttnn_pooled)
     similarity_pass = tester.check_cosine_similarity(hf_seq, hf_pooled, ttnn_seq, ttnn_pooled)
-
-    overall_pass = shape_pass and similarity_pass
-    print(f"Test: {'PASS' if overall_pass else 'FAIL'}")
-
-    return overall_pass
 
 
 if __name__ == "__main__":

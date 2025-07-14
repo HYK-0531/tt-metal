@@ -92,6 +92,10 @@ class TtCLIPAttention:
             scores = scores + causal_mask
 
         attn_weights = ttnn.softmax(scores, dim=-1)
+
+        # TODO: replace with ttnn.dropout once it's supported
+        # attn_weights = ttnn.experimental.dropout(attn_weights, self._attention_dropout)
+
         attn_output = ttnn.matmul(attn_weights, v)
 
         # transpose back and reshape
@@ -127,9 +131,14 @@ class TtCLIPMLP:
 
     def __call__(self, hidden_states: ttnn.Tensor) -> ttnn.Tensor:
         hidden_states = self._fc1(hidden_states)
-        hidden_states = ttnn.gelu(hidden_states)
+
+        hidden_states = gelu(hidden_states)
         hidden_states = self._fc2(hidden_states)
         return hidden_states
+
+
+def gelu(x: ttnn.Tensor) -> ttnn.Tensor:
+    return x * ttnn.sigmoid(1.702 * x)
 
 
 @dataclass
@@ -307,7 +316,7 @@ class TtCLIPEmbedding:
             input_ids = input_ids[:, : self._max_position_embeddings]
             seq_length = self._max_position_embeddings
 
-        position_ids = torch.arange(seq_length).expand((1, -1))
+        position_ids = torch.arange(0, seq_length).repeat((1, -1))
         position_ids = ttnn.from_torch(position_ids, dtype=ttnn.uint32, layout=ttnn.TILE_LAYOUT, device=device)
 
         input_embeddings = ttnn.embedding(input_ids, self._token_embedding, layout=ttnn.TILE_LAYOUT)

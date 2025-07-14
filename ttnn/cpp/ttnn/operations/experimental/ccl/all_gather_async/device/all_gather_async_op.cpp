@@ -261,7 +261,10 @@ tt::tt_metal::operation::ProgramWithCallbacks AllGatherAsync::create_program_at(
                 device_index,
                 this->topology,
                 this->semaphore,
-                this->sub_device_id);
+                this->sub_device_id,
+                this->chunks_per_sync,
+                this->num_workers_per_link,
+                this->num_buffers_per_channel);
         }
         case AllGatherAsyncVersion::LLAMA_MINIMAL_SHARDED:
             log_trace(tt::LogOp, "Detected all gather specialized shape. all_gather_async_llama_sharded is called");
@@ -375,7 +378,10 @@ Tensor all_gather_async_impl(
                    ccl_topology,
                    multi_device_global_semaphore,
                    sub_device_id,
-                   /*cluster_axis=*/std::nullopt),
+                   /*cluster_axis=*/std::nullopt,
+                   std::nullopt,
+                   std::nullopt,
+                   std::nullopt),
                {input_tensor})
         .at(0);
 }
@@ -390,7 +396,10 @@ Tensor all_gather_async_impl(
     const ttnn::ccl::Topology topology,
     std::optional<tt::tt_metal::SubDeviceId> sub_device_id,
     const std::vector<IDevice*>& devices,
-    const std::optional<uint32_t>& cluster_axis) {
+    const std::optional<uint32_t>& cluster_axis,
+    const std::optional<uint32_t>& chunks_per_sync,
+    const std::optional<uint32_t>& num_workers_per_link,
+    const std::optional<uint32_t>& num_buffers_per_channel) {
     TT_FATAL(
         std::getenv("TT_METAL_SLOW_DISPATCH_MODE") == nullptr,
         "all_gather_async op is only supported for Fast Dispatch");
@@ -420,7 +429,10 @@ Tensor all_gather_async_impl(
                    ccl_topology,
                    multi_device_global_semaphore,
                    sub_device_id,
-                   cluster_axis),
+                   cluster_axis,
+                   chunks_per_sync,
+                   num_workers_per_link,
+                   num_buffers_per_channel),
                {input_tensor},
                {},
                optional_output_tensors)
@@ -469,7 +481,10 @@ Tensor all_gather_async_impl(
                    topology,
                    multi_device_global_semaphore,
                    sub_device_id,
-                   cluster_axis},
+                   cluster_axis,
+                   std::nullopt,
+                   std::nullopt,
+                   std::nullopt},
                {input_tensor},
                {},
                optional_output_tensors)
@@ -506,7 +521,10 @@ Tensor all_gather_async(
     const std::optional<MemoryConfig>& memory_config,
     const ttnn::ccl::Topology topology,
     std::optional<tt::tt_metal::SubDeviceId> sub_device_id,
-    std::optional<uint32_t> cluster_axis) {
+    std::optional<uint32_t> cluster_axis,
+    std::optional<uint32_t> chunks_per_sync,
+    std::optional<uint32_t> num_workers_per_link,
+    std::optional<uint32_t> num_buffers_per_channel) {
     std::vector<IDevice*> devices = ttnn::ccl::get_active_physical_devices(input_tensor);
 
     return all_gather_async_impl(
@@ -519,7 +537,10 @@ Tensor all_gather_async(
         topology,
         sub_device_id,
         devices,
-        cluster_axis);
+        cluster_axis,
+        chunks_per_sync,
+        num_workers_per_link,
+        num_buffers_per_channel);
 }
 
 std::vector<Tensor> all_gather_async(

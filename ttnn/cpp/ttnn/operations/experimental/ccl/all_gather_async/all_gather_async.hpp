@@ -30,7 +30,10 @@ struct ExecuteAllGatherAsync {
         const std::optional<ttnn::MemoryConfig>& memory_config = std::nullopt,
         ttnn::ccl::Topology topology = ttnn::ccl::Topology::Ring,
         std::optional<tt::tt_metal::SubDeviceId> subdevice_id = std::nullopt,
-        std::optional<uint32_t> cluster_axis = std::nullopt);
+        std::optional<uint32_t> cluster_axis = std::nullopt,
+        std::optional<uint32_t> chunks_per_sync = std::nullopt,
+        std::optional<uint32_t> num_workers_per_link = std::nullopt,
+        std::optional<uint32_t> num_buffers_per_channel = std::nullopt);
 
     static std::vector<ttnn::Tensor> invoke(
         const std::vector<ttnn::Tensor>& input_tensors,

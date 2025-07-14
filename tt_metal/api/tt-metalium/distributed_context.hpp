@@ -106,6 +106,7 @@ using Tag = tt::stl::StrongType<int, struct TagTag>;
 using Color = tt::stl::StrongType<int, struct ColorTag>;
 using Key = tt::stl::StrongType<int, struct KeyTag>;
 using Size = tt::stl::StrongType<int, struct SizeTag>;
+using DistributedContextId = tt::stl::StrongType<int, struct DistributedContextIdTag>;
 
 class DistributedException : public std::exception {
 public:
@@ -153,6 +154,9 @@ public:
 
     // Returns true if the distributed context has already been initialized
     static bool is_initialized();
+
+    // Returns a unique ID for this distributed context instance
+    DistributedContextId id() const;
 
     //--- Topology ------------------------------------------------------------
     [[nodiscard]] virtual Rank rank() const = 0;
@@ -241,5 +245,10 @@ public:
     virtual std::size_t snoop_incoming_msg_size(Rank source, Tag tag) const = 0;
 
     virtual ~DistributedContext() = default;
+
+protected:
+    static DistributedContextId unique_distributed_context_id();
+    DistributedContextId id_{0};  // Unique identifier for the context
 };
+
 }  // namespace tt::tt_metal::distributed::multihost

@@ -19,7 +19,7 @@
 #include "compute_kernel_api/untilize.h"
 #include "compute_kernel_api/matmul.h"
 
-// #include "debug/dprint.h"
+#include "debug/dprint_pages.h"
 // #include "debug/waypoint.h"
 
 // SPLIT REDUCE across Cores
@@ -151,11 +151,14 @@ void MAIN {
 #endif
         cb_reserve_back(cb_in, per_core_N);
         tilize_block(cb_in_rm, per_core_N, cb_in);
-        cb_push_back(cb_in, per_core_N);
         cb_pop_front(cb_in_rm, per_core_N);
+        cb_push_back(cb_in, per_core_N);
     }
     tilize_uninit(cb_in_rm, cb_in);
     cb_wait_front(cb_in, per_core_MN);
+    for (uint32_t i = 0; i < per_core_MN; i++) {
+        UNPACK(tt::compute::common::print_full_tile(cb_in, i, true));
+    }
 #else
     binary_op_init_common(cb_in0, cb_input_mask, cb_x);
 #endif

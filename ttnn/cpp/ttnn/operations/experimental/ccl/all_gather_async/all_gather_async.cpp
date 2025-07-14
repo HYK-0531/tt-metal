@@ -31,7 +31,11 @@ ttnn::Tensor ExecuteAllGatherAsync::invoke(
     const std::optional<ttnn::MemoryConfig>& memory_config,
     const ttnn::ccl::Topology topology,
     std::optional<tt::tt_metal::SubDeviceId> subdevice_id,
-    std::optional<uint32_t> cluster_axis) {
+    std::optional<uint32_t> cluster_axis,
+    bool use_optimal_ccl_for_llama,
+    std::optional<uint32_t> chunks_per_sync,
+    std::optional<uint32_t> num_workers_per_link,
+    std::optional<uint32_t> num_buffers_per_channel) {
     return ttnn::operations::experimental::ccl::all_gather_async(
         input_tensor,
         dim,
@@ -41,7 +45,11 @@ ttnn::Tensor ExecuteAllGatherAsync::invoke(
         memory_config,
         topology,
         subdevice_id,
-        cluster_axis);
+        cluster_axis,
+        use_optimal_ccl_for_llama,
+        chunks_per_sync,
+        num_workers_per_link,
+        num_buffers_per_channel);
 }
 
 std::vector<ttnn::Tensor> ExecuteAllGatherAsync::invoke(

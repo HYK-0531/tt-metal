@@ -171,6 +171,9 @@ tt::tt_metal::operation::ProgramWithCallbacks AllGatherMatmulAsync::create_progr
         this->all_gather_async_struct.topology,
         this->all_gather_async_struct.semaphore,
         this->all_gather_async_struct.sub_device_id,
+        this->all_gather_async_struct.chunks_per_sync,
+        this->all_gather_async_struct.num_workers_per_link,
+        this->all_gather_async_struct.num_buffers_per_channel,
         this->all_gather_core_grid_offset,
 
         /* Matmul Params */
@@ -229,7 +232,10 @@ std::vector<ttnn::Tensor> all_gather_matmul_async(
     const std::optional<const operations::matmul::MatmulProgramConfig>& program_config,
     const std::optional<const std::string>& activation,
     const std::optional<const ttnn::DeviceComputeKernelConfig> compute_kernel_config,
-    const std::optional<const ttnn::CoreGrid> core_grid) {
+    const std::optional<const ttnn::CoreGrid> core_grid,
+    std::optional<uint32_t> chunks_per_sync,
+    std::optional<uint32_t> num_workers_per_link,
+    std::optional<uint32_t> num_buffers_per_channel) {
     TT_FATAL(
         std::getenv("TT_METAL_SLOW_DISPATCH_MODE") == nullptr,
         "AllGatherMatmulAsync is only supported for Fast Dispatch");
@@ -261,7 +267,15 @@ std::vector<ttnn::Tensor> all_gather_matmul_async(
         topology,
         multi_device_global_semaphore,
         sub_device_id,
+<<<<<<< HEAD
         /*cluster_axis=*/std::nullopt);
+=======
+        /*cluster_axis=*/std::nullopt,
+        false,
+        chunks_per_sync,
+        num_workers_per_link,
+        num_buffers_per_channel);
+>>>>>>> 216f4fc0cd (pipe num chunks through)
 
     // Create the all gather output tensor used as input (activation) to the matmul
     ttnn::Tensor all_gather_out_tensor =

@@ -68,7 +68,7 @@ MeshSocket::MeshSocket(const std::shared_ptr<MeshDevice>& device, const SocketCo
 }
 
 void MeshSocket::connect_with_peer(std::shared_ptr<multihost::DistributedContext> context) {
-    auto local_endpoint_desc = generate_local_endpoint_descriptor(*this);
+    auto local_endpoint_desc = generate_local_endpoint_descriptor(*this, context->id());
     SocketPeerDescriptor remote_endpoint_desc;
     // Convention:
     //  - Sender Endpoint sends its descriptor first, then receives the peer's descriptor.

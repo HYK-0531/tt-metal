@@ -207,12 +207,14 @@ MPIContext::MPIContext(MPI_Comm comm) : comm_(comm) {
     MPI_CHECK(MPI_Comm_group(comm_, &group_));
     MPI_CHECK(MPI_Comm_rank(comm_, &rank_));
     MPI_CHECK(MPI_Comm_size(comm_, &size_));
+    id_ = DistributedContext::unique_distributed_context_id();
 }
 
 MPIContext::MPIContext(MPI_Comm comm, MPI_Group group) : comm_(comm), group_(group) {
     MPI_Comm_set_errhandler(comm_, MPI_ERRORS_RETURN);  // don't abort on error
     MPI_CHECK(MPI_Comm_rank(comm_, &rank_));
     MPI_CHECK(MPI_Comm_size(comm_, &size_));
+    id_ = DistributedContext::unique_distributed_context_id();
 }
 
 Rank MPIContext::rank() const { return Rank(rank_); }

@@ -11,7 +11,9 @@ namespace tt::tt_metal::distributed::multihost {
 // ---------------------------------------------------------------------
 //                           Context implementation
 // ---------------------------------------------------------------------
-SingleHostContext::SingleHostContext() : rank_(0), size_(1) {}
+SingleHostContext::SingleHostContext() : rank_(0), size_(1) {
+    id_ = DistributedContext::unique_distributed_context_id();
+}
 
 void SingleHostContext::create(int argc, char** argv) { current_world_ = std::make_shared<SingleHostContext>(); }
 

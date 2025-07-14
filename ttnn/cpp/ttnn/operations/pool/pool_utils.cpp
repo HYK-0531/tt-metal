@@ -193,6 +193,10 @@ uint32_t calculate_L1_usage(
     uint32_t in_scalar_cb_size_0 = in_scalar_cb_npages * in_scalar_cb_pagesize;
     uint32_t in_scalar_cb_size_1 = 0;
 
+    uint32_t ones_cb_pagesize = tile_size(in_df);
+    uint32_t ones_cb_npages = 1;
+    uint32_t ones_cb_size = ones_cb_npages * ones_cb_pagesize;
+
     bool one_scalar_per_core = is_pool_op_one_scalar_per_core(
         pool_type, ceil_mode, ceil_pad_h, ceil_pad_w, count_include_pad, pad_h, pad_w, divisor_override);
 
@@ -236,7 +240,7 @@ uint32_t calculate_L1_usage(
     };
 
     return in_scalar_cb_size_0 + in_scalar_cb_size_1 + clear_value_cb_size + in_cb_config_0_size + in_cb_config_1_size +
-           align(out_cb_config_size) /* global, involved */;
+           ones_cb_size + align(out_cb_config_size) /* global, involved */;
 }
 
 std::optional<ParallelConfig> determine_pool_config_for_auto_shard(

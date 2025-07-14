@@ -315,6 +315,12 @@ Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_
     tt::tt_metal::create_cb(in_scalar_cb_id_0, program, all_cores, in_scalar_cb_pagesize, in_scalar_cb_npages, in_df);
     log_debug(tt::LogOp, "CB {} :: PS = {}, NP = {}", in_scalar_cb_id_0, in_scalar_cb_pagesize, in_scalar_cb_npages);
 
+    const uint32_t ones_cb_id = next_cb_index++;
+    const uint32_t ones_cb_pagesize = tile_size(in_df);
+    const uint32_t ones_cb_npages = 1;
+    tt::tt_metal::create_cb(ones_cb_id, program, all_cores, ones_cb_pagesize, ones_cb_npages, in_df);
+    log_debug(tt::LogOp, "CB {} :: PS = {}, NP = {}", ones_cb_id, ones_cb_pagesize, ones_cb_npages);
+
     const uint32_t bf16_scalar = get_bf16_pool_scalar(pool_type, kernel_size_h, kernel_size_w, divisor_override);
     const uint32_t bf16_init_value = get_bf16_pool_init_value(pool_type);
     bool one_scalar_per_core = is_pool_op_one_scalar_per_core(
@@ -469,6 +475,7 @@ Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_
         in_cb_id_1,
         raw_in_cb_id,
         in_reader_indices_cb_id,
+        ones_cb_id,
         in_scalar_cb_id_0,
         in_scalar_cb_id_1,
         clear_value_cb_id,
@@ -511,6 +518,7 @@ Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_
         max_rows_for_reduction,
         in_cb_id_0,
         in_cb_id_1,
+        ones_cb_id,
         in_scalar_cb_id_0,
         in_scalar_cb_id_1,
         out_cb_id,

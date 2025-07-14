@@ -33,11 +33,12 @@ void MAIN {
 
     constexpr uint32_t in_cb_id_0 = get_compile_time_arg_val(7);
     constexpr uint32_t in_cb_id_1 = get_compile_time_arg_val(8);  // for split reader
-    constexpr uint32_t in_scalar_cb_id_0 = get_compile_time_arg_val(9);
-    constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(10);
-    constexpr uint32_t out_cb_id = get_compile_time_arg_val(11);
-    constexpr bool one_scalar_per_core = get_compile_time_arg_val(12);
-    constexpr uint32_t bf16_scalar = get_compile_time_arg_val(13);
+    constexpr uint32_t ones_cb_id = get_compile_time_arg_val(9);  // cb with all ones for avg pool
+    constexpr uint32_t in_scalar_cb_id_0 = get_compile_time_arg_val(10);
+    constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(11);
+    constexpr uint32_t out_cb_id = get_compile_time_arg_val(12);
+    constexpr bool one_scalar_per_core = get_compile_time_arg_val(13);
+    constexpr uint32_t bf16_scalar = get_compile_time_arg_val(14);
 
     DPRINT << "bf16_scalar: " << bf16_scalar << ENDL();
 
@@ -63,7 +64,7 @@ void MAIN {
 
     constexpr uint32_t face_r_dim = window_size_hw < 16 ? window_size_hw : 16;
     tilizeA_B_reduce_init<neginf_srca_maxpool, zero_srca_avgpool>(
-        in_cb_id_0, in_scalar_cb_id_0, max_tiles_per_iter, out_cb_id, num_faces_in_input_tile, face_r_dim);
+        in_cb_id_0, ones_cb_id, max_tiles_per_iter, out_cb_id, num_faces_in_input_tile, face_r_dim);
     pack_untilize_dest_init<max_tiles_per_iter>(out_cb_id, num_out_rows, num_faces_in_output_tile);
 
     constexpr uint32_t remaining_elems = window_size_hw % max_rows_for_reduction;
@@ -71,9 +72,7 @@ void MAIN {
         remaining_elems ? window_size_hw / max_rows_for_reduction + 1 : window_size_hw / max_rows_for_reduction;
 
     // wait for initialization to complete
-    if constexpr (one_scalar_per_core) {
-        cb_wait_front(in_scalar_cb_id_0, 1);
-    }
+    cb_wait_front(ones_cb_id, 1);
 
     for (uint32_t n = 0; n < nsticks_per_core_by_nblocks; ++n) {
         const bool reader0 = !(split_reader && (n & 0x1));
@@ -90,7 +89,7 @@ void MAIN {
                 cb_wait_front(curr_in_cb_id, 1);
                 unpack_tilizeA_B_block<neginf_srca_maxpool, true, false, zero_srca_avgpool>(
                     curr_in_cb_id,
-                    curr_scalar_cb_id,
+                    ones_cb_id,
                     max_tiles_per_iter,
                     0 /*tile idx for Src b is 0 because only 1 tile of constants is loaded*/,
                     num_faces_in_input_tile,

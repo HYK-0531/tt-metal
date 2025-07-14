@@ -152,6 +152,8 @@ FORCE_INLINE void fill_scalar(
     // second half of the condition counter == scalar_start + 1 || counter == scalar_start + 3.
     if (counter < scalar_end && (counter == scalar_start || counter == scalar_start + 1 ||
                                  (split_reader && (counter == scalar_start + 2 || counter == scalar_start + 3)))) {
+        DPRINT << "scalar_value: " << scalar_value << " counter: " << counter << " scalar_start: " << scalar_start
+               << " scalar_end: " << scalar_end << " scalar_index: " << scalar_index << ENDL();
         fill_with_val(get_write_ptr(in_scalar_cb_id), TILE_WIDTH, scalar_value, false);
     }
     cb_push_back(in_scalar_cb_id, 1);
@@ -192,14 +194,15 @@ void kernel_main() {
     constexpr uint32_t in_cb_id = (reader_id == 1) ? get_compile_time_arg_val(15) : get_compile_time_arg_val(14);
     constexpr uint32_t in_shard_cb_id = get_compile_time_arg_val(16);
     constexpr uint32_t in_reader_indices_cb_id = get_compile_time_arg_val(17);
-    constexpr uint32_t in_scalar_cb_id_0 = get_compile_time_arg_val(18);
-    constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(19);
-    constexpr uint32_t clear_value_cb_id = get_compile_time_arg_val(20);
-    constexpr bool is_avg_pool = (bool)get_compile_time_arg_val(21);
-    constexpr bool one_scalar_per_core = get_compile_time_arg_val(22);
-    constexpr uint32_t config_cb_id = get_compile_time_arg_val(23);
-    constexpr uint32_t multi_buffering_factor = get_compile_time_arg_val(24);
-    constexpr uint32_t stride_w = get_compile_time_arg_val(25);
+    constexpr uint32_t ones_cb_id = get_compile_time_arg_val(18);
+    constexpr uint32_t in_scalar_cb_id_0 = get_compile_time_arg_val(19);
+    constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(20);
+    constexpr uint32_t clear_value_cb_id = get_compile_time_arg_val(21);
+    constexpr bool is_avg_pool = (bool)get_compile_time_arg_val(22);
+    constexpr bool one_scalar_per_core = get_compile_time_arg_val(23);
+    constexpr uint32_t config_cb_id = get_compile_time_arg_val(24);
+    constexpr uint32_t multi_buffering_factor = get_compile_time_arg_val(25);
+    constexpr uint32_t stride_w = get_compile_time_arg_val(26);
 
     constexpr uint32_t in_scalar_cb_id =
         split_reader && reader_id == 1 && !one_scalar_per_core ? in_scalar_cb_id_1 : in_scalar_cb_id_0;
@@ -229,10 +232,10 @@ void kernel_main() {
     // TODO we don't always need to initialize the in_cb
     clear_out_tiles<in_cb_id, clear_value_cb_id>();
 
-    // initialize the scalar CB
-    if constexpr (reader_id == 0 && one_scalar_per_core) {
-        fill_with_val(get_write_ptr(in_scalar_cb_id_0), TILE_WIDTH, 0x3F80);
-        cb_push_back(in_scalar_cb_id_0, 1);
+    // initialize the ones CB
+    if constexpr (reader_id == 0) {
+        fill_with_val(get_write_ptr(ones_cb_id), TILE_WIDTH, 0x3F80);
+        cb_push_back(ones_cb_id, 1);
     }
 
     const uint32_t in_l1_read_base_addr = get_read_ptr(in_shard_cb_id);

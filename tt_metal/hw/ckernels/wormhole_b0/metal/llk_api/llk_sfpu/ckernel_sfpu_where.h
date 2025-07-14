@@ -21,13 +21,19 @@ template <bool APPROXIMATION_MODE, int ITERATIONS = 8>
 inline void _calculate_where_fp16_b() {
     constexpr uint dst_tile_size = 32;
 
-    sfpi::vFloat output_tensor = 0;
+    // sfpi::vFloat output_tensor = 0;
     sfpi::vFloat true_tensor = 0;
     sfpi::vFloat false_tensor = 0;
     sfpi::vFloat cond = sfpi::dst_reg[0];
 
     for (int i = 0; i < ITERATIONS; i++) {
         cond = sfpi::dst_reg[0];
+        // true_tensor = sfpi::dst_reg[dst_tile_size];
+        // false_tensor = sfpi::dst_reg[dst_tile_size * 2];
+
+        // TTI_SFPLOAD(p_sfpu::LREG0, 6, 0, 0);                          // a
+        // TTI_SFPLOAD(p_sfpu::LREG1, 6, 0, dst_tile_size);  // b
+        // TTI_SFPLOAD(p_sfpu::LREG2, 6, 0, dst_tile_size * 2);  // b
 
         v_if(cond == 0.0f) {
             // output_tensor = false_tensor;

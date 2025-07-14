@@ -148,16 +148,19 @@ class RMSNorm(LightweightModule):
         # Run distributed rmsnorm part 1
         tt_stats = ttnn.rms_norm_pre_all_gather(inp, compute_kernel_config=compute_kernel_config, dtype=ttnn.bfloat16)
         # AllGather stats
-        peristent_output_buffer_key = self.tt_ccl.create_ag_persistent_buffer_key(
-            tt_stats.shape, tt_stats.dtype, ttnn.DRAM_MEMORY_CONFIG, 3
+        ag_memory_config = ttnn.DRAM_MEMORY_CONFIG
+        dim = 3
+        ag_peristent_buffer_key = self.tt_ccl.create_ag_persistent_buffer_key(
+            tt_stats.shape, tt_stats.dtype, ag_memory_config, dim
         )
         tt_stats = ttnn.experimental.all_gather_async(
             tt_stats,
-            dim=3,
+            persistent_output_buffer=self.tt_ccl.get_ag_persistent_buffer(ag_peristent_buffer_key),
+            dim=dim,
             multi_device_global_semaphore=self.tt_ccl.get_and_cycle_ag_semaphore_handles(),
             num_links=1,
             topology=self.ccl_topology,
-            memory_config=ttnn.DRAM_MEMORY_CONFIG,
+            memory_config=ag_memory_config,
             subdevice_id=self.tt_ccl.worker_sub_device_id,
         )
         # Run distributed rmsnorm part 2
@@ -168,6 +171,7 @@ class RMSNorm(LightweightModule):
             weight=weight,
             compute_kernel_config=compute_kernel_config,
         )
-        tt_stats.deallocate(True)
+        if not self.tt_ccl.is_using_preallocated_persistent_buffers():
+            tt_stats.deallocate(True)
 
         return tt_out

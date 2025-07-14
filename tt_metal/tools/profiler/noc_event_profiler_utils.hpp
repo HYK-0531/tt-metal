@@ -107,35 +107,36 @@ inline void dumpRoutingInfo(const std::filesystem::path& filepath) {
         });
     }
 
+    topology_json["cluster_type"] = magic_enum::enum_name(cluster.get_cluster_type());
+
     topology_json["fabric_config"] = magic_enum::enum_name(tt::tt_metal::MetalContext::instance().get_fabric_config());
-    if (tt::tt_metal::MetalContext::instance().get_fabric_config() != FabricConfig::DISABLED) {
-        topology_json["routing_planes"] = nlohmann::ordered_json::array();
-        topology_json["device_id_to_fabric_node_id"] = nlohmann::ordered_json::object();
-        for (auto physical_chip_id : cluster.get_cluster_desc()->get_all_chips()) {
-            auto fabric_node_id = tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(physical_chip_id);
-            auto device_routing_planes = nlohmann::ordered_json::array();
-            topology_json["device_id_to_fabric_node_id"][std::to_string(physical_chip_id)] = {
-                fabric_node_id.mesh_id.get(), fabric_node_id.chip_id};
 
-            for (const auto& direction : tt::tt_fabric::FabricContext::routing_directions) {
-                auto eth_routing_planes_in_dir =
-                    tt::tt_fabric::get_active_fabric_eth_routing_planes_in_direction(fabric_node_id, direction);
+    topology_json["routing_planes"] = nlohmann::ordered_json::array();
+    topology_json["device_id_to_fabric_node_id"] = nlohmann::ordered_json::object();
+    for (auto physical_chip_id : cluster.get_cluster_desc()->get_all_chips()) {
+        auto fabric_node_id = tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(physical_chip_id);
+        auto device_routing_planes = nlohmann::ordered_json::array();
+        topology_json["device_id_to_fabric_node_id"][std::to_string(physical_chip_id)] = {
+            fabric_node_id.mesh_id.get(), fabric_node_id.chip_id};
 
-                while (device_routing_planes.size() < eth_routing_planes_in_dir.size()) {
-                    device_routing_planes.push_back(
-                        {{"routing_plane_id", device_routing_planes.size()},
-                         {"ethernet_channels", nlohmann::ordered_json::object()}});
-                }
+        for (const auto& direction : tt::tt_fabric::FabricContext::routing_directions) {
+            auto eth_routing_planes_in_dir =
+                tt::tt_fabric::get_active_fabric_eth_routing_planes_in_direction(fabric_node_id, direction);
 
-                for (int j = 0; j < eth_routing_planes_in_dir.size(); j++) {
-                    chip_id_t eth_channel = eth_routing_planes_in_dir[j];
-                    device_routing_planes[j]["ethernet_channels"][magic_enum::enum_name(direction)] = eth_channel;
-                }
+            while (device_routing_planes.size() < eth_routing_planes_in_dir.size()) {
+                device_routing_planes.push_back(
+                    {{"routing_plane_id", device_routing_planes.size()},
+                     {"ethernet_channels", nlohmann::ordered_json::object()}});
             }
 
-            topology_json["routing_planes"].push_back(
-                {{"device_id", physical_chip_id}, {"device_routing_planes", device_routing_planes}});
+            for (int j = 0; j < eth_routing_planes_in_dir.size(); j++) {
+                chip_id_t eth_channel = eth_routing_planes_in_dir[j];
+                device_routing_planes[j]["ethernet_channels"][magic_enum::enum_name(direction)] = eth_channel;
+            }
         }
+
+        topology_json["routing_planes"].push_back(
+            {{"device_id", physical_chip_id}, {"device_routing_planes", device_routing_planes}});
     }
 
     topology_json["eth_chan_to_coord"] = nlohmann::ordered_json::object();

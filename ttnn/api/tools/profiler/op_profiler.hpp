@@ -441,7 +441,7 @@ inline std::string op_meta_data_serialized_json(
         j["kernel_info"] = get_kernels_json(device_id, program);
 
         auto opname = j["op_code"].template get<std::string>();
-        runtime_id_to_opname_.insert({device_id, program.get_runtime_id()}, opname);
+        runtime_id_to_opname_.insert({device_id, operation_id}, opname);
         program_hash_to_opname_.insert({device_id, program_hash}, opname);
 
         j["optional_input_tensors"] = std::vector<json>{};
@@ -473,7 +473,7 @@ inline std::string op_meta_data_serialized_json(
         return fmt::format("{}{} ->\n{}`", short_str, operation_id, ser);
     } else {
         auto opname = program_hash_to_opname_.find_if_exists({device_id, program_hash});
-        runtime_id_to_opname_.insert({device_id, program.get_runtime_id()}, std::move(opname));
+        runtime_id_to_opname_.insert({device_id, operation_id}, std::move(opname));
         return fmt::format("{}{}`", cached_ops.at(device_id).at(program_hash), operation_id);
     }
 }

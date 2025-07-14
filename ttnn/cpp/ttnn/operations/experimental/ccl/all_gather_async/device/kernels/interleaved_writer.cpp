@@ -11,6 +11,7 @@
 #include "minimal_ccl_common.hpp"
 #include <cstdint>
 #include <utility>
+#include "tt_metal/tools/profiler/experimental/fabric_event_profiler.hpp"
 
 using address_t = uint32_t;
 using tt::tt_metal::BufferType;
@@ -205,6 +206,7 @@ void kernel_main() {
         if (num_targets_backward_direction) {
             fabric_connection.get_backward_connection().wait_for_empty_write_slot();
             pkt_hdr_sem_inc->to_chip_unicast(1);
+            RECORD_FABRIC_HEADER(pkt_hdr_sem_inc);
             fabric_connection.get_backward_connection().send_payload_flush_blocking_from_address(
                 packet_header_buffer_seminc, sizeof(PACKET_HEADER_TYPE));
         }
@@ -212,6 +214,7 @@ void kernel_main() {
         if (num_targets_forward_direction) {
             fabric_connection.get_forward_connection().wait_for_empty_write_slot();
             pkt_hdr_sem_inc->to_chip_unicast(1);
+            RECORD_FABRIC_HEADER(pkt_hdr_sem_inc);
             fabric_connection.get_forward_connection().send_payload_flush_blocking_from_address(
                 packet_header_buffer_seminc, sizeof(PACKET_HEADER_TYPE));
         }
@@ -358,11 +361,13 @@ void kernel_main() {
         if (direction == 1) {
             fabric_connection.get_backward_connection().wait_for_empty_write_slot();
             pkt_hdr_sem_inc->to_chip_unicast(1);
+            RECORD_FABRIC_HEADER(pkt_hdr_sem_inc);
             fabric_connection.get_backward_connection().send_payload_flush_blocking_from_address(
                 packet_header_buffer_seminc, sizeof(PACKET_HEADER_TYPE));
         } else {
             fabric_connection.get_forward_connection().wait_for_empty_write_slot();
             pkt_hdr_sem_inc->to_chip_unicast(1);
+            RECORD_FABRIC_HEADER(pkt_hdr_sem_inc);
             fabric_connection.get_forward_connection().send_payload_flush_blocking_from_address(
                 packet_header_buffer_seminc, sizeof(PACKET_HEADER_TYPE));
         }

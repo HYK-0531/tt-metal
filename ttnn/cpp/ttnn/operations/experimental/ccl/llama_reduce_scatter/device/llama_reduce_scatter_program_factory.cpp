@@ -337,7 +337,7 @@ LlamaReduceScatterDeviceOperation::LlamaReduceScatterAdd::create_at_program_proc
     const tensor_args_t& tensor_args,
     tensor_return_value_t& tensor_return_value,
     tt::tt_metal::Program& program,
-    std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> signaler) {
+    const std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler>& signaler) {
     using namespace tt;
     using namespace tt::tt_metal;
     using namespace tt::tt_fabric;
@@ -662,7 +662,8 @@ LlamaReduceScatterDeviceOperation::LlamaReduceScatterAdd::create_at_program_proc
         packet_end_worker_core.at(0).x,
         packet_end_worker_core.at(0).y,
         sender_cores.size(),
-        total_num_read_txns};
+        total_num_read_txns,
+        signaler.has_value()};
 
     if (packet_worker_cores_grid.num_cores() == 1) {
         reader_defines["SKIP_MCAST"] = "1";
@@ -850,6 +851,9 @@ LlamaReduceScatterDeviceOperation::LlamaReduceScatterAdd::create_at_program_proc
             reader_runtime_args[is_reader_receiver_core_idx] = false;
             writer_runtime_args[is_writer_sender_core_idx] = false;
             writer_runtime_args[is_writer_worker_core_idx] = false;
+        }
+        if (signaler.has_value()) {
+            signaler.value().push_llama_rs_rt_args_for_rs(reader_runtime_args);
         }
         tt::tt_metal::SetRuntimeArgs(program, unary_reader_kernel_id, core, reader_runtime_args);
         tt::tt_metal::SetRuntimeArgs(program, unary_writer_kernel_id, core, writer_runtime_args);

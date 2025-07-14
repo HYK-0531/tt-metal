@@ -78,7 +78,7 @@ struct LlamaReduceScatterDeviceOperation {
             const tensor_args_t& tensor_args,
             tensor_return_value_t& tensor_return_value,
             tt::tt_metal::Program& program,
-            const std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> signaler);
+            const std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler>& signaler);
         static void override_runtime_arguments_per_program(
             const shared_variables_t& shared_variables,
             tt::tt_metal::Program& program,

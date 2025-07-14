@@ -139,15 +139,15 @@ struct MatmulFusedOpSignaler {
         const std::vector<uint32_t>& fused_op_receiver_signal_semaphores,
         FusedOpSignalerMode fused_op_signaler_mode);
 
-    void init_llama_rs_cores_rs(const CoreRangeSet& rs_reader_cores, tt::tt_metal::Program program);
+    void init_llama_rs_cores_rs(const CoreRangeSet& rs_reader_cores, tt::tt_metal::Program& program);
     void init_llama_rs_cores_mm(
-        const CoreRangeSet& matmul_cores, tt::tt_metal::Program program, int privilaged_index = 0);
+        const CoreRangeSet& matmul_cores, tt::tt_metal::Program& program, int privilaged_index = 0);
     // Get the rt values
     // Write the semaphore ID
-    void push_llama_rs_rt_args_for_rs(std::vector<uint32_t>& out_rt_args);
+    void push_llama_rs_rt_args_for_rs(std::vector<uint32_t>& out_rt_args) const;
     // Is_privilaged, if yes: target_value, num_cores_to_signal, array_of_cores, if no: core_xy of signaler
     // First core to run this is the privilaged core
-    void push_llama_rs_rt_args_for_mm(std::vector<uint32_t>& out_rt_args, CoreCoord current_core);
+    void push_llama_rs_rt_args_for_mm(std::vector<uint32_t>& out_rt_args, CoreCoord current_core) const;
 
     void init_fused_op(
         tt::tt_metal::Program& program,

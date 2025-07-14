@@ -279,7 +279,7 @@ void MatmulFusedOpSignaler::push_matmul_fused_op_rt_args(std::vector<uint32_t>& 
     out_rt_args.push_back(static_cast<uint32_t>(this->fused_op_receiver_signal_semaphores[1]));
 }
 
-void MatmulFusedOpSignaler::init_llama_rs_cores_rs(const CoreRangeSet& rs_cores, tt::tt_metal::Program program) {
+void MatmulFusedOpSignaler::init_llama_rs_cores_rs(const CoreRangeSet& rs_cores, tt::tt_metal::Program& program) {
     // Copy the cores and create the semaphore and set the signaler type
     TT_FATAL(
         this->fused_op_type == MatmulFusedOpSignalerType::LLAMA_REDUCE_SCATTER,
@@ -291,7 +291,7 @@ void MatmulFusedOpSignaler::init_llama_rs_cores_rs(const CoreRangeSet& rs_cores,
 }
 
 void MatmulFusedOpSignaler::init_llama_rs_cores_mm(
-    const CoreRangeSet& matmul_cores, tt::tt_metal::Program program, int privilaged_index) {
+    const CoreRangeSet& matmul_cores, tt::tt_metal::Program& program, int privilaged_index) {
     // pick the privilaged core, record the number of matmul cores
     TT_FATAL(initialized_llama_reduce_scatter_part1, "reduce scatter half needs to be initialized first");
     auto cores = corerange_to_cores(matmul_cores);
@@ -301,11 +301,12 @@ void MatmulFusedOpSignaler::init_llama_rs_cores_mm(
     this->matmul_semaphore_target = cores.size() - 1;
 }
 
-void MatmulFusedOpSignaler::push_llama_rs_rt_args_for_rs(std::vector<uint32_t>& out_rt_args) {
+void MatmulFusedOpSignaler::push_llama_rs_rt_args_for_rs(std::vector<uint32_t>& out_rt_args) const {
     out_rt_args.push_back(static_cast<uint32_t>(this->rs_semaphore));
 }
 
-void MatmulFusedOpSignaler::push_llama_rs_rt_args_for_mm(std::vector<uint32_t>& out_rt_args, CoreCoord current_core) {
+void MatmulFusedOpSignaler::push_llama_rs_rt_args_for_mm(
+    std::vector<uint32_t>& out_rt_args, CoreCoord current_core) const {
     out_rt_args.push_back(static_cast<uint32_t>(this->privilaged_core.x));
     out_rt_args.push_back(static_cast<uint32_t>(this->privilaged_core.y));
     out_rt_args.push_back(static_cast<uint32_t>(this->matmul_privilaged_semaphore));

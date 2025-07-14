@@ -39,11 +39,15 @@ ttnn::device_operation::CachedProgram<Matmul_RS::Matmul_RS_PF::shared_variables_
     const tensor_args_t& tensor_args,
     std::vector<Tensor>& tensor_return_value) {
     tt::tt_metal::Program program{};
-    std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> fused_op_signaler;
+
     tt::tt_metal::SubDeviceId sub_device_id = operation_attributes.rs_op.subdevice_id.value();
     auto [part_cores, rs_cores] =
         LlamaReduceScatterDeviceOperation::get_rs_core_grids(operation_attributes.rs_op, tensor_args.rs);
     std::optional<CoreRangeSet> optional_core_range = rs_cores;
+    ttnn::experimental::ccl::MatmulFusedOpSignaler base_signaler = ttnn::experimental::ccl::MatmulFusedOpSignaler(
+        ttnn::experimental::ccl::MatmulFusedOpSignalerType::LLAMA_REDUCE_SCATTER);
+    base_signaler.init_llama_rs_cores_rs(rs_cores, program);
+    std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> fused_op_signaler = base_signaler;
     auto reduce_scatter_sv = LlamaReduceScatterDeviceOperation::LlamaReduceScatterAdd::create_at_program_processing(
         operation_attributes.rs_op,
         mesh_coordinate,

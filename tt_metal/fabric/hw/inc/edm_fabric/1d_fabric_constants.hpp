@@ -465,7 +465,11 @@ static_assert(
     receiver_channel_local_write_noc_ids[0] == edm_to_local_chip_noc,
     "edm_to_local_chip_noc must equal to receiver_channel_local_write_noc_ids");
 static constexpr uint8_t edm_to_downstream_noc = receiver_channel_forwarding_noc_ids[0];
+#ifdef ARCH_BLACKHOLE
+static constexpr uint8_t worker_handshake_noc = noc_index;
+#else
 static constexpr uint8_t worker_handshake_noc = sender_channel_ack_noc_ids[0];
+#endif
 constexpr bool local_chip_noc_equals_downstream_noc =
     receiver_channel_forwarding_noc_ids[0] == receiver_channel_local_write_noc_ids[0];
 static constexpr uint8_t local_chip_data_cmd_buf = receiver_channel_local_write_cmd_buf_ids[0];

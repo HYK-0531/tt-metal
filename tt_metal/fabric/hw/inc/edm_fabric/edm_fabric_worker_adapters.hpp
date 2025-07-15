@@ -350,6 +350,7 @@ struct WorkerToFabricEdmSenderImpl {
 
         tt::tt_fabric::EDMChannelWorkerLocationInfo* worker_location_info_ptr =
             reinterpret_cast<tt::tt_fabric::EDMChannelWorkerLocationInfo*>(edm_worker_location_info_addr);
+
         if constexpr (!I_USE_STREAM_REG_FOR_CREDIT_RECEIVE) {
             const uint64_t remote_buffer_index_addr = dest_noc_addr_coord_only | edm_copy_of_wr_counter_addr;
             // piggy back off of worker_teardown_addr just to temporarily store the read-back write pointer
@@ -378,6 +379,7 @@ struct WorkerToFabricEdmSenderImpl {
             reinterpret_cast<size_t>(
                 edm_worker_location_info_addr +
                 offsetof(tt::tt_fabric::EDMChannelWorkerLocationInfo, worker_semaphore_address));
+        DPRINT << "\t3\n";
         // write the address of our local copy of read counter (that EDM is supposed to update)
         if constexpr (!I_USE_STREAM_REG_FOR_CREDIT_RECEIVE) {
             noc_inline_dw_write<false, posted>(
@@ -386,13 +388,14 @@ struct WorkerToFabricEdmSenderImpl {
                 0xf,
                 WORKER_HANDSHAKE_NOC);
         } else {
+            DPRINT << "Writing to " << (uint64_t)dest_edm_location_info_addr << "\n";
             noc_inline_dw_write<false, posted>(
                 dest_edm_location_info_addr,
                 reinterpret_cast<size_t>(edm_buffer_local_free_slots_update_ptr),
                 0xf,
                 WORKER_HANDSHAKE_NOC);
         }
-
+        DPRINT << "\t4\n";
         const uint64_t edm_teardown_semaphore_address_address =
             dest_noc_addr_coord_only |
             reinterpret_cast<uint64_t>(&(worker_location_info_ptr->worker_teardown_semaphore_address));
@@ -402,6 +405,7 @@ struct WorkerToFabricEdmSenderImpl {
             reinterpret_cast<size_t>(worker_teardown_addr),
             0xf,
             WORKER_HANDSHAKE_NOC);
+        DPRINT << "\t5\n";
         // Write out core noc-xy coord to EDM
         const uint64_t connection_worker_xy_address =
             dest_noc_addr_coord_only | reinterpret_cast<uint64_t>(&(worker_location_info_ptr->worker_xy));
@@ -417,7 +421,7 @@ struct WorkerToFabricEdmSenderImpl {
     void open_finish() {
         const uint64_t edm_connection_handshake_noc_addr =
             get_noc_addr(this->edm_noc_x, this->edm_noc_y, edm_connection_handshake_l1_addr);
-        noc_async_read_barrier();
+        noc_async_read_barrier(WORKER_HANDSHAKE_NOC);
         // Order here is important
         // We need to write our read counter value to the register before we signal the EDM
         // As EDM will potentially increment the register as well

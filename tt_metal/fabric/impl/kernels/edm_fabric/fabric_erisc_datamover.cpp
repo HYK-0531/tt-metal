@@ -1795,6 +1795,23 @@ void populate_local_sender_channel_free_slots_stream_id_ordered_map(
 
 constexpr bool IS_TEARDOWN_MASTER() { return MY_ERISC_ID == 0; }
 
+void wait_for_other_local_erisc() {
+    constexpr uint32_t multi_erisc_sync_start_value = 0x0fed;
+    constexpr uint32_t multi_erisc_sync_step2_value = 0x1fed;
+    if constexpr (IS_TEARDOWN_MASTER()) {
+        init_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>(multi_erisc_sync_start_value);
+        while (get_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>() != multi_erisc_sync_step2_value) {
+            invalidate_l1_cache();
+        }
+        init_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>(0);
+    } else {
+        while (get_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>() != multi_erisc_sync_start_value) {
+            invalidate_l1_cache();
+        }
+        init_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>(multi_erisc_sync_step2_value);
+    }
+}
+
 FORCE_INLINE void teardown(
     volatile tt_l1_ptr tt::tt_fabric::TerminationSignal* termination_signal_ptr,
     volatile tt_l1_ptr tt::tt_fabric::EDMStatus* edm_status_ptr,
@@ -1803,6 +1820,9 @@ FORCE_INLINE void teardown(
         RECEIVER_NUM_BUFFERS_ARRAY[NUM_RECEIVER_CHANNELS - 1],
         NUM_TRANSACTION_IDS,
         NUM_TRANSACTION_IDS> receiver_channel_1_trid_tracker) {
+    if constexpr (NUM_ACTIVE_ERISCS > 1) {
+        wait_for_other_local_erisc();
+    }
     if constexpr (is_receiver_channel_serviced[0]) {
         receiver_channel_0_trid_tracker.all_buffer_slot_transactions_acked();
     }
@@ -1811,10 +1831,7 @@ FORCE_INLINE void teardown(
     }
 
     if constexpr (NUM_ACTIVE_ERISCS > 1) {
-        increment_local_update_ptr_val(MULTI_RISC_TEARDOWN_SYNC_STREAM_ID, 1);
-        while (get_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>() < static_cast<int32_t>(NUM_ACTIVE_ERISCS)) {
-            invalidate_l1_cache();
-        }
+        wait_for_other_local_erisc();
     }
 
     // re-init the noc counters as the noc api used is not incrementing them
@@ -1822,6 +1839,9 @@ FORCE_INLINE void teardown(
         ncrisc_noc_counters_init();
     }
 
+    if constexpr (NUM_ACTIVE_ERISCS > 1) {
+        wait_for_other_local_erisc();
+    }
     if constexpr (wait_for_host_signal) {
         if constexpr (is_local_handshake_master) {
             notify_subordinate_routers(
@@ -1866,25 +1886,6 @@ void kernel_main() {
         }
     }
 
-    DPRINT << "sender_txq_id: " << (uint32_t)sender_txq_id << "\n";
-    DPRINT << "receiver_txq_id: " << (uint32_t)receiver_txq_id << "\n";
-    DPRINT << "enable_ethernet_handshake: " << (uint32_t)enable_ethernet_handshake << "\n";
-    DPRINT << "is_handshake_sender: " << (uint32_t)is_handshake_sender << "\n";
-    DPRINT << "wait_for_host_signal: " << (uint32_t)wait_for_host_signal << "\n";
-    DPRINT << "is_local_handshake_master: " << (uint32_t)is_local_handshake_master << "\n";
-    for (size_t i = 0; i < NUM_SENDER_CHANNELS; i++) {
-        DPRINT << "is_sender_channel_serviced[" << (uint32_t)i << "]: " << (uint32_t)is_sender_channel_serviced[i]
-               << "\n";
-        DPRINT << "sender_ch_live_check_skip[" << (uint32_t)i << "]: " << (uint32_t)sender_ch_live_check_skip[i]
-               << "\n";
-    }
-    for (size_t i = 0; i < NUM_RECEIVER_CHANNELS; i++) {
-        DPRINT << "is_receiver_channel_serviced[" << (uint32_t)i << "]: " << (uint32_t)is_receiver_channel_serviced[i]
-               << "\n";
-        DPRINT << "local_receiver_ack_counter_ptrs[" << (uint32_t)i
-               << "]: " << (uint32_t)local_receiver_ack_counter_ptrs[i] << "\n";
-    }
-
     //
     // COMMON CT ARGS (not specific to sender or receiver)
     //
@@ -1918,7 +1919,7 @@ void kernel_main() {
     init_ptr_val<receiver_channel_1_free_slots_from_downstream_stream_id>(DOWNSTREAM_SENDER_NUM_BUFFERS);
 
     if constexpr (NUM_ACTIVE_ERISCS > 1) {
-        init_ptr_val<MULTI_RISC_TEARDOWN_SYNC_STREAM_ID>(0);
+        wait_for_other_local_erisc();
     }
 
     if constexpr (is_2d_fabric) {
@@ -2270,10 +2271,12 @@ void kernel_main() {
                     receiver_channel_free_slots_stream_id,
                     receiver_channel_forwarding_data_cmd_buf_ids[0],
                     receiver_channel_forwarding_sync_cmd_buf_ids[0]);
-                downstream_edm_noc_interfaces[edm_index]
-                    .template setup_edm_noc_cmd_buf<
-                        tt::tt_fabric::edm_to_downstream_noc,
-                        tt::tt_fabric::forward_and_local_write_noc_vc>();
+                if constexpr (/*is_receiver_channel_serviced[0] and*/ NUM_ACTIVE_ERISCS == 1) {
+                    downstream_edm_noc_interfaces[edm_index]
+                        .template setup_edm_noc_cmd_buf<
+                            tt::tt_fabric::edm_to_downstream_noc,
+                            tt::tt_fabric::forward_and_local_write_noc_vc>();
+                }
             }
             edm_index++;
             has_downstream_edm >>= 1;
@@ -2330,10 +2333,13 @@ void kernel_main() {
                     StreamId{receiver_channel_1_free_slots_from_downstream_stream_id},
                     receiver_channel_forwarding_data_cmd_buf_ids[1],
                     receiver_channel_forwarding_sync_cmd_buf_ids[1]);
-            downstream_edm_noc_interfaces[NUM_USED_RECEIVER_CHANNELS - 1]
-                .template setup_edm_noc_cmd_buf<
-                    tt::tt_fabric::edm_to_downstream_noc,
-                    tt::tt_fabric::forward_and_local_write_noc_vc>();
+
+            if constexpr (/*is_receiver_channel_serviced[NUM_USED_RECEIVER_CHANNELS - 1] and*/ NUM_ACTIVE_ERISCS == 1) {
+                downstream_edm_noc_interfaces[NUM_USED_RECEIVER_CHANNELS - 1]
+                    .template setup_edm_noc_cmd_buf<
+                        tt::tt_fabric::edm_to_downstream_noc,
+                        tt::tt_fabric::forward_and_local_write_noc_vc>();
+            }
         }
     }
 
@@ -2371,13 +2377,20 @@ void kernel_main() {
         NUM_TRANSACTION_IDS>
         receiver_channel_1_trid_tracker;
 
+#ifdef ARCH_BLACKHOLE
+    constexpr bool use_posted_writes_for_connection_open = false;
+#else
+    constexpr bool use_posted_writes_for_connection_open = true;
+#endif
+
     if constexpr (!is_2d_fabric) {
         if constexpr (is_receiver_channel_serviced[0]) {
             const size_t start = !has_downstream_edm_vc0_buffer_connection;
             const size_t end = has_downstream_edm_vc1_buffer_connection + 1;
             for (size_t i = start; i < end; i++) {
                 DPRINT << "Opening connection for downstream EDM " << (uint32_t)i << "\n";
-                downstream_edm_noc_interfaces[i].template open<true, tt::tt_fabric::worker_handshake_noc>();
+                downstream_edm_noc_interfaces[i]
+                    .template open<use_posted_writes_for_connection_open, tt::tt_fabric::worker_handshake_noc>();
                 ASSERT(
                     get_ptr_val(downstream_edm_noc_interfaces[i].worker_credits_stream_id) ==
                     DOWNSTREAM_SENDER_NUM_BUFFERS);
@@ -2385,43 +2398,32 @@ void kernel_main() {
         }
     }
 
-    DPRINT << "CHKPT 0\n";
-    DPRINT << "CHKPT 1\n";
+    if constexpr (NUM_ACTIVE_ERISCS > 1) {
+        wait_for_other_local_erisc();
+    }
     if constexpr (enable_ethernet_handshake) {
-        DPRINT << "CHKPT 1.1\n";
         if constexpr (is_handshake_sender) {
-            DPRINT << "CHKPT 1.1.1\n";
             erisc::datamover::handshake::sender_side_handshake(
                 handshake_addr, DEFAULT_HANDSHAKE_CONTEXT_SWITCH_TIMEOUT);
         } else {
-            DPRINT << "CHKPT 1.1.2\n";
             erisc::datamover::handshake::receiver_side_handshake(
                 handshake_addr, DEFAULT_HANDSHAKE_CONTEXT_SWITCH_TIMEOUT);
         }
-        DPRINT << "CHKPT 1.2\n";
 
         *edm_status_ptr = tt::tt_fabric::EDMStatus::REMOTE_HANDSHAKE_COMPLETE;
 
         if constexpr (wait_for_host_signal) {
-            DPRINT << "CHKPT 1.2.1\n";
             if constexpr (is_local_handshake_master) {
-                DPRINT << "CHKPT 1.2.1.1\n";
                 wait_for_notification((uint32_t)edm_local_sync_ptr, num_local_edms - 1);
-                DPRINT << "CHKPT 1.2.1.2\n";
                 // This master sends notification to self for multi risc in single eth core case,
                 // This still send to self even though with single risc core case, but no side effects
                 constexpr uint32_t exclude_eth_chan = std::numeric_limits<uint32_t>::max();
                 notify_subordinate_routers(
                     edm_channels_mask, exclude_eth_chan, (uint32_t)edm_local_sync_ptr, num_local_edms);
-                DPRINT << "CHKPT 1.2.1.3\n";
             } else {
-                DPRINT << "CHKPT 1.2.1.4\n";
                 notify_master_router(local_handshake_master_eth_chan, (uint32_t)edm_local_sync_ptr);
-                DPRINT << "CHKPT 1.2.1.5\n";
                 wait_for_notification((uint32_t)edm_local_sync_ptr, num_local_edms);
-                DPRINT << "CHKPT 1.2.1.6\n";
             }
-            DPRINT << "CHKPT 1.2.2\n";
 
             *edm_status_ptr = tt::tt_fabric::EDMStatus::LOCAL_HANDSHAKE_COMPLETE;
 
@@ -2430,10 +2432,8 @@ void kernel_main() {
             //    Other subordinate risc cores wait for this signal
             // 4. The other subordinate risc cores receive the READY_FOR_TRAFFIC signal and exit from this wait
             wait_for_notification((uint32_t)edm_status_ptr, tt::tt_fabric::EDMStatus::READY_FOR_TRAFFIC);
-            DPRINT << "CHKPT 1.2.3\n";
 
             if constexpr (is_local_handshake_master) {
-                DPRINT << "CHKPT 1.2.3.1\n";
                 // 3. Only master risc core notifies all subordinate risc cores (except subordinate riscs in master eth
                 // core)
                 notify_subordinate_routers(
@@ -2442,10 +2442,8 @@ void kernel_main() {
                     (uint32_t)edm_status_ptr,
                     tt::tt_fabric::EDMStatus::READY_FOR_TRAFFIC);
             }
-            DPRINT << "CHKPT 1.2.4\n";
         }
     }
-    DPRINT << "CHKPT 2\n";
 
     if constexpr (is_2d_fabric) {
         uint32_t has_downstream_edm = has_downstream_edm_vc0_buffer_connection & 0xF;
@@ -2454,9 +2452,8 @@ void kernel_main() {
             if constexpr (is_receiver_channel_serviced[0]) {
                 if (has_downstream_edm & 0x1) {
                     // open connections with available downstream edms
-                    DPRINT << "receiver channel opening downstream EDM connection at index " << (uint32_t)edm_index
-                           << "\n";
-                    downstream_edm_noc_interfaces[edm_index].template open<true, tt::tt_fabric::worker_handshake_noc>();
+                    downstream_edm_noc_interfaces[edm_index]
+                        .template open<use_posted_writes_for_connection_open, tt::tt_fabric::worker_handshake_noc>();
                     *downstream_edm_noc_interfaces[edm_index].from_remote_buffer_free_slots_ptr = 0;
                 }
             }
@@ -2477,11 +2474,24 @@ void kernel_main() {
             if (connect_ring) {
                 if constexpr (enable_ring_support && is_receiver_channel_serviced[NUM_USED_RECEIVER_CHANNELS - 1]) {
                     downstream_edm_noc_interfaces[NUM_USED_RECEIVER_CHANNELS - 1]
-                        .template open<true, tt::tt_fabric::worker_handshake_noc>();
+                        .template open<use_posted_writes_for_connection_open, tt::tt_fabric::worker_handshake_noc>();
                     *downstream_edm_noc_interfaces[NUM_USED_RECEIVER_CHANNELS - 1].from_remote_buffer_free_slots_ptr =
                         0;
                 }
             }
+        }
+    }
+
+    if constexpr (is_receiver_channel_serviced[0] and NUM_ACTIVE_ERISCS > 1) {
+        // Two erisc mode requires us to reorder the cmd buf programming/state setting
+        // because we need to reshuffle some of our cmd_buf/noc assignments around for
+        // just the fabric bringup phase. These calls are also located earlier for the
+        // single erisc mode
+        for (size_t edm_index = 0; edm_index < NUM_USED_RECEIVER_CHANNELS; edm_index++) {
+            downstream_edm_noc_interfaces[edm_index]
+                .template setup_edm_noc_cmd_buf<
+                    tt::tt_fabric::edm_to_downstream_noc,
+                    tt::tt_fabric::forward_and_local_write_noc_vc>();
         }
     }
     std::array<uint8_t, num_eth_ports> port_direction_table;
@@ -2498,12 +2508,19 @@ void kernel_main() {
     }
 #endif
 
+    if constexpr (NUM_ACTIVE_ERISCS > 1) {
+        wait_for_other_local_erisc();
+    }
     DPRINT << "wait_for_static_connection_to_ready\n";
     WAYPOINT("FSCW");
     wait_for_static_connection_to_ready(
         local_sender_channel_worker_interfaces, local_sender_channel_free_slots_stream_ids_ordered);
     WAYPOINT("FSCD");
     DPRINT << "MAIN LOOP\n";
+
+    if constexpr (NUM_ACTIVE_ERISCS > 1) {
+        wait_for_other_local_erisc();
+    }
 
     //////////////////////////////
     //////////////////////////////

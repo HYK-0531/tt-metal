@@ -6,7 +6,7 @@ import pytest
 import torch
 import ttnn
 from loguru import logger
-
+import time
 from ...reference.vae_decoder import VaeDecoder
 from ...tt.vae_decoder.fun_vae_decoder import sd_vae_decode, TtVaeDecoderParameters
 from ...tt.utils import assert_quality, to_torch
@@ -125,8 +125,8 @@ def test_vae_decoder(
     )
 
     # inp = torch.randn(batch, in_channels, height, width)
-    # inp = torch.normal(1, 2, (batch, in_channels, height, width))
-    inp = torch.load("torch_latent.pt")  # .permute(0, 3, 1, 2)
+    inp = torch.normal(1, 2, (batch, in_channels, height, width))
+    # inp = torch.load("torch_latent.pt")  # .permute(0, 3, 1, 2)
     logger.info(f"data shape :{inp.shape}")
 
     tt_inp = ttnn.from_torch(
@@ -147,7 +147,11 @@ def test_vae_decoder(
     with torch.no_grad():
         out = torch_model(inp)
 
+    start_time = time.time()
     tt_out = sd_vae_decode(tt_inp, parameters, None)
+    end_time = time.time()
+
+    logger.info(f"vae_decode time{end_time-start_time}")
 
     tt_out_torch = to_torch(tt_out).permute(0, 3, 1, 2)
 

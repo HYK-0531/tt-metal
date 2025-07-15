@@ -154,7 +154,7 @@ void RoutingTableGenerator::generate_intramesh_routing_table(const IntraMeshConn
 // Shortest Path
 // TODO: Put into mesh algorithms?
 std::vector<std::vector<std::vector<std::pair<chip_id_t, MeshId>>>> RoutingTableGenerator::get_paths_to_all_meshes(
-    MeshId src, const InterMeshConnectivity& inter_mesh_connectivity) {
+    MeshId src, const InterMeshConnectivity& inter_mesh_connectivity) const {
     // TODO: add more tests for this
     std::uint32_t num_meshes = inter_mesh_connectivity.size();
     // avoid vector<bool> specialization

@@ -56,6 +56,30 @@ TEST_F(IntermeshSplit2x2FabricFixture, MultiMeshEastMulticast_1) {
     }
 }
 
+// ========= Data-Movement Tests for Multi-Process Tests with 4 Ranks/Meshes =========
+
+TEST_F(InterMeshSplit1x2FabricFixture, MultiHopUnicast) {
+    // Route traffic between meshes that are not directily adjacent and require an intermediate mesh
+    auto distributed_context = tt_metal::distributed::multihost::DistributedContext::get_current_world();
+
+    constexpr uint32_t num_iterations = 20;
+    auto run_send_recv = [&](uint32_t sender_rank, uint32_t recv_rank) {
+        for (int i = 0; i < num_iterations; i++) {
+            if (*(distributed_context->rank()) == sender_rank) {
+                multihost_utils::run_unicast_sender_step(this, tt::tt_metal::distributed::multihost::Rank{recv_rank});
+            } else if (*(distributed_context->rank()) == recv_rank) {
+                multihost_utils::run_unicast_recv_step(this, tt::tt_metal::distributed::multihost::Rank{sender_rank});
+            }
+        }
+    };
+    // Run send/recv on meshes that are diagonally opposite
+    run_send_recv(0, 3);
+    run_send_recv(1, 2);
+    run_send_recv(2, 1);
+    run_send_recv(3, 0);
+    distributed_context->barrier();
+}
+
 // ========= Data-Movement Tests for 2 Loudboxes with Intermesh Connections  =========
 
 TEST_F(InterMeshDual2x4FabricFixture, RandomizedInterMeshUnicast) {

@@ -79,6 +79,7 @@ def run_trace_2cq_model(device, test_infra, num_warmup_iterations, num_measureme
         ttnn.wait_for_event(1, last_op_event)
         outputs.append(ttnn.from_device(output_tensor_dram, blocking=False, cq_id=1))
         read_event = ttnn.record_event(device, 1)
+        ttnn.DumpDeviceProfiler(device)
 
     ttnn.synchronize_device(device)
     if use_signpost:
@@ -146,8 +147,8 @@ def test_vit(device, batch_size, is_single_card_n300):
 
     ttnn.synchronize_device(device)
 
-    num_warmup_iterations = 100
-    num_measurement_iterations = 1000
+    num_warmup_iterations = 5
+    num_measurement_iterations = 3
 
     run_trace_2cq_model(device, test_infra, num_warmup_iterations, num_measurement_iterations)
 

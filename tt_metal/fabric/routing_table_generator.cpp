@@ -344,8 +344,7 @@ const std::vector<FabricNodeId>& RoutingTableGenerator::get_exit_nodes_routing_t
     auto it = this->mesh_to_exit_nodes_.find(mesh_id);
     if (it != this->mesh_to_exit_nodes_.end()) {
         return it->second;
-    } else {
-        TT_THROW("No exit nodes found for mesh_id {}", *mesh_id);
     }
+    TT_THROW("No exit nodes found for mesh_id {}", *mesh_id);
 }
 }  // namespace tt::tt_fabric

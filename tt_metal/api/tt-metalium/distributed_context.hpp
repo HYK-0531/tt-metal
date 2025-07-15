@@ -247,7 +247,10 @@ public:
     virtual ~DistributedContext() = default;
 
 protected:
-    static DistributedContextId unique_distributed_context_id();
+    // This function is used to generate a unique ID for each DistributedContext instance.
+    // It allows tracking which contexts are in use, and can be used for creating context specific resources.
+    // This function is not thread-safe.
+    static DistributedContextId generate_unique_id();
     DistributedContextId id_{0};  // Unique identifier for the context
 };
 

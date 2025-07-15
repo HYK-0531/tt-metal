@@ -1155,6 +1155,8 @@ std::vector<std::pair<FabricNodeId, chan_id_t>> ControlPlane::get_fabric_route(
         auto dst_mesh_id = dst_fabric_node_id.mesh_id;
         auto dst_chip_id = dst_fabric_node_id.chip_id;
         if (i >= tt::tt_fabric::MAX_MESH_SIZE * tt::tt_fabric::MAX_NUM_MESHES) {
+            log_warning(
+                tt::LogFabric, "Could not find a route between {} and {}", src_fabric_node_id, dst_fabric_node_id);
             return {};
         }
         chan_id_t next_chan_id = 0;
@@ -1167,6 +1169,8 @@ std::vector<std::pair<FabricNodeId, chan_id_t>> ControlPlane::get_fabric_route(
         }
         if (next_chan_id == eth_chan_magic_values::INVALID_DIRECTION) {
             // The complete route b/w src and dst not found, probably some eth cores are reserved along the path
+            log_warning(
+                tt::LogFabric, "Could not find a route between {} and {}", src_fabric_node_id, dst_fabric_node_id);
             return {};
         }
         if (src_chan_id != next_chan_id) {
@@ -2007,8 +2011,8 @@ void ControlPlane::assign_intermesh_link_directions_to_remote_host(const FabricN
             }
         }
         if (intermesh_routing_direction != RoutingDirection::NONE) {
-            router_port_directions_to_physical_eth_chan_map_.at(fabric_node_id)[intermesh_routing_direction].push_back(
-                eth_chan);
+            auto& direction_to_channel_map = router_port_directions_to_physical_eth_chan_map_.at(fabric_node_id);
+            direction_to_channel_map[intermesh_routing_direction].push_back(eth_chan);
         }
     }
     // Compute the number of intermesh links requsted by the user and ensure that they could be mapped to physical links

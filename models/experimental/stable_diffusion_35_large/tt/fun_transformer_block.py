@@ -174,20 +174,24 @@ def sd_dual_attn_block(
             dim=3,
             num_links=parallel_manager.num_links,
             cluster_axis=parallel_manager.dit_parallel_config.tensor_parallel.mesh_axis,
-            mesh_device=device,
             topology=parallel_manager.dit_parallel_config.topology,
             multi_device_global_semaphore=parallel_manager.get_ping_pong_semaphore(cfg_index),
-            persistent_output_tensor=parallel_manager.get_ping_pong_buffer(cfg_index, "spatial_buffer"),
+            persistent_output_buffer=parallel_manager.get_ping_pong_buffer(cfg_index, "spatial_buffer"),
+            chunks_per_sync=10,
+            num_workers_per_link=2,
+            num_buffers_per_channel=2,
         )
         prompt_scaled = unpadded_all_gather_async(
             prompt_scaled,
             dim=3,
             num_links=parallel_manager.num_links,
             cluster_axis=parallel_manager.dit_parallel_config.tensor_parallel.mesh_axis,
-            mesh_device=device,
             topology=parallel_manager.dit_parallel_config.topology,
             multi_device_global_semaphore=parallel_manager.get_ping_pong_semaphore(cfg_index),
-            persistent_output_tensor=parallel_manager.get_ping_pong_buffer(cfg_index, "prompt_buffer"),
+            persistent_output_buffer=parallel_manager.get_ping_pong_buffer(cfg_index, "prompt_buffer"),
+            chunks_per_sync=10,
+            num_workers_per_link=2,
+            num_buffers_per_channel=2,
         )
 
     spatial_attn, prompt_attn = sd_joint_attention(
@@ -227,10 +231,12 @@ def sd_gated_ff_block(
             dim=3,
             num_links=parallel_manager.num_links,
             cluster_axis=parallel_manager.dit_parallel_config.tensor_parallel.mesh_axis,
-            mesh_device=device,
             topology=parallel_manager.dit_parallel_config.topology,
             multi_device_global_semaphore=parallel_manager.get_ping_pong_semaphore(cfg_index),
-            persistent_output_tensor=parallel_manager.get_ping_pong_buffer(cfg_index, buffer_name),
+            persistent_output_buffer=parallel_manager.get_ping_pong_buffer(cfg_index, buffer_name),
+            chunks_per_sync=10,
+            num_workers_per_link=2,
+            num_buffers_per_channel=2,
         )
     result = gate * sd_feed_forward(
         scaled,

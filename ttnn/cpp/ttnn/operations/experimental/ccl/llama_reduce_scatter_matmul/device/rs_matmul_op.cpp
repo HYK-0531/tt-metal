@@ -57,12 +57,12 @@ Matmul_RS::spec_return_value_t Matmul_RS::compute_output_specs(
         operation_attributes.rs.compute_output_specs(operation_attributes.rs_op, tensor_args.rs);
     // Matmul shape
     if (tensor_args.second_weight_tensor.has_value()) {
-        ttnn::TensorSpec matmul_output_specs = operation_attributes.matmul.compute_output_specs(
+        auto matmul_output_specs = operation_attributes.matmul.compute_output_specs(
             {tensor_args.matmul.input_tensor,
              tensor_args.matmul.weight_tensor,
              tensor_args.second_weight_tensor.value()},
-            {})[0];
-        return {matmul_output_specs, reduce_scatter_output_spec};
+            {});
+        return {matmul_output_specs.at(0), matmul_output_specs.at(1), reduce_scatter_output_spec};
     } else {
         ttnn::TensorSpec matmul_output_specs = operation_attributes.matmul.compute_output_specs(
             {tensor_args.matmul.input_tensor, tensor_args.matmul.weight_tensor}, {})[0];

@@ -71,7 +71,9 @@ void kernel_main() {
     // Get signal here
     if constexpr (needs_signaler) {
         uint32_t signaler_semaphore_address = get_semaphore(get_arg_val<uint32_t>(rt_arg_idx++));
-        noc_semaphore_wait((uint32_t*)signaler_semaphore_address, 1);
+        volatile tt_l1_ptr uint32_t* signaler_semaphore_address_ptr =
+            reinterpret_cast<volatile tt_l1_ptr uint32_t*>(signaler_semaphore_address);
+        noc_semaphore_wait(signaler_semaphore_address_ptr, 1);
     }
 
     // Bank base addresses (compute once)

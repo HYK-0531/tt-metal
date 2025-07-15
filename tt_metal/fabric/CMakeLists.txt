@@ -11,6 +11,7 @@ target_sources(
         fabric.cpp
         fabric_host_utils.cpp
         fabric_context.cpp
+        fabric_mux_config.cpp
         serialization/intermesh_link_table.cpp
 )
 
@@ -41,6 +42,7 @@ target_sources(
             hw/inc/edm_fabric/fabric_connection_manager.hpp
             hw/inc/edm_fabric/fabric_edm_packet_header_validate.hpp
             hw/inc/edm_fabric/fabric_edm_packet_transmission.hpp
+            hw/inc/edm_fabric/fabric_txq_setup.h
             hw/inc/edm_fabric/fabric_erisc_datamover_channels.hpp
 )
 

@@ -14,7 +14,6 @@ class default_setup(metaclass=MergeMetaclass):
         "TRISC_1",
         "TRISC_2",
         "ERISC",
-        "CORE_AGG",
     ]
 
     riscTypes = [

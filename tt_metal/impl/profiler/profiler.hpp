@@ -355,9 +355,6 @@ public:
 
     // Get zone details for the zone corresponding to the given timer id
     ZoneDetails getZoneDetails(uint16_t timer_id) const;
-
-    // Flag holding if the current was trace run
-    bool wasTraceReplay = false;
 };
 
 bool useFastDispatchForControlBuffers(const IDevice* device, ProfilerDumpState state);

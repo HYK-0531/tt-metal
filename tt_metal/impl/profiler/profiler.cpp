@@ -431,11 +431,6 @@ void DeviceProfiler::readControlBufferForCore(
     }
 
     const auto& rtoptions = tt::tt_metal::MetalContext::instance().rtoptions();
-    if (rtoptions.get_profiler_trace_profiler()) {
-        if (core_control_buffers.at(virtual_core)[kernel_profiler::CURRENT_TRACE_ID] != 0) {
-            wasTraceReplay = true;
-        }
-    }
 }
 
 void DeviceProfiler::readControlBuffers(
@@ -536,7 +531,7 @@ void DeviceProfiler::readRiscProfilerResults(
         }
         uint32_t riscType;
 
-        if (rtoptions.get_profiler_trace_profiler() && wasTraceReplay && CoreType == HalProgrammableCoreType::TENSIX) {
+        if (rtoptions.get_profiler_trace_profiler() && CoreType == HalProgrammableCoreType::TENSIX) {
             riscType = 6;
         } else if (CoreType == HalProgrammableCoreType::TENSIX) {
             riscType = riscEndIndex;

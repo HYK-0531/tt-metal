@@ -32,6 +32,7 @@ jobs:
     secrets: inherit
     with:
       build-wheel: true
+      skip-tt-train: false
       version: 22.04
   test:
     needs: build-artifact

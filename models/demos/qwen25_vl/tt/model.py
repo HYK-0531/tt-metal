@@ -337,25 +337,29 @@ class DropInVisionTransformer(torch.nn.Module):
             if profiler is not None:
                 profiler.start(f"vision_model_loop_create_tt_mask", iteration=num_iters)
             seq_len = tt_input.shape[-2]
-            attention_mask = torch.full([1, 1, seq_len, seq_len], -1e9, dtype=torch.bfloat16)
+            attention_mask = torch.full([1, 1, seq_len, seq_len], float("-inf"), dtype=torch.bfloat16)
             for i in range(1, len(cu_window_seqlens)):
                 attention_mask[
                     ...,
                     cu_window_seqlens[i - 1] : cu_window_seqlens[i],
                     cu_window_seqlens[i - 1] : cu_window_seqlens[i],
                 ] = 0
+            profiler.start(f"vision_model_loop_create_tt_windowed_att_mask_from_torch", iteration=num_iters)
             tt_attention_mask_windowed_att = ttnn.from_torch(
                 attention_mask, dtype=ttnn.bfloat4_b, layout=ttnn.TILE_LAYOUT, device=self.model_args.mesh_device
             )
+            profiler.end(f"vision_model_loop_create_tt_windowed_att_mask_from_torch", iteration=num_iters)
 
             tt_attention_mask_full_att = None
             if self.tt_model.fullatt_block_indexes is not None:
-                attention_mask = torch.full([1, 1, seq_len, seq_len], -1e9, dtype=torch.bfloat16)
+                attention_mask = torch.full([1, 1, seq_len, seq_len], float("-inf"), dtype=torch.bfloat16)
                 for i in range(1, len(cu_seqlens)):
                     attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
+                profiler.start(f"vision_model_loop_create_tt_full_att_mask_from_torch", iteration=num_iters)
                 tt_attention_mask_full_att = ttnn.from_torch(
                     attention_mask, dtype=ttnn.bfloat4_b, layout=ttnn.TILE_LAYOUT, device=self.model_args.mesh_device
                 )
+                profiler.end(f"vision_model_loop_create_tt_full_att_mask_from_torch", iteration=num_iters)
             if profiler is not None:
                 profiler.end(f"vision_model_loop_create_tt_mask", iteration=num_iters)
 
@@ -424,6 +428,12 @@ class DropInVisionTransformer(torch.nn.Module):
                 )
                 logger.info(
                     f"vision_model_loop_create_tt_mask at {i}: {profiler.get_duration('vision_model_loop_create_tt_mask', iteration=i)}"
+                )
+                logger.info(
+                    f"vision_model_loop_create_tt_windowed_att_mask_from_torch at {i}: {profiler.get_duration('vision_model_loop_create_tt_windowed_att_mask_from_torch', iteration=i)}"
+                )
+                logger.info(
+                    f"vision_model_loop_create_tt_full_att_mask_from_torch at {i}: {profiler.get_duration('vision_model_loop_create_tt_full_att_mask_from_torch', iteration=i)}"
                 )
                 logger.info(
                     f"vision_model_loop_tt_model at {i}: {profiler.get_duration('vision_model_loop_tt_model', iteration=i)}"

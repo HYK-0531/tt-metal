@@ -17,6 +17,7 @@ using namespace tt::tt_metal;
 #endif
 int main() {
     /* Silicon accelerator setup */
+
     std::shared_ptr<distributed::MeshDevice> mesh_device = distributed::MeshDevice::create_unit_mesh(
         0, DEFAULT_L1_SMALL_SIZE, DEFAULT_TRACE_REGION_SIZE, 1, DispatchCoreType::WORKER);
 

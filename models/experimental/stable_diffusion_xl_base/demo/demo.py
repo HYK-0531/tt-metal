@@ -13,6 +13,7 @@ from models.experimental.stable_diffusion_xl_base.tt.tt_euler_discrete_scheduler
 from models.experimental.stable_diffusion_xl_base.tt.model_configs import ModelOptimisations
 from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     SDXL_L1_SMALL_SIZE,
+    SDXL_DEFAULT_PROMPT,
     retrieve_timesteps,
     run_tt_image_gen,
 )
@@ -326,7 +327,7 @@ def run_demo_inference(ttnn_device, is_ci_env, prompts, num_inference_steps, vae
 @pytest.mark.parametrize("device_params", [{"l1_small_size": SDXL_L1_SMALL_SIZE}], indirect=True)
 @pytest.mark.parametrize(
     "prompt",
-    (("An astronaut riding a green horse"),),
+    ((SDXL_DEFAULT_PROMPT),),
 )
 @pytest.mark.parametrize(
     "num_inference_steps",

@@ -38,6 +38,7 @@ struct Matmul_RS {
     struct tensor_args_t {
         LlamaReduceScatterDeviceOperation::tensor_args_t rs;
         matmul_tensor_args_t matmul;
+        const std::optional<const ttnn::Tensor> second_weight_tensor;
     };
     struct operation_attributes_t {
         LlamaReduceScatterDeviceOperation rs;

@@ -47,8 +47,10 @@ ttnn::device_operation::CachedProgram<Matmul_RS::Matmul_RS_PF::shared_variables_
     ttnn::experimental::ccl::MatmulFusedOpSignaler base_signaler = ttnn::experimental::ccl::MatmulFusedOpSignaler(
         ttnn::experimental::ccl::MatmulFusedOpSignalerType::LLAMA_REDUCE_SCATTER);
     base_signaler.init_llama_rs_cores_rs(rs_cores, program);
-    // std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> fused_op_signaler = base_signaler;
     std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> fused_op_signaler = std::nullopt;
+    if (tensor_args.second_weight_tensor.has_value()) {
+        fused_op_signaler = base_signaler;
+    }
     auto reduce_scatter_sv = LlamaReduceScatterDeviceOperation::LlamaReduceScatterAdd::create_at_program_processing(
         operation_attributes.rs_op,
         mesh_coordinate,

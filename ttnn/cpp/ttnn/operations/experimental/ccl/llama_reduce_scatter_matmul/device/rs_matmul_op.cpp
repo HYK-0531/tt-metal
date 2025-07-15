@@ -120,7 +120,8 @@ std::tuple<Matmul_RS::operation_attributes_t, Matmul_RS::tensor_args_t> Matmul_R
                         global_cb})},
             tensor_args_t{
                 LlamaReduceScatterDeviceOperation::tensor_args_t{rs_tensor, intermediate_packet_buffer},
-                matmul_tensor_args_t{input_tensor, weight_tensor}}};
+                matmul_tensor_args_t{input_tensor, weight_tensor},
+                second_weight_tensor}};
     } else {
         return {
             operation_attributes_t{
@@ -155,7 +156,8 @@ std::tuple<Matmul_RS::operation_attributes_t, Matmul_RS::tensor_args_t> Matmul_R
                         global_cb})},
             tensor_args_t{
                 LlamaReduceScatterDeviceOperation::tensor_args_t{rs_tensor, intermediate_packet_buffer},
-                matmul_tensor_args_t{input_tensor, weight_tensor}}};
+                matmul_tensor_args_t{input_tensor, weight_tensor},
+                std::nullopt}};
     }
 }
 

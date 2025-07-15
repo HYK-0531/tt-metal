@@ -7,6 +7,7 @@
 #include "compute_kernel_api/reduce.h"
 #include "compute_kernel_api/tilize.h"
 #include "compute_kernel_api/eltwise_unary/binop_with_scalar.h"
+#include "compute_kernel_api/cb_api.h"
 
 #define DEBUG_PRINT 0
 
@@ -102,17 +103,23 @@ void MAIN {
                         if constexpr (one_scalar_per_core) {
                             mul_unary_tile(math_tile_idx, bf32_scalar);
                         } else {
-                            uint64_t scalar_address = 0;
-                            UNPACK(scalar_address = get_local_cb_interface(curr_scalar_cb_id).fifo_rd_ptr);
-                            constexpr uint32_t COMPUTE_ADDR_FACTOR = 16;
-                            UNPACK(
-                                volatile tt_l1_ptr uint32_t* scalar_ptr =
-                                    reinterpret_cast<volatile tt_l1_ptr uint32_t*>(
-                                        COMPUTE_ADDR_FACTOR * scalar_address));
-                            UNPACK(
-                                DPRINT << "scalar_address: " << scalar_address << " scalar value: " << *scalar_ptr
-                                       << ENDL());
-                            // mul_unary_tile(math_tile_idx, *scalar_ptr);
+                            // uint64_t scalar_address = 0;
+                            // UNPACK(scalar_address = get_local_cb_interface(curr_scalar_cb_id).fifo_rd_ptr);
+                            // constexpr uint32_t COMPUTE_ADDR_FACTOR = 16;
+                            // UNPACK(
+                            //     volatile tt_l1_ptr uint32_t* scalar_ptr =
+                            //         reinterpret_cast<volatile tt_l1_ptr uint32_t*>(
+                            //             COMPUTE_ADDR_FACTOR * scalar_address));
+                            // UNPACK(
+                            //     DPRINT << "scalar_address: " << scalar_address << " scalar value: " << *scalar_ptr
+                            //            << ENDL());
+                            volatile uint32_t* bf32_scalar_ptr;
+                            cb_get_tile(curr_scalar_cb_id, 0, &bf32_scalar_ptr);
+                            uint32_t bf32_scalar_var =
+                                bf32_scalar_ptr[4];  // value from get tile is offset by 4 elements
+                            MATH(DPRINT << "GET TILE value: " << bf32_scalar_var << ENDL());
+                            mul_unary_tile(math_tile_idx, bf32_scalar_var);
+                            cb_release_tile(curr_scalar_cb_id);
                         }
                     }
                 }

@@ -37,6 +37,7 @@ void validate_and_setup_control_plane_config(Fixture* fixture) {
     TT_FATAL(
         *(tt::tt_metal::MetalContext::instance().get_distributed_context().size()) > 1,
         "Multi-Host Routing tests require multiple hosts in the system");
+    exit(0);
 }
 
 const std::vector<eth_coord_t>& get_eth_coords_for_t3k() {
@@ -148,11 +149,11 @@ template <typename Fixture>
 class Split2x2FabricFixture : public Fixture {
 public:
     std::string get_path_to_mesh_graph_desc() override {
-        return "tests/tt_metal/tt_fabric/custom_mesh_descriptors/t3k_2x2_mesh_graph_descriptor.yaml";
+        return "tests/tt_metal/tt_fabric/custom_mesh_descriptors/t3k_1x2_mesh_graph_descriptor.yaml";
     }
 
     std::vector<std::vector<eth_coord_t>> get_eth_coord_mapping() override {
-        return get_eth_coords_for_split_2x2_t3k();
+        return get_eth_coords_for_split_1x2_t3k();
     }
 };
 

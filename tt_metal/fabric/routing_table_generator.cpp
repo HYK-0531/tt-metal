@@ -154,7 +154,7 @@ void RoutingTableGenerator::generate_intramesh_routing_table(const IntraMeshConn
 // Shortest Path
 // TODO: Put into mesh algorithms?
 std::vector<std::vector<std::vector<std::pair<chip_id_t, MeshId>>>> RoutingTableGenerator::get_paths_to_all_meshes(
-    MeshId src, const InterMeshConnectivity& inter_mesh_connectivity) {
+    MeshId src, const InterMeshConnectivity& inter_mesh_connectivity) const {
     // TODO: add more tests for this
     std::uint32_t num_meshes = inter_mesh_connectivity.size();
     // avoid vector<bool> specialization
@@ -341,6 +341,17 @@ void RoutingTableGenerator::print_routing_tables() const {
 }
 
 const std::vector<FabricNodeId>& RoutingTableGenerator::get_exit_nodes_routing_to_mesh(MeshId mesh_id) const {
+    for (const auto& src_mesh : this->mesh_graph->get_mesh_ids()) {
+        if (src_mesh == mesh_id) {
+            continue;  // Skip the source mesh itself
+        }
+        auto paths = get_paths_to_all_meshes(src_mesh, this->mesh_graph->get_inter_mesh_connectivity());
+        const auto& path = paths[*mesh_id][0];  // Get the first path to the target mesh
+        std::cout << "Path length from mesh " << *src_mesh << " to mesh " << *mesh_id << ": " << path.size()
+                  << std::endl;
+        std::cout << "Exit Node: " << "Mesh: " << *std::get<1>(path[0]) << std::get<0>(path[0])
+                  << std::endl;  // Print the exit node
+    }
     auto it = this->mesh_to_exit_nodes_.find(mesh_id);
     if (it != this->mesh_to_exit_nodes_.end()) {
         return it->second;

@@ -65,7 +65,7 @@ private:
     std::unordered_map<MeshId, std::vector<FabricNodeId>> mesh_to_exit_nodes_;
 
     std::vector<std::vector<std::vector<std::pair<chip_id_t, MeshId>>>> get_paths_to_all_meshes(
-        MeshId src, const InterMeshConnectivity& inter_mesh_connectivity);
+        MeshId src, const InterMeshConnectivity& inter_mesh_connectivity) const;
     void generate_intramesh_routing_table(const IntraMeshConnectivity& intra_mesh_connectivity);
     // when generating intermesh routing table, we use the intramesh connectivity table to find the shortest path to
     // the exit chip

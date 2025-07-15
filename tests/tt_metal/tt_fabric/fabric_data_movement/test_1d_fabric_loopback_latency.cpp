@@ -53,14 +53,6 @@ public:
 
     NonDeviceInitFabric1DFixture() : BaseFabricFixture() { this->SetupDevices(); }
 
-    // NonDeviceInitFabric1DFixture(
-    //     tt::tt_metal::FabricConfig fabric_config,
-    //     tt::tt_metal::FabricReliabilityMode reliability_mode =
-    //         tt::tt_metal::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE) :
-    //     BaseFabricFixture(fabric_config, reliability_mode) {
-    //     this->SetupDevices();
-    // }
-
     ~NonDeviceInitFabric1DFixture() override { TearDown(); }
 };
 

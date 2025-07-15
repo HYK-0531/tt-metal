@@ -761,8 +761,9 @@ bool RunLocalTestWithMultiInputReaders(
     const size_t num_pages_per_edm_buffer = 2;
 
     auto chip0_worker_forward_fabric_connection =
-        fabric_enabled ? line_fabric->uniquely_connect_worker(devices[0], ttnn::ccl::EdmLineFabricOpInterface::FORWARD)
-                       : std::optional<tt::tt_fabric::SenderWorkerAdapterSpec>{std::nullopt};
+        fabric_enabled
+            ? line_fabric->uniquely_connect_worker(devices[0], tt::tt_fabric::EdmLineFabricOpInterface::FORWARD)
+            : std::optional<tt::tt_fabric::SenderWorkerAdapterSpec>{std::nullopt};
 
     std::optional<tt::tt_fabric::SenderWorkerAdapterSpec> chip0_worker_backward_fabric_connection = std::nullopt;
 
@@ -1616,4 +1617,3 @@ void run_ring_all_gather_with_persistent_fabric(
     // wait for op completion
     wait_for_worker_program_completion(devices, subdevice_managers);
 }
-

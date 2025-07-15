@@ -19,7 +19,7 @@ import os
 )
 @pytest.mark.parametrize(
     "num_images_per_device",
-    ((1),),
+    [int(os.environ.get("SDXL_NUM_IMAGES_PER_DEVICE", 1))],  # Default to 1
 )
 def test_sdxl_stress(
     mesh_device,
@@ -28,8 +28,6 @@ def test_sdxl_stress(
     evaluation_range,
 ):
     prompts = (mesh_device.get_num_devices() * num_images_per_device) * [SDXL_DEFAULT_PROMPT]
-    print("Prompts len is: ", len(prompts))
-    print("Prompts is: ", prompts)
 
     os.environ["TT_MM_THROTTLE_PERF"] = "5"
 

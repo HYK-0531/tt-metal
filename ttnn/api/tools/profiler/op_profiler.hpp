@@ -422,7 +422,6 @@ inline std::string op_meta_data_serialized_json(
 template <typename device_operation_t>
 inline std::string op_meta_data_serialized_json(
     const device_operation_t& operation,
-    uint32_t operation_id,
     auto device_id,
     const auto& program,
     const auto& operation_attributes,
@@ -433,8 +432,8 @@ inline std::string op_meta_data_serialized_json(
 
     if (!useCachedOps || (cached_ops.find(device_id) == cached_ops.end()) ||
         (cached_ops.at(device_id).find(program_hash) == cached_ops.at(device_id).end())) {
-        auto j =
-            get_base_json<device_operation_t>(operation_id, operation_attributes, tensor_args, tensor_return_value);
+        auto j = get_base_json<device_operation_t>(
+            program.get_runtime_id(), operation_attributes, tensor_args, tensor_return_value);
         j["op_type"] = magic_enum::enum_name(OpType::tt_dnn_device);
         j["device_id"] = device_id;
         j["op_hash"] = program_hash;
@@ -470,29 +469,28 @@ inline std::string op_meta_data_serialized_json(
         }
 
         std::string ser = j.dump(4);
-        return fmt::format("{}{} ->\n{}`", short_str, operation_id, ser);
+        return fmt::format("{}{} ->\n{}`", short_str, program.get_runtime_id(), ser);
     } else {
         auto opname = program_hash_to_opname_.find_if_exists({device_id, program_hash});
         runtime_id_to_opname_.insert({device_id, program.get_runtime_id()}, std::move(opname));
-        return fmt::format("{}{}`", cached_ops.at(device_id).at(program_hash), operation_id);
+        return fmt::format("{}{}`", cached_ops.at(device_id).at(program_hash), program.get_runtime_id());
     }
 }
 
-#define TracyOpTTNNDevice(                                                                                    \
-    operation, operation_id, device_id, program, operation_attributes, tensor_args, tensor_return_value)      \
-    std::string op_message = tt::tt_metal::op_profiler::op_meta_data_serialized_json(                         \
-        operation, operation_id, device_id, program, operation_attributes, tensor_args, tensor_return_value); \
-    std::string op_text = fmt::format("id:{}", operation_id);                                                 \
-    ZoneText(op_text.c_str(), op_text.size());                                                                \
+#define TracyOpTTNNDevice(                                                                               \
+    operation, operation_id, device_id, program, operation_attributes, tensor_args, tensor_return_value) \
+    std::string op_message = tt::tt_metal::op_profiler::op_meta_data_serialized_json(                    \
+        operation, device_id, program, operation_attributes, tensor_args, tensor_return_value);          \
+    std::string op_text = fmt::format("id:{}", operation_id);                                            \
+    ZoneText(op_text.c_str(), op_text.size());                                                           \
     TracyMessage(op_message.c_str(), op_message.size());
 
-#define TracyOpTTNNExternal(op, input_tensors, base_op_id)                                                      \
-    /* This op runs entirely on host, but its ID must be generated using the same data-path as device-side */   \
-    /* ops, for accurate reporting by the performance post-processor. */                                        \
-    auto op_id = tt::tt_metal::detail::EncodePerDeviceProgramID(base_op_id, 0, true);                           \
-    std::string op_message = tt::tt_metal::op_profiler::op_meta_data_serialized_json(op_id, op, input_tensors); \
-    std::string op_text = fmt::format("id:{}", op_id);                                                          \
-    ZoneText(op_text.c_str(), op_text.size());                                                                  \
+#define TracyOpTTNNExternal(op, input_tensors, base_op_id)                                                           \
+    /* This op runs entirely on host, but its ID must be generated using the same data-path as device-side */        \
+    /* ops, for accurate reporting by the performance post-processor. */                                             \
+    std::string op_message = tt::tt_metal::op_profiler::op_meta_data_serialized_json(base_op_id, op, input_tensors); \
+    std::string op_text = fmt::format("id:{}", base_op_id);                                                          \
+    ZoneText(op_text.c_str(), op_text.size());                                                                       \
     TracyMessage(op_message.c_str(), op_message.size());
 
 #define TracyOpMeshWorkload(                                                                                   \
@@ -505,10 +503,9 @@ inline std::string op_meta_data_serialized_json(
             /* TODO: (Issue #20233): Move the zone below outside TracyOpMeshWorkload. */                       \
             ZoneScopedN("TT_DNN_DEVICE_OP");                                                                   \
             auto device_id = mesh_device->get_device(coord)->id();                                             \
-            auto op_id = tt::tt_metal::detail::EncodePerDeviceProgramID(base_program_id, device_id);           \
             std::string op_message = tt::tt_metal::op_profiler::op_meta_data_serialized_json(                  \
-                operation, op_id, device_id, program, operation_attributes, tensor_args, tensor_return_value); \
-            std::string op_text = fmt::format("id:{}", op_id);                                                 \
+                operation, device_id, program, operation_attributes, tensor_args, tensor_return_value);        \
+            std::string op_text = fmt::format("id:{}", base_program_id);                                       \
             ZoneText(op_text.c_str(), op_text.size());                                                         \
             TracyMessage(op_message.c_str(), op_message.size());                                               \
         }                                                                                                      \

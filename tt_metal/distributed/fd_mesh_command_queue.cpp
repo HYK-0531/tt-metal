@@ -777,7 +777,6 @@ void FDMeshCommandQueue::write_program_cmds_to_subgrid(
     CoreType dispatch_core_type = dispatch_core_config.get_core_type();
     for (const auto& coord : sub_grid) {
         auto device = this->mesh_device_->get_device(coord);
-        this->update_launch_messages_for_device_profiler(program_cmd_seq, program_runtime_id, device);
         program_dispatch::write_program_command_sequence(
             program_cmd_seq, device->sysmem_manager(), id_, dispatch_core_type, stall_first, stall_before_program);
         chip_ids_in_workload.insert(device->id());
@@ -825,7 +824,6 @@ void FDMeshCommandQueue::capture_program_trace_on_subgrid(
         uint32_t sysmem_manager_offset = sysmem_manager_for_trace.get_issue_queue_write_ptr(id_);
 
         auto device = this->mesh_device_->get_device(coord);
-        this->update_launch_messages_for_device_profiler(program_cmd_seq, program_runtime_id, device);
         program_dispatch::write_program_command_sequence(
             program_cmd_seq, sysmem_manager_for_trace, id_, dispatch_core_type, stall_first, stall_before_program);
         auto mesh_trace_md = MeshTraceStagingMetadata{
@@ -971,16 +969,6 @@ void FDMeshCommandQueue::record_end() {
 
 SystemMemoryManager& FDMeshCommandQueue::reference_sysmem_manager() {
     return mesh_device_->get_device(0, 0)->sysmem_manager();
-}
-
-void FDMeshCommandQueue::update_launch_messages_for_device_profiler(
-    ProgramCommandSequence& program_cmd_seq, uint32_t program_runtime_id, IDevice* device) {
-#if defined(TRACY_ENABLE)
-    for (auto& [is_multicast, original_launch_msg, launch_msg] : program_cmd_seq.launch_messages) {
-        launch_msg->kernel_config.host_assigned_id =
-            tt_metal::detail::EncodePerDeviceProgramID(program_runtime_id, device->id());
-    }
-#endif
 }
 
 std::pair<bool, size_t> FDMeshCommandQueue::query_prefetcher_cache(uint64_t workload_id, uint32_t lengthB) {

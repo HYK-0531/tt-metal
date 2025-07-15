@@ -43,11 +43,12 @@ ttnn::device_operation::CachedProgram<Matmul_RS::Matmul_RS_PF::shared_variables_
     tt::tt_metal::SubDeviceId sub_device_id = operation_attributes.rs_op.subdevice_id.value();
     auto [part_cores, rs_cores] =
         LlamaReduceScatterDeviceOperation::get_rs_core_grids(operation_attributes.rs_op, tensor_args.rs);
-    std::optional<CoreRangeSet> optional_core_range = rs_cores;
+    std::optional<CoreRangeSet> reduce_scatter_core_range = rs_cores;
     ttnn::experimental::ccl::MatmulFusedOpSignaler base_signaler = ttnn::experimental::ccl::MatmulFusedOpSignaler(
         ttnn::experimental::ccl::MatmulFusedOpSignalerType::LLAMA_REDUCE_SCATTER);
     base_signaler.init_llama_rs_cores_rs(rs_cores, program);
-    std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> fused_op_signaler = base_signaler;
+    // std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> fused_op_signaler = base_signaler;
+    std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> fused_op_signaler = std::nullopt;
     auto reduce_scatter_sv = LlamaReduceScatterDeviceOperation::LlamaReduceScatterAdd::create_at_program_processing(
         operation_attributes.rs_op,
         mesh_coordinate,
@@ -69,7 +70,7 @@ ttnn::device_operation::CachedProgram<Matmul_RS::Matmul_RS_PF::shared_variables_
         operation_attributes.matmul.global_cb,
         sub_device_id /*sub_device_id*/,
         tt::CBIndex::c_6 /*start cb index*/,
-        optional_core_range);
+        reduce_scatter_core_range);
     return {std::move(program), shared_variables_t{reduce_scatter_sv, matmul_sv}};
 }
 

@@ -173,10 +173,10 @@ void kernel_main() {
                     // Set the memory address to 1 for broadcast to RS cores
                     noc_semaphore_set(pv_semaphore_ptr, 1);
                     // Broadcast to RS cores
-                    noc_semaphore_set_multicast(pv_semaphore_ptr, rs_semaphore_address, num_rs_semaphores)
+                    noc_semaphore_set_multicast(pv_semaphore, rs_semaphore_address, num_rs_semaphores);
                 } else {
                     // Increment the privilage core semaphore by 1
-                    noc_semaphore_inc(pv_semaphore_ptr, 1);
+                    noc_semaphore_inc(get_noc_addr(pv_semaphore), 1);
                 }
             }
         }

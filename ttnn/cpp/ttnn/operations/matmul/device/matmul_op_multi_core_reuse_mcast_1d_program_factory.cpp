@@ -16,6 +16,7 @@
 #include "ttnn/operations/eltwise/unary/common/unary_op_utils.hpp"
 #include "ttnn/operations/matmul/device/matmul_op.hpp"
 #include "ttnn/operations/compute_throttle_utils.hpp"
+#include "ttnn/operations/ccl/ccl_op_fusion.hpp"
 
 using namespace tt;
 using namespace tt::constants;
@@ -1992,6 +1993,11 @@ process_gather_in0_program_and_create_override_variables(
     tt_metal::NOC_MODE noc_mode =
         use_dedicated_noc ? tt_metal::NOC_MODE::DM_DEDICATED_NOC : tt_metal::NOC_MODE::DM_DYNAMIC_NOC;
 
+    // Init the signaler
+    if (fused_op_signaler.has_value()) {
+        ttnn::experimental::ccl::MatmulFusedOpSignaler& signaler = fused_op_signaler.value();
+        signaler.init_llama_rs_cores_mm(all_cores, program, 0);
+    }
     /* Create the kernels */
     auto mm_kernel_in0_id = tt_metal::CreateKernel(
         program,
@@ -2714,7 +2720,7 @@ tt::tt_metal::operation::ProgramWithCallbacks matmul_multi_core_reuse_mcast_1d_o
     uint32_t num_global_cb_receivers,
     const std::optional<tt::tt_metal::SubDeviceId>& sub_device_id) {
     tt_metal::Program program{}; /* Create a program */
-    std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> empty_fused_op_signaler;
+    std::optional<ttnn::experimental::ccl::MatmulFusedOpSignaler> empty_fused_op_signaler = std::nullopt;
 
     ttnn::operations::matmul::matmul_mcast_1d_common_override_variables_t shared_vars =
         matmul_multi_core_reuse_mcast_1d_optimized_(

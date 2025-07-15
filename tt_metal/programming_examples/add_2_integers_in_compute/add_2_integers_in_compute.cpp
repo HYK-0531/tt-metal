@@ -6,7 +6,6 @@
 #include <tt-metalium/device.hpp>
 #include <tt-metalium/bfloat16.hpp>
 #include <tt-metalium/distributed.hpp>
-#include <tt-metalium/device.hpp>
 #include <tt-metalium/tt_metal.hpp>
 #include <tt-metalium/kernel.hpp>
 
@@ -26,22 +25,23 @@ int main() {
     distributed::MeshWorkload workload;
     distributed::MeshCoordinateRange device_range = distributed::MeshCoordinateRange(mesh_device->shape());
     Program program = CreateProgram();
-    distributed::AddProgramToMeshWorkload(workload, std::move(program), device_range);
-    auto& program_ = workload.get_programs().at(device_range);
     auto device = mesh_device->get_devices()[0];
 
     constexpr CoreCoord core = {0, 0};
 
     constexpr uint32_t single_tile_size = 2 * 1024;
-    tt_metal::InterleavedBufferConfig dram_config{
-        .device = device,
-        .size = single_tile_size,
+    distributed::DeviceLocalBufferConfig dram_config{
         .page_size = single_tile_size,
-        .buffer_type = tt_metal::BufferType::DRAM};
+        .buffer_type = tt_metal::BufferType::DRAM,
+        .bottom_up = false
+    };
+    const distributed::ReplicatedBufferConfig buffer_config {
+        .size = single_tile_size
+    };
 
-    std::shared_ptr<tt::tt_metal::Buffer> src0_dram_buffer = CreateBuffer(dram_config);
-    std::shared_ptr<tt::tt_metal::Buffer> src1_dram_buffer = CreateBuffer(dram_config);
-    std::shared_ptr<tt::tt_metal::Buffer> dst_dram_buffer = CreateBuffer(dram_config);
+    std::shared_ptr<tt::tt_metal::distributed::MeshBuffer> src0_dram_buffer = distributed::MeshBuffer::create(buffer_config, dram_config, mesh_device.get());
+    std::shared_ptr<tt::tt_metal::distributed::MeshBuffer> src1_dram_buffer = distributed::MeshBuffer::create(buffer_config, dram_config, mesh_device.get());
+    std::shared_ptr<tt::tt_metal::distributed::MeshBuffer> dst_dram_buffer = distributed::MeshBuffer::create(buffer_config, dram_config, mesh_device.get());
 
     // Since all interleaved buffers have size == page_size, they are entirely contained in the first DRAM bank
     uint32_t src0_bank_id = 0;
@@ -54,30 +54,30 @@ int main() {
     CircularBufferConfig cb_src0_config =
         CircularBufferConfig(num_input_tiles * single_tile_size, {{src0_cb_index, tt::DataFormat::Float16_b}})
             .set_page_size(src0_cb_index, single_tile_size);
-    CBHandle cb_src0 = tt_metal::CreateCircularBuffer(program_, core, cb_src0_config);
+    CBHandle cb_src0 = tt_metal::CreateCircularBuffer(program, core, cb_src0_config);
 
     constexpr uint32_t src1_cb_index = CBIndex::c_1;
     CircularBufferConfig cb_src1_config =
         CircularBufferConfig(num_input_tiles * single_tile_size, {{src1_cb_index, tt::DataFormat::Float16_b}})
             .set_page_size(src1_cb_index, single_tile_size);
-    CBHandle cb_src1 = tt_metal::CreateCircularBuffer(program_, core, cb_src1_config);
+    CBHandle cb_src1 = tt_metal::CreateCircularBuffer(program, core, cb_src1_config);
 
     constexpr uint32_t output_cb_index = CBIndex::c_16;
     constexpr uint32_t num_output_tiles = 1;
     CircularBufferConfig cb_output_config =
         CircularBufferConfig(num_output_tiles * single_tile_size, {{output_cb_index, tt::DataFormat::Float16_b}})
             .set_page_size(output_cb_index, single_tile_size);
-    CBHandle cb_output = tt_metal::CreateCircularBuffer(program_, core, cb_output_config);
+    CBHandle cb_output = tt_metal::CreateCircularBuffer(program, core, cb_output_config);
 
     /* Specify data movement kernels for reading/writing data to/from DRAM */
     KernelHandle binary_reader_kernel_id = CreateKernel(
-        program_,
+        program,
         OVERRIDE_KERNEL_PREFIX "add_2_integers_in_compute/kernels/dataflow/reader_binary_1_tile.cpp",
         core,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_1, .noc = NOC::RISCV_1_default});
 
     KernelHandle unary_writer_kernel_id = CreateKernel(
-        program_,
+        program,
         OVERRIDE_KERNEL_PREFIX "add_2_integers_in_compute/kernels/dataflow/writer_1_tile.cpp",
         core,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
@@ -87,7 +87,7 @@ int main() {
 
     /* Use the add_tiles operation in the compute kernel */
     KernelHandle eltwise_binary_kernel_id = CreateKernel(
-        program_,
+        program,
         OVERRIDE_KERNEL_PREFIX "add_2_integers_in_compute/kernels/compute/add_2_tiles.cpp",
         core,
         ComputeConfig{
@@ -103,24 +103,26 @@ int main() {
     src0_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
     src1_vec = create_constant_vector_of_bfloat16(single_tile_size, 8.0f);
 
-    EnqueueWriteBuffer(device->command_queue(), src0_dram_buffer, src0_vec, false);
-    EnqueueWriteBuffer(device->command_queue(), src1_dram_buffer, src1_vec, false);
+    auto coord = distributed::MeshCoordinate(0, 0);
+    distributed::WriteShard(cq, src0_dram_buffer, src0_vec, coord);
+    distributed::WriteShard(cq, src1_dram_buffer, src1_vec, coord);
 
     /* Configure program and runtime kernel arguments, then execute */
     SetRuntimeArgs(
-        program_,
+        program,
         binary_reader_kernel_id,
         core,
         {src0_dram_buffer->address(), src1_dram_buffer->address(), src0_bank_id, src1_bank_id});
-    SetRuntimeArgs(program_, eltwise_binary_kernel_id, core, {});
-    SetRuntimeArgs(program_, unary_writer_kernel_id, core, {dst_dram_buffer->address(), dst_bank_id});
+    SetRuntimeArgs(program, eltwise_binary_kernel_id, core, {});
+    SetRuntimeArgs(program, unary_writer_kernel_id, core, {dst_dram_buffer->address(), dst_bank_id});
 
+    distributed::AddProgramToMeshWorkload(workload, std::move(program), device_range);
     distributed::EnqueueMeshWorkload(cq, workload, false);
     Finish(cq);
 
     /* Read in result into a host vector */
     std::vector<uint32_t> result_vec;
-    EnqueueReadBuffer(device->command_queue(), dst_dram_buffer, result_vec, true);
+    distributed::ReadShard(cq, result_vec, dst_dram_buffer, coord);
 
     printf("Result = %d\n", result_vec[0]);  // 22 = 1102070192
     printf(

@@ -1621,7 +1621,7 @@ std::unique_ptr<Program> create_and_compile_tt_fabric_program(IDevice* device) {
                 "tt_metal/fabric/impl/kernels/edm_fabric/fabric_erisc_datamover.cpp",
                 eth_logical_core,
                 tt::tt_metal::EthernetConfig{
-                    .noc = tt_metal::NOC::NOC_0,
+                    .noc = edm_builder.config.risc_configs[risc_id].get_configured_noc(),
                     .processor = static_cast<DataMovementProcessor>(risc_id),
                     .compile_args = ct_args,
                     .defines = defines,

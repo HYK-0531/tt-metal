@@ -120,6 +120,7 @@ static size_t get_num_riscv_cores() {
 }
 
 FabricRiscConfig::FabricRiscConfig(uint32_t risc_id) :
+    noc_(risc_id == 0 ? tt::tt_metal::NOC::NOC_0 : tt::tt_metal::NOC::NOC_1),
     enable_handshake_(true),
     enable_context_switch_(true),
     enable_interrupts_(true),

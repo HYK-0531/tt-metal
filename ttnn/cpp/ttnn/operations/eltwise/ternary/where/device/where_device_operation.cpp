@@ -148,12 +148,66 @@ WhereDeviceOperation::invoke(
         .input_dtype = predicate.dtype(),
         .dtype = output_dtype,
         .compute_kernel_config = std::nullopt,
+        .value_false_scalar = std::nullopt,  // No scalar for tensor-tensor-tensor case
 
     };
 
     tensor_args_t args{
         .predicate = predicate,
         .value_true = value_true,
+        .value_false = value_false,  // Set tensor for tensor-tensor-tensor case
+        .optional_output_tensor = optional_output_tensor};
+
+    return {attributes, args};
+}
+
+std::tuple<WhereDeviceOperation::operation_attributes_t, WhereDeviceOperation::tensor_args_t>
+WhereDeviceOperation::invoke(
+    const Tensor& predicate,
+    const Tensor& value_true,
+    const float value_false,
+    const std::optional<const DataType>& output_dtype,
+    const std::optional<MemoryConfig>& memory_config,
+    const std::optional<Tensor>& optional_output_tensor) {
+    operation_attributes_t attributes{
+        .memory_config = memory_config.value_or(predicate.memory_config()),
+        .input_dtype = predicate.dtype(),
+        .dtype = output_dtype,
+        .compute_kernel_config = std::nullopt,
+        .value_false_scalar = value_false,  // Set scalar for tensor-tensor-scalar case
+
+    };
+
+    tensor_args_t args{
+        .predicate = predicate,
+        .value_true = value_true,
+        .value_false = std::nullopt,  // No tensor for tensor-tensor-scalar case
+        .optional_output_tensor = optional_output_tensor};
+
+    return {attributes, args};
+}
+
+std::tuple<WhereDeviceOperation::operation_attributes_t, WhereDeviceOperation::tensor_args_t>
+WhereDeviceOperation::invoke(
+    const Tensor& predicate,
+    const float value_true,
+    const Tensor& value_false,
+    const std::optional<const DataType>& output_dtype,
+    const std::optional<MemoryConfig>& memory_config,
+    const std::optional<Tensor>& optional_output_tensor) {
+    operation_attributes_t attributes{
+        .memory_config = memory_config.value_or(predicate.memory_config()),
+        .input_dtype = predicate.dtype(),
+        .dtype = output_dtype,
+        .compute_kernel_config = std::nullopt,
+        .value_false_scalar = std::nullopt,  // No scalar for tensor-scalar-tensor case
+        .value_true_scalar = value_true,     // Set scalar for tensor-scalar-tensor case
+
+    };
+
+    tensor_args_t args{
+        .predicate = predicate,
+        .value_true = std::nullopt,  // No tensor for tensor-scalar-tensor case
         .value_false = value_false,
         .optional_output_tensor = optional_output_tensor};
 

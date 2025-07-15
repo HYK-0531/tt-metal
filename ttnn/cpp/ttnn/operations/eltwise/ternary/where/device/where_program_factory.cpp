@@ -29,8 +29,21 @@ void set_or_update_runtime_arguments(
     const WhereDeviceOperation::tensor_args_t& tensor_args,
     WhereDeviceOperation::tensor_return_value_t& output,
     F handle_args) {
-    const auto& [predicate_tensor, value_true_tensor, value_false_tensor, optional_output_tensor] = tensor_args;
+    const auto& [predicate_tensor, value_true_tensor_opt, value_false_tensor_opt, optional_output_tensor] = tensor_args;
 
+    // Handle tensor-tensor-tensor, tensor-tensor-scalar, and tensor-scalar-tensor cases
+    bool is_value_true_scalar = !value_true_tensor_opt.has_value();
+    bool is_value_false_scalar = !value_false_tensor_opt.has_value();
+
+    // Extract tensor references when available
+    const ttnn::Tensor* value_true_tensor_ptr = nullptr;
+    const ttnn::Tensor* value_false_tensor_ptr = nullptr;
+    if (!is_value_true_scalar) {
+        value_true_tensor_ptr = &value_true_tensor_opt.value();
+    }
+    if (!is_value_false_scalar) {
+        value_false_tensor_ptr = &value_false_tensor_opt.value();
+    }
     const auto [aN, aC, aHt, aWt] = extract_shape_dims(predicate_tensor);  // Considering all are of same shape
 
     uint32_t num_output_tiles = output.physical_volume() / output.tensor_spec().tile().get_tile_hw();
@@ -62,13 +75,76 @@ void set_or_update_runtime_arguments(
             continue;
         }
 
-        std::array reader_runtime_args = {
-            predicate_tensor.buffer()->address(),
-            value_true_tensor.buffer()->address(),
-            value_false_tensor.buffer()->address(),
-            num_tiles_per_core,
-            start_tile_id,
-        };
+        // Safe float to uint32_t conversion for scalar cases
+        uint32_t value_true_scalar_as_uint = 0;
+        uint32_t value_false_scalar_as_uint = 0;
+
+        if (is_value_true_scalar) {
+            union {
+                float f;
+                uint32_t u;
+            } converter;
+            converter.f = operation_attributes.value_true_scalar.value();
+
+            // Use value_false tensor format for consistency in tensor-scalar-tensor case
+            if (value_false_tensor_ptr->dtype() == ttnn::DataType::FLOAT32) {
+                // Keep as FP32 for FP32 operations
+                value_true_scalar_as_uint = converter.u;
+            } else {
+                // Convert to BFLOAT16 for BF16 operations
+                // Simple FP32 to BF16 conversion: truncate mantissa
+                uint32_t fp32_bits = converter.u;
+                uint16_t bf16_bits = static_cast<uint16_t>((fp32_bits + 0x8000) >> 16);
+                value_true_scalar_as_uint = static_cast<uint32_t>(bf16_bits);
+            }
+        }
+
+        if (is_value_false_scalar) {
+            union {
+                float f;
+                uint32_t u;
+            } converter;
+            converter.f = operation_attributes.value_false_scalar.value();
+
+            // Use value_true tensor format for consistency in tensor-tensor-scalar case
+            if (value_true_tensor_ptr->dtype() == ttnn::DataType::FLOAT32) {
+                // Keep as FP32 for FP32 operations
+                value_false_scalar_as_uint = converter.u;
+            } else {
+                // Convert to BFLOAT16 for BF16 operations
+                // Simple FP32 to BF16 conversion: truncate mantissa
+                uint32_t fp32_bits = converter.u;
+                uint16_t bf16_bits = static_cast<uint16_t>((fp32_bits + 0x8000) >> 16);
+                value_false_scalar_as_uint = static_cast<uint32_t>(bf16_bits);
+            }
+        }
+
+        std::array<uint32_t, 5> reader_runtime_args;
+        if (is_value_true_scalar) {
+            // tensor-scalar-tensor case
+            reader_runtime_args = {
+                predicate_tensor.buffer()->address(),
+                value_false_tensor_ptr->buffer()->address(),  // value_false tensor address
+                value_true_scalar_as_uint,                    // scalar value for value_true
+                num_tiles_per_core,
+                start_tile_id};
+        } else if (is_value_false_scalar) {
+            // tensor-tensor-scalar case
+            reader_runtime_args = {
+                predicate_tensor.buffer()->address(),
+                value_true_tensor_ptr->buffer()->address(),
+                value_false_scalar_as_uint,  // scalar value for value_false
+                num_tiles_per_core,
+                start_tile_id};
+        } else {
+            // tensor-tensor-tensor case
+            reader_runtime_args = {
+                predicate_tensor.buffer()->address(),
+                value_true_tensor_ptr->buffer()->address(),
+                value_false_tensor_ptr->buffer()->address(),
+                num_tiles_per_core,
+                start_tile_id};
+        }
         handle_args(program, reader_kernel_id, core, reader_runtime_args);
 
         std::array writer_runtime_args = {
@@ -96,8 +172,21 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
     using namespace tt;
     using namespace tt::tt_metal;
 
-    const auto& [predicate_tensor, value_true_tensor, value_false_tensor, optional_output_tensor] = tensor_args;
+    const auto& [predicate_tensor, value_true_tensor_opt, value_false_tensor_opt, optional_output_tensor] = tensor_args;
 
+    // Handle tensor-tensor-tensor, tensor-tensor-scalar, and tensor-scalar-tensor cases
+    bool is_value_true_scalar = !value_true_tensor_opt.has_value();
+    bool is_value_false_scalar = !value_false_tensor_opt.has_value();
+
+    // Extract tensor references when available
+    const ttnn::Tensor* value_true_tensor_ptr = nullptr;
+    const ttnn::Tensor* value_false_tensor_ptr = nullptr;
+    if (!is_value_true_scalar) {
+        value_true_tensor_ptr = &value_true_tensor_opt.value();
+    }
+    if (!is_value_false_scalar) {
+        value_false_tensor_ptr = &value_false_tensor_opt.value();
+    }
     auto program = CreateProgram();
 
     auto* device = predicate_tensor.device();
@@ -108,13 +197,34 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
     // auto output_data_format = datatype_to_dataformat_converter(output.dtype());
 
     auto predicate_data_format = datatype_to_dataformat_converter(
-        predicate_tensor.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : predicate_tensor.dtype());
-    auto value_true_data_format = datatype_to_dataformat_converter(
-        value_true_tensor.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : value_true_tensor.dtype());
-    auto value_false_data_format = datatype_to_dataformat_converter(
-        value_false_tensor.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : value_false_tensor.dtype());
-    auto output_data_format =
-        datatype_to_dataformat_converter(output.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : output.dtype());
+        predicate_tensor.dtype() == ttnn::DataType::BFLOAT16 ? ttnn::DataType::UINT16 : predicate_tensor.dtype());
+
+    DataFormat value_true_data_format;
+    if (is_value_true_scalar) {
+        // tensor-scalar-tensor case: use value_false tensor format
+        value_true_data_format = datatype_to_dataformat_converter(
+            value_false_tensor_ptr->dtype() == ttnn::DataType::BFLOAT16 ? ttnn::DataType::UINT16
+                                                                        : value_false_tensor_ptr->dtype());
+    } else {
+        value_true_data_format = datatype_to_dataformat_converter(
+            value_true_tensor_ptr->dtype() == ttnn::DataType::BFLOAT16 ? ttnn::DataType::UINT16
+                                                                       : value_true_tensor_ptr->dtype());
+    }
+
+    DataFormat value_false_data_format;
+    if (is_value_false_scalar) {
+        // tensor-tensor-scalar case: use value_true tensor format
+        value_false_data_format = datatype_to_dataformat_converter(
+            value_true_tensor_ptr->dtype() == ttnn::DataType::BFLOAT16 ? ttnn::DataType::UINT16
+                                                                       : value_true_tensor_ptr->dtype());
+    } else {
+        value_false_data_format = datatype_to_dataformat_converter(
+            value_false_tensor_ptr->dtype() == ttnn::DataType::BFLOAT16 ? ttnn::DataType::UINT16
+                                                                        : value_false_tensor_ptr->dtype());
+    }
+
+    auto output_data_format = datatype_to_dataformat_converter(
+        output.dtype() == ttnn::DataType::BFLOAT16 ? ttnn::DataType::UINT16 : output.dtype());
 
     uint32_t predicate_single_tile_size = tt_metal::detail::TileSize(predicate_data_format);
     uint32_t value_true_single_tile_size = tt_metal::detail::TileSize(value_true_data_format);
@@ -168,23 +278,73 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
     auto predicate_is_dram =
         static_cast<uint32_t>(predicate_tensor.buffer()->buffer_type() == tt_metal::BufferType::DRAM);
     auto value_true_is_dram =
-        static_cast<uint32_t>(value_true_tensor.buffer()->buffer_type() == tt_metal::BufferType::DRAM);
+        is_value_true_scalar ? static_cast<uint32_t>(0) :  // No DRAM for scalar case
+            static_cast<uint32_t>(value_true_tensor_ptr->buffer()->buffer_type() == tt_metal::BufferType::DRAM);
     auto value_false_is_dram =
-        static_cast<uint32_t>(value_false_tensor.buffer()->buffer_type() == tt_metal::BufferType::DRAM);
+        is_value_false_scalar ? static_cast<uint32_t>(0) :  // No DRAM for scalar case
+            static_cast<uint32_t>(value_false_tensor_ptr->buffer()->buffer_type() == tt_metal::BufferType::DRAM);
     auto output_is_dram = static_cast<uint32_t>(output.buffer()->buffer_type() == tt_metal::BufferType::DRAM);
 
-    // READER KERNEL
-    auto reader_kernel_id = tt_metal::CreateKernel(
-        program,
-        "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/dataflow/eltwise_ternary_reader_sfpu.cpp",
-        all_device_cores,
-        tt_metal::ReaderDataMovementConfig(
-            {predicate_is_dram,
-             predicate_tensor_cb,
-             value_true_is_dram,
-             value_true_tensor_cb,
-             value_false_is_dram,
-             value_false_tensor_cb}));
+    // COMPUTE KERNEL
+    bool fp32_dest_acc_en = output_data_format == tt::DataFormat::UInt32 ||
+                            output_data_format == tt::DataFormat::Int32 ||
+                            output_data_format == tt::DataFormat::Float32;
+
+    // READER KERNEL - Set up defines for FP32 support
+    std::map<std::string, std::string> reader_defines;
+    if (fp32_dest_acc_en) {
+        reader_defines["FP32_DEST_ACC_EN"] = "1";
+    }
+
+    KernelHandle reader_kernel_id;
+
+    if (is_value_true_scalar) {
+        // tensor-scalar-tensor case
+        reader_kernel_id = tt_metal::CreateKernel(
+            program,
+            "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/dataflow/"
+            "eltwise_ternary_reader_tensor_scalar_tensor.cpp",
+            all_device_cores,
+            tt_metal::ReaderDataMovementConfig(
+                {predicate_is_dram,
+                 predicate_tensor_cb,
+                 value_false_is_dram,
+                 value_false_tensor_cb,
+                 // No DRAM flag needed for scalar, but we still need the CB index
+                 static_cast<uint32_t>(0),  // dummy DRAM flag for scalar
+                 value_true_tensor_cb},
+                reader_defines));
+    } else if (is_value_false_scalar) {
+        // tensor-tensor-scalar case
+        reader_kernel_id = tt_metal::CreateKernel(
+            program,
+            "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/dataflow/"
+            "eltwise_ternary_reader_tensor_tensor_scalar.cpp",
+            all_device_cores,
+            tt_metal::ReaderDataMovementConfig(
+                {predicate_is_dram,
+                 predicate_tensor_cb,
+                 value_true_is_dram,
+                 value_true_tensor_cb,
+                 // No DRAM flag needed for scalar, but we still need the CB index
+                 static_cast<uint32_t>(0),  // dummy DRAM flag for scalar
+                 value_false_tensor_cb},
+                reader_defines));
+    } else {
+        // tensor-tensor-tensor case
+        reader_kernel_id = tt_metal::CreateKernel(
+            program,
+            "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/dataflow/eltwise_ternary_reader_sfpu.cpp",
+            all_device_cores,
+            tt_metal::ReaderDataMovementConfig(
+                {predicate_is_dram,
+                 predicate_tensor_cb,
+                 value_true_is_dram,
+                 value_true_tensor_cb,
+                 value_false_is_dram,
+                 value_false_tensor_cb},
+                reader_defines));
+    }
 
     // WRITER KERNEL
     auto writer_kernel_id = tt_metal::CreateKernel(
@@ -193,23 +353,38 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
         all_device_cores,
         tt_metal::WriterDataMovementConfig({output_tensor_cb, output_is_dram}));
 
-    // COMPUTE KERNEL
-    bool fp32_dest_acc_en = output_data_format == tt::DataFormat::UInt32 ||
-                            output_data_format == tt::DataFormat::Int32 ||
-                            output_data_format == tt::DataFormat::Float32;
-
     std::vector<UnpackToDestMode> unpack_to_dest_mode(NUM_CIRCULAR_BUFFERS, UnpackToDestMode::Default);
-    unpack_to_dest_mode[tt::CBIndex::c_0] = (predicate_tensor.dtype() == DataType::FLOAT32)
+    unpack_to_dest_mode[tt::CBIndex::c_0] = (predicate_tensor.dtype() == ttnn::DataType::FLOAT32)
                                                 ? UnpackToDestMode::UnpackToDestFp32
                                                 : UnpackToDestMode::Default;
-    unpack_to_dest_mode[tt::CBIndex::c_1] = (value_true_tensor.dtype() == DataType::FLOAT32)
-                                                ? UnpackToDestMode::UnpackToDestFp32
-                                                : UnpackToDestMode::Default;
-    unpack_to_dest_mode[tt::CBIndex::c_2] = (value_false_tensor.dtype() == DataType::FLOAT32)
-                                                ? UnpackToDestMode::UnpackToDestFp32
-                                                : UnpackToDestMode::Default;
+
+    // Set value_true CB unpack mode
+    if (is_value_true_scalar) {
+        // tensor-scalar-tensor: match value_false tensor format
+        unpack_to_dest_mode[tt::CBIndex::c_1] =
+            (value_false_tensor_ptr->dtype() == ttnn::DataType::FLOAT32 ? UnpackToDestMode::UnpackToDestFp32
+                                                                        : UnpackToDestMode::Default);
+    } else {
+        // tensor from value_true_tensor
+        unpack_to_dest_mode[tt::CBIndex::c_1] =
+            (value_true_tensor_ptr->dtype() == ttnn::DataType::FLOAT32 ? UnpackToDestMode::UnpackToDestFp32
+                                                                       : UnpackToDestMode::Default);
+    }
+
+    // Set value_false CB unpack mode
+    if (is_value_false_scalar) {
+        // tensor-tensor-scalar: match value_true tensor format
+        unpack_to_dest_mode[tt::CBIndex::c_2] =
+            (value_true_tensor_ptr->dtype() == ttnn::DataType::FLOAT32 ? UnpackToDestMode::UnpackToDestFp32
+                                                                       : UnpackToDestMode::Default);
+    } else {
+        // tensor from value_false_tensor
+        unpack_to_dest_mode[tt::CBIndex::c_2] =
+            (value_false_tensor_ptr->dtype() == ttnn::DataType::FLOAT32 ? UnpackToDestMode::UnpackToDestFp32
+                                                                        : UnpackToDestMode::Default);
+    }
     unpack_to_dest_mode[tt::CBIndex::c_3] =
-        (output.dtype() == DataType::FLOAT32) ? UnpackToDestMode::UnpackToDestFp32 : UnpackToDestMode::Default;
+        (output.dtype() == ttnn::DataType::FLOAT32) ? UnpackToDestMode::UnpackToDestFp32 : UnpackToDestMode::Default;
 
     constexpr uint32_t num_tiles_per_cycle = 1;  // we produce 1 output tile per read-compute-write cycle
     std::vector<uint32_t> compute_kernel_args = {
@@ -221,6 +396,8 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
 
     if (predicate_tensor.dtype() == DataType::FLOAT32) {
         kernel_defines["WHERE_LLK"] = "where_fp32_tile";
+    } else if (predicate_tensor.dtype() == DataType::INT32) {
+        kernel_defines["WHERE_LLK"] = "where_int_tile";
     }
 
     auto compute_kernel_id = tt_metal::CreateKernel(

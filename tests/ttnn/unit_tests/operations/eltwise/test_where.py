@@ -51,6 +51,22 @@ def test_ttnn_where(device):
     print()
 
 
+def test_ttnn_where_int(device):
+    C = torch.ones(4, 4, dtype=torch.int32)
+    T = torch.randint(-100, 100, (4, 4), dtype=torch.int32)
+    F = torch.ones(4, 4, dtype=torch.int32) * 10
+    golden = torch.where(C != 0, T, F)
+
+    ttnn_C = ttnn.from_torch(C, dtype=ttnn.int32, layout=ttnn.TILE_LAYOUT, device=device)
+    ttnn_T = ttnn.from_torch(T, dtype=ttnn.int32, layout=ttnn.TILE_LAYOUT, device=device)
+    ttnn_F = ttnn.from_torch(F, dtype=ttnn.int32, layout=ttnn.TILE_LAYOUT, device=device)
+    ttnn_result = ttnn.where(ttnn_C, ttnn_T, ttnn_F)
+    result = ttnn.to_torch(ttnn_result)
+    print(result)
+    print()
+    print(golden)
+
+
 def torch_equal_nan(a, b):
     return torch.all((a == b) | (torch.isnan(a) & torch.isnan(b)))
 

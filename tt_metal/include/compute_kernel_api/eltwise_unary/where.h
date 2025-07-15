@@ -32,6 +32,10 @@ ALWI void where_fp32_tile(uint32_t idst0, uint32_t idst1, uint32_t idst2) {
     MATH((llk_math_eltwise_ternary_sfpu_where_fp32<APPROX>(idst0, idst1, idst2)));
 }
 
+ALWI void where_int_tile(uint32_t idst0, uint32_t idst1, uint32_t idst2) {
+    MATH((llk_math_eltwise_ternary_sfpu_where_int<APPROX>(idst0, idst1, idst2)));
+}
+
 /**
  * Please refer to documentation for any_init.
  */

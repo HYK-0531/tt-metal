@@ -787,7 +787,7 @@ void DumpDeviceProfileResults(
             const CoreCoord curr_core = device->worker_core_from_logical_core(core);
             virtual_cores.push_back(curr_core);
         }
-        for (const CoreCoord& core : device->get_active_ethernet_cores(false)) {
+        for (const CoreCoord& core : device->get_active_ethernet_cores(true)) {
             const CoreCoord curr_core = device->virtual_core_from_logical_core(core, CoreType::ETH);
             virtual_cores.push_back(curr_core);
         }

@@ -674,7 +674,6 @@ class TT_CCL:
         w3_out, ttnn_tensor_out = ttnn.experimental.llama_rs_matmul(
             matmul_input,
             matmul_weight,
-            input_tensor_mesh,
             persistent_interim_buffer,
             dim,
             self.gather_semaphore_handles[cluster_axis][self.gather_idx[cluster_axis]],
@@ -682,6 +681,7 @@ class TT_CCL:
             self.mesh_device,
             num_links,
             self.worker_sub_device_id,
+            rs_tensor=input_tensor_mesh,
             memory_config_rs=RS_memory_config,
             compute_kernel_config=compute_kernel_config,
             dtype=dtype,

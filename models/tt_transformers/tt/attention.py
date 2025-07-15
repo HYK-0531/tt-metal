@@ -470,8 +470,8 @@ class Attention(LightweightModule):
             k_heads_pre_rot_1BKD, rot_mats[0], rot_mats[1], self.transformation_mats["decode"], is_decode_mode=True
         )
 
-        # ttnn.deallocate(q_heads_pre_rot_1BQD)
-        # ttnn.deallocate(k_heads_pre_rot_1BKD)
+        ttnn.deallocate(q_heads_pre_rot_1BQD)
+        ttnn.deallocate(k_heads_pre_rot_1BKD)
 
         ###
         # KV update

@@ -2057,6 +2057,11 @@ process_gather_in0_program_and_create_override_variables(
             // in1
             std::vector<uint32_t> mm_kernel_in1_sender_writer_args;
             mm_kernel_in1_sender_writer_args.push_back((std::uint32_t)core_type);
+            if (fused_op_signaler.has_value()) {
+                ttnn::experimental::ccl::MatmulFusedOpSignaler& signaler = fused_op_signaler.value();
+                signaler.push_llama_rs_rt_args_for_mm(mm_kernel_in1_sender_writer_args, core, in1_noc);
+            }
+
             tt_metal::SetRuntimeArgs(program, mm_kernel_in1_sender_writer_id, core, mm_kernel_in1_sender_writer_args);
 
             // compute
@@ -2152,6 +2157,10 @@ process_gather_in0_program_and_create_override_variables(
             mm_in1_args.push_back((std::uint32_t)vc);
             mm_in1_args.push_back((std::uint32_t)dram_read_offset);
         }
+        if (fused_op_signaler.has_value()) {
+            ttnn::experimental::ccl::MatmulFusedOpSignaler& signaler = fused_op_signaler.value();
+            signaler.push_llama_rs_rt_args_for_mm(mm_in1_args, core, in1_noc);
+        }
         tt_metal::SetRuntimeArgs(program, mm_kernel_in1_sender_writer_id, core, mm_in1_args);
 
         /* compute */
@@ -2193,6 +2202,10 @@ process_gather_in0_program_and_create_override_variables(
         // in1
         std::vector<uint32_t> mm_kernel_in1_sender_writer_args;
         mm_kernel_in1_sender_writer_args.push_back((std::uint32_t)core_type);
+        if (fused_op_signaler.has_value()) {
+            ttnn::experimental::ccl::MatmulFusedOpSignaler& signaler = fused_op_signaler.value();
+            signaler.push_llama_rs_rt_args_for_mm(mm_kernel_in1_sender_writer_args, core, in1_noc);
+        }
         tt_metal::SetRuntimeArgs(program, mm_kernel_in1_sender_writer_id, core, mm_kernel_in1_sender_writer_args);
 
         // compute

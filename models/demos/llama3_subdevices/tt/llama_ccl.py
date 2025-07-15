@@ -689,6 +689,7 @@ class TT_CCL:
             topology=self.model_config["CCL_TOPOLOGY"],
             use_noc1_only=use_noc1_only,
         )
+        w1_out.deallocate(True)
         self.gather_idx[cluster_axis] = (self.gather_idx[cluster_axis] + 1) % self.num_cbs
         self.reduce_scatter_buffer_idx[cluster_axis] = (self.reduce_scatter_buffer_idx[cluster_axis] + 1) % self.num_cbs
         # ttnn.synchronize_device(self.mesh_device, sub_device_ids=[self.worker_sub_device_id])

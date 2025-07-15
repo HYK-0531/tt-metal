@@ -1124,16 +1124,28 @@ eth_chan_directions ControlPlane::get_eth_chan_direction(FabricNodeId fabric_nod
 
 std::vector<std::pair<FabricNodeId, chan_id_t>> ControlPlane::get_fabric_route(
     FabricNodeId src_fabric_node_id, FabricNodeId dst_fabric_node_id, chan_id_t src_chan_id) const {
-    // Find any eth chan on the plane id
-    TT_FATAL(this->is_local_mesh(src_fabric_node_id.mesh_id),
+    // Query the mesh coord range owned by the current host
+    auto host_local_coord_range = this->get_coord_range(this->get_local_mesh_id_bindings()[0], MeshScope::LOCAL);
+    auto src_mesh_coord = this->routing_table_generator_->mesh_graph->chip_to_coordinate(
+        src_fabric_node_id.mesh_id, src_fabric_node_id.chip_id);
+    auto dst_mesh_coord = this->routing_table_generator_->mesh_graph->chip_to_coordinate(
+        dst_fabric_node_id.mesh_id, dst_fabric_node_id.chip_id);
+    // The src node is considered valid in this API if its owned by the current host. This requires the node to be in a
+    // mesh and coordinate range on this host.
+    bool valid_src =
+        this->is_local_mesh(src_fabric_node_id.mesh_id) and host_local_coord_range.contains(src_mesh_coord);
+    // Fabric Route will terminate at the exit node if the host does not own the destination node. i.e. dest is not on a
+    // mesh or coordinte range owned by the host.
+    bool end_route_at_exit_node =
+        !(this->is_local_mesh(dst_fabric_node_id.mesh_id) and host_local_coord_range.contains(dst_mesh_coord));
+
+    TT_FATAL(
+        valid_src,
         "Cannot generate the fabric route between {} and {} on host {}, since M {} is not local to the host.",
         src_fabric_node_id,
         dst_fabric_node_id,
         this->local_mesh_binding_.host_rank,
         src_fabric_node_id.mesh_id);
-
-    // If the dest node is on a mesh not local to the host, a route is only generated up to the exit node.
-    bool end_route_at_exit_node = !this->is_local_mesh(dst_fabric_node_id.mesh_id);
 
     std::vector<FabricNodeId> candidate_end_nodes;
     if (end_route_at_exit_node) {

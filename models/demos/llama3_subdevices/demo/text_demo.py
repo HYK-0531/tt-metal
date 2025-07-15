@@ -759,7 +759,7 @@ def test_demo_text(
             logger.info(
                 f"Iteration {iteration}: {1000*decode_iteration_time:.0f}ms @ {tokens_per_second_per_user:.1f} tok/s/user ({batch_size*tokens_per_second_per_user:.1f} tok/s throughput)"
             )
-            if apc_test and demo_targets["token_pos"] == current_pos:
+            if apc_test and demo_targets["token_pos"] == iteration:
                 lower_bound = demo_targets["throughput"] - demo_targets["absolute_margin"]
                 upper_bound = demo_targets["throughput"] + demo_targets["absolute_margin"]
                 assert (

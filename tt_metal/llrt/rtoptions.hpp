@@ -189,6 +189,9 @@ class RunTimeOptions {
     // (#25048) TODO: Once all of init is moved to MetalContext, investigate removing this option.
     bool force_context_reinit = false;
 
+    // feature flag to enable 2-erisc mode with fabric on Blackhole, until it is enabled by default
+    bool enable_2_erisc_mode_with_fabric = false;
+
 public:
     RunTimeOptions();
     RunTimeOptions(const RunTimeOptions&) = delete;
@@ -441,6 +444,8 @@ public:
     inline void set_disable_dma_ops(bool disable) { disable_dma_ops = disable; }
 
     inline bool get_force_context_reinit() const { return force_context_reinit; }
+
+    inline bool get_is_fabric_2_erisc_mode_enabled() const { return enable_2_erisc_mode_with_fabric; }
 
 private:
     // Helper functions to parse feature-specific environment vaiables.

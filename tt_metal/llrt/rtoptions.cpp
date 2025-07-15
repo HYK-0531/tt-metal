@@ -237,6 +237,10 @@ RunTimeOptions::RunTimeOptions() {
     if (getenv("TT_METAL_FORCE_REINIT")) {
         force_context_reinit = true;
     }
+
+    if (getenv("TT_METAL_FABRIC_BLACKHOLE_TWO_ERISC")) {
+        this->enable_2_erisc_mode_with_fabric = true;
+    }
 }
 
 const std::string& RunTimeOptions::get_root_dir() const {

@@ -48,6 +48,7 @@
 #include "profiler_state.hpp"
 #include "profiler_types.hpp"
 #include "tools/profiler/noc_event_profiler_utils.hpp"
+#include "tools/profiler/event_metadata.hpp"
 #include "tt-metalium/program.hpp"
 #include <tt-metalium/device_pool.hpp>
 #include "rtoptions.hpp"
@@ -56,6 +57,7 @@
 #include <tt-metalium/distributed.hpp>
 #include <umd/device/tt_core_coordinates.h>
 #include <umd/device/tt_xy_pair.h>
+#include <umd/device/types/arch.h>
 #include <umd/device/types/cluster_descriptor_types.h>
 #include <umd/device/types/xy_pair.h>
 
@@ -226,7 +228,7 @@ void syncDeviceHost(IDevice* device, CoreCoord logical_core, bool doHeader) {
     }
     tt_metal::detail::WaitProgramDone(device, sync_program, false);
     std::vector<CoreCoord> cores = {core};
-    tt_metal_device_profiler_map.at(device_id).dumpResults(
+    tt_metal_device_profiler_map.at(device_id).readResults(
         device, cores, ProfilerDumpState::FORCE_UMD_READ, ProfilerDataBufferSource::L1);
 
     log_info(tt::LogMetal, "SYNC PROGRAM FINISH IS DONE ON {}", device_id);
@@ -378,7 +380,7 @@ void peekDeviceData(IDevice* device, std::vector<CoreCoord>& worker_cores) {
     if (device_profiler_it != tt_metal_device_profiler_map.end()) {
         DeviceProfiler& device_profiler = device_profiler_it->second;
         device_profiler.device_sync_new_events.clear();
-        device_profiler.dumpResults(
+        device_profiler.readResults(
             device, worker_cores, ProfilerDumpState::FORCE_UMD_READ, ProfilerDataBufferSource::L1);
         for (auto& event : device_profiler.device_events) {
             const ZoneDetails zone_details = device_profiler.getZoneDetails(event.timer_id);
@@ -729,6 +731,414 @@ void InitDeviceProfiler(IDevice* device) {
 #endif
 }
 
+void convertNocTraceDataToJSON(
+    nlohmann::ordered_json& noc_trace_json_log, const std::vector<DeviceProfilerDataPoint>& device_profiler_data) {
+    if (!MetalContext::instance().rtoptions().get_profiler_noc_events_enabled()) {
+        return;
+    }
+
+    for (const DeviceProfilerDataPoint& data_point : device_profiler_data) {
+        if (data_point.packet_type == kernel_profiler::ZONE_START ||
+            data_point.packet_type == kernel_profiler::ZONE_END) {
+            if ((data_point.risc_name == "NCRISC" || data_point.risc_name == "BRISC") &&
+                (data_point.zone_name.starts_with("TRUE-KERNEL-END") || data_point.zone_name.ends_with("-KERNEL"))) {
+                tracy::TTDeviceEventPhase zone_phase = (data_point.packet_type == kernel_profiler::ZONE_END)
+                                                           ? tracy::TTDeviceEventPhase::end
+                                                           : tracy::TTDeviceEventPhase::begin;
+                noc_trace_json_log.push_back(nlohmann::ordered_json{
+                    {"run_host_id", data_point.run_host_id},
+                    {"op_name", data_point.op_name},
+                    {"proc", data_point.risc_name},
+                    {"zone", data_point.zone_name},
+                    {"zone_phase", magic_enum::enum_name(zone_phase)},
+                    {"sx", data_point.core_x},
+                    {"sy", data_point.core_y},
+                    {"timestamp", data_point.timestamp},
+                });
+            }
+        } else if (data_point.packet_type == kernel_profiler::TS_DATA) {
+            using EMD = KernelProfilerNocEventMetadata;
+            EMD ev_md(data_point.data);
+            std::variant<EMD::LocalNocEvent, EMD::FabricNoCEvent, EMD::FabricRoutingFields> ev_md_contents =
+                ev_md.getContents();
+            if (std::holds_alternative<EMD::LocalNocEvent>(ev_md_contents)) {
+                auto local_noc_event = std::get<EMD::LocalNocEvent>(ev_md_contents);
+
+                // NOTE: assume here that src and dest device_id are local;
+                // serialization will coalesce and update to correct destination
+                // based on fabric events
+                nlohmann::ordered_json data = {
+                    {"run_host_id", data_point.run_host_id},
+                    {"op_name", data_point.op_name},
+                    {"proc", data_point.risc_name},
+                    {"noc", magic_enum::enum_name(local_noc_event.noc_type)},
+                    {"vc", int(local_noc_event.noc_vc)},
+                    {"src_device_id", data_point.device_id},
+                    {"sx", data_point.core_x},
+                    {"sy", data_point.core_y},
+                    {"num_bytes", local_noc_event.getNumBytes()},
+                    {"type", magic_enum::enum_name(ev_md.noc_xfer_type)},
+                    {"timestamp", data_point.timestamp},
+                };
+
+                // handle dst coordinates correctly for different NocEventType
+                if (local_noc_event.dst_x == -1 || local_noc_event.dst_y == -1 ||
+                    ev_md.noc_xfer_type == EMD::NocEventType::READ_WITH_STATE ||
+                    ev_md.noc_xfer_type == EMD::NocEventType::WRITE_WITH_STATE) {
+                    // DO NOT emit destination coord; it isn't meaningful
+
+                } else if (ev_md.noc_xfer_type == EMD::NocEventType::WRITE_MULTICAST) {
+                    auto phys_start_coord = getPhysicalAddressFromVirtual(
+                        data_point.device_id, {local_noc_event.dst_x, local_noc_event.dst_y});
+                    data["mcast_start_x"] = phys_start_coord.x;
+                    data["mcast_start_y"] = phys_start_coord.y;
+                    auto phys_end_coord = getPhysicalAddressFromVirtual(
+                        data_point.device_id, {local_noc_event.mcast_end_dst_x, local_noc_event.mcast_end_dst_y});
+                    data["mcast_end_x"] = phys_end_coord.x;
+                    data["mcast_end_y"] = phys_end_coord.y;
+                } else {
+                    auto phys_coord = getPhysicalAddressFromVirtual(
+                        data_point.device_id, {local_noc_event.dst_x, local_noc_event.dst_y});
+                    data["dx"] = phys_coord.x;
+                    data["dy"] = phys_coord.y;
+                }
+
+                noc_trace_json_log.push_back(std::move(data));
+            } else if (std::holds_alternative<EMD::FabricNoCEvent>(ev_md_contents)) {
+                EMD::FabricNoCEvent fabric_noc_event = std::get<EMD::FabricNoCEvent>(ev_md_contents);
+
+                nlohmann::ordered_json data = {
+                    {"run_host_id", data_point.run_host_id},
+                    {"op_name", data_point.op_name},
+                    {"proc", data_point.risc_name},
+                    {"sx", data_point.core_x},
+                    {"sy", data_point.core_y},
+                    {"type", magic_enum::enum_name(ev_md.noc_xfer_type)},
+                    {"routing_fields_type", magic_enum::enum_name(fabric_noc_event.routing_fields_type)},
+                    {"timestamp", data_point.timestamp},
+                };
+
+                // For scatter write operations, include additional scatter information
+                if (ev_md.noc_xfer_type == EMD::NocEventType::FABRIC_UNICAST_SCATTER_WRITE) {
+                    data["scatter_address_index"] = fabric_noc_event.mcast_end_dst_x;
+                    data["scatter_total_addresses"] = fabric_noc_event.mcast_end_dst_y;
+                }
+
+                // handle dst coordinates correctly for different NocEventType
+                if (KernelProfilerNocEventMetadata::isFabricUnicastEventType(ev_md.noc_xfer_type)) {
+                    auto phys_coord = getPhysicalAddressFromVirtual(
+                        data_point.device_id, {fabric_noc_event.dst_x, fabric_noc_event.dst_y});
+                    data["dx"] = phys_coord.x;
+                    data["dy"] = phys_coord.y;
+                } else {
+                    auto phys_start_coord = getPhysicalAddressFromVirtual(
+                        data_point.device_id, {fabric_noc_event.dst_x, fabric_noc_event.dst_y});
+                    data["mcast_start_x"] = phys_start_coord.x;
+                    data["mcast_start_y"] = phys_start_coord.y;
+                    auto phys_end_coord = getPhysicalAddressFromVirtual(
+                        data_point.device_id, {fabric_noc_event.mcast_end_dst_x, fabric_noc_event.mcast_end_dst_y});
+                    data["mcast_end_x"] = phys_end_coord.x;
+                    data["mcast_end_y"] = phys_end_coord.y;
+                }
+
+                noc_trace_json_log.push_back(std::move(data));
+            } else if (std::holds_alternative<EMD::FabricRoutingFields>(ev_md_contents)) {
+                uint32_t routing_fields_value = std::get<EMD::FabricRoutingFields>(ev_md_contents).routing_fields_value;
+                noc_trace_json_log.push_back(nlohmann::ordered_json{
+                    {"run_host_id", data_point.run_host_id},
+                    {"op_name", data_point.op_name},
+                    {"proc", data_point.risc_name},
+                    {"sx", data_point.core_x},
+                    {"sy", data_point.core_y},
+                    {"routing_fields_value", routing_fields_value},
+                    {"timestamp", data_point.timestamp},
+                });
+            }
+        }
+    }
+}
+
+void serializeJSONNocTraces(
+    const nlohmann::ordered_json& noc_trace_json_log,
+    const std::filesystem::path& output_dir,
+    chip_id_t device_id,
+    const FabricRoutingLookup& routing_lookup) {
+    // create output directory if it does not exist
+    std::filesystem::create_directories(output_dir);
+    if (!std::filesystem::is_directory(output_dir)) {
+        log_error(
+            tt::LogMetal,
+            "Could not write noc event json trace to '{}' because the directory path could not be created!",
+            output_dir);
+        return;
+    }
+
+    // bin events by runtime id
+    using RuntimeID = uint32_t;
+    std::unordered_map<RuntimeID, nlohmann::json::array_t> events_by_opname;
+    for (auto& json_event : noc_trace_json_log) {
+        RuntimeID runtime_id = json_event.value("run_host_id", -1);
+        events_by_opname[runtime_id].push_back(json_event);
+    }
+
+    // sort events in each opname group by proc first, then timestamp
+    for (auto& [runtime_id, events] : events_by_opname) {
+        std::sort(events.begin(), events.end(), [](const auto& a, const auto& b) {
+            auto sx_a = a.value("sx", 0);
+            auto sy_a = a.value("sy", 0);
+            auto sx_b = b.value("sx", 0);
+            auto sy_b = b.value("sy", 0);
+            auto proc_a = a.value("proc", "");
+            auto proc_b = b.value("proc", "");
+            auto timestamp_a = a.value("timestamp", 0);
+            auto timestamp_b = b.value("timestamp", 0);
+            return std::tie(sx_a, sy_a, proc_a, timestamp_a) < std::tie(sx_b, sy_b, proc_b, timestamp_b);
+        });
+    }
+
+    // for each opname in events_by_opname, adjust timestamps to be relative to the smallest timestamp within the
+    // group with identical sx,sy,proc
+    for (auto& [runtime_id, events] : events_by_opname) {
+        std::tuple<int, int, std::string> reference_event_loc;
+        uint64_t reference_timestamp = 0;
+        for (auto& event : events) {
+            std::string zone = event.value("zone", "");
+            std::string zone_phase = event.value("zone_phase", "");
+            uint64_t curr_timestamp = event.value("timestamp", 0);
+            // if -KERNEL::begin event is found, reset the reference timestamp
+            if (zone.ends_with("-KERNEL") && zone_phase == "begin") {
+                reference_timestamp = curr_timestamp;
+            }
+
+            // fix timestamp to be relative to reference_timestamp
+            event["timestamp"] = curr_timestamp - reference_timestamp;
+        }
+    }
+
+    auto process_fabric_event_group_if_valid =
+        [&](const nlohmann::ordered_json& fabric_event,
+            const nlohmann::ordered_json& fabric_routing_fields_event,
+            const nlohmann::ordered_json& local_noc_write_event) -> std::optional<nlohmann::ordered_json> {
+        bool local_event_is_valid_type =
+            local_noc_write_event.contains("type") && local_noc_write_event["type"] == "WRITE_";
+        if (!local_event_is_valid_type) {
+            log_error(
+                tt::LogMetal,
+                "[profiler noc tracing] local noc event following fabric event is not a regular noc write, but instead "
+                ": {}",
+                local_noc_write_event["type"].get<std::string>());
+            return std::nullopt;
+        }
+
+        // Check if timestamps are close enough; otherwise
+        double ts_diff = local_noc_write_event.value("timestamp", 0.0) - fabric_event.value("timestamp", 0.0);
+        if (ts_diff > 1000) {
+            log_warning(
+                tt::LogMetal,
+                "[profiler noc tracing] Failed to coalesce fabric noc trace events because timestamps are implausibly "
+                "far apart.");
+            return std::nullopt;
+        }
+
+        try {
+            // router eth core location is derived from the following noc WRITE_ event
+            CoreCoord virt_eth_route_coord = {
+                local_noc_write_event.at("dx").get<int>(), local_noc_write_event.at("dy").get<int>()};
+            CoreCoord phys_eth_route_coord = getPhysicalAddressFromVirtual(device_id, virt_eth_route_coord);
+
+            auto routing_fields_type_str = fabric_event.at("routing_fields_type").get<std::string>();
+            auto maybe_routing_fields_type =
+                magic_enum::enum_cast<KernelProfilerNocEventMetadata::FabricPacketType>(routing_fields_type_str);
+            if (!maybe_routing_fields_type) {
+                log_error(
+                    tt::LogMetal,
+                    "[profiler noc tracing] Failed to parse routing fields type: {}",
+                    routing_fields_type_str);
+                return std::nullopt;
+            }
+            auto routing_fields_type = maybe_routing_fields_type.value();
+
+            // determine hop count and other routing metadata from routing fields value
+            uint32_t routing_fields_value = fabric_routing_fields_event.at("routing_fields_value").get<uint32_t>();
+            int start_distance = 0;
+            int range = 0;
+            switch (routing_fields_type) {
+                case KernelProfilerNocEventMetadata::FabricPacketType::REGULAR: {
+                    std::tie(start_distance, range) = get_routing_start_distance_and_range(routing_fields_value);
+                    break;
+                }
+                case KernelProfilerNocEventMetadata::FabricPacketType::LOW_LATENCY: {
+                    std::tie(start_distance, range) =
+                        get_low_latency_routing_start_distance_and_range(routing_fields_value);
+                    break;
+                }
+                case KernelProfilerNocEventMetadata::FabricPacketType::LOW_LATENCY_MESH: {
+                    log_error(
+                        tt::LogMetal, "[profiler noc tracing] noc tracing does not support LOW_LATENCY_MESH packets!");
+                    return std::nullopt;
+                }
+            }
+
+            auto eth_chan_opt = routing_lookup.getRouterEthCoreToChannelLookup(device_id, phys_eth_route_coord);
+            if (!eth_chan_opt) {
+                log_warning(
+                    tt::LogMetal,
+                    "[profiler noc tracing] Fabric edm_location->channel lookup failed for event in op '{}' at ts {}: "
+                    "src_dev={}, "
+                    "eth_core=({}, {}), start_distance={}. Keeping original events.",
+                    fabric_event.value("op_name", "N/A"),
+                    fabric_event.value("timestamp", 0.0),
+                    device_id,
+                    phys_eth_route_coord.x,
+                    phys_eth_route_coord.y,
+                    start_distance);
+                return std::nullopt;
+            }
+
+            tt::tt_fabric::chan_id_t eth_chan = *eth_chan_opt;
+
+            nlohmann::ordered_json modified_write_event = local_noc_write_event;
+            modified_write_event["timestamp"] = fabric_event["timestamp"];
+
+            // replace original eth core destination with true destination
+            auto noc_xfer_type = magic_enum::enum_cast<KernelProfilerNocEventMetadata::NocEventType>(
+                fabric_event["type"].get<std::string>());
+
+            if (!noc_xfer_type.has_value() ||
+                !KernelProfilerNocEventMetadata::isFabricEventType(noc_xfer_type.value())) {
+                log_error(
+                    tt::LogMetal,
+                    "[profiler noc tracing] Failed to parse noc transfer type: {}",
+                    fabric_event["type"].get<std::string>());
+                return std::nullopt;
+            }
+
+            if (KernelProfilerNocEventMetadata::isFabricUnicastEventType(noc_xfer_type.value())) {
+                modified_write_event["dx"] = fabric_event.at("dx").get<int>();
+                modified_write_event["dy"] = fabric_event.at("dy").get<int>();
+            } else {
+                log_error(tt::LogMetal, "[profiler noc tracing] Noc multicasts in fabric events are not supported!");
+                return std::nullopt;
+            }
+
+            // replace the type with fabric event type
+            modified_write_event["type"] = fabric_event["type"];
+
+            modified_write_event["fabric_send"] = {
+                {"eth_chan", eth_chan}, {"start_distance", start_distance}, {"range", range}};
+
+            return modified_write_event;
+        } catch (const nlohmann::json::exception& e) {
+            log_warning(
+                tt::LogMetal,
+                "[profiler noc tracing] JSON parsing error during event coalescing for event in op '{}': {}",
+                fabric_event.value("op_name", "N/A"),
+                e.what());
+            return std::nullopt;
+        }
+    };
+
+    // coalesce fabric events into single logical trace events with extra 'fabric_send' metadata
+    std::unordered_map<RuntimeID, nlohmann::json::array_t> processed_events_by_opname;
+    for (auto& [runtime_id, events] : events_by_opname) {
+        nlohmann::json::array_t coalesced_events;
+        for (size_t i = 0; i < events.size(); /* manual increment */) {
+            const auto& current_event = events[i];
+
+            bool fabric_event_group_detected =
+                (current_event.contains("type") && current_event["type"].get<std::string>().starts_with("FABRIC_") &&
+                 (i + 2 < events.size()));
+            if (fabric_event_group_detected) {
+                if (auto maybe_fabric_event =
+                        process_fabric_event_group_if_valid(events[i], events[i + 1], events[i + 2]);
+                    maybe_fabric_event) {
+                    coalesced_events.push_back(maybe_fabric_event.value());
+                }
+                // Unconditionally advance past all coalesced events (fabric_event, fabric_routing_fields,
+                // local_noc_write_event), even if a valid event cannot be generated
+                i += 3;
+            } else {
+                // If not a fabric event group, simply copy existing event as-is
+                coalesced_events.push_back(current_event);
+                i += 1;
+            }
+        }
+        // Store the final coalesced/processed list for this op_name
+        processed_events_by_opname[runtime_id] = std::move(coalesced_events);
+    }
+
+    log_info(tt::LogMetal, "Writing profiler noc traces to '{}'", output_dir);
+    for (auto& [runtime_id, events] : processed_events_by_opname) {
+        // dump events to a json file inside directory output_dir named after the opname
+        std::filesystem::path rpt_path = output_dir;
+        std::string op_name = events.front().value("op_name", "UnknownOP");
+        if (!op_name.empty()) {
+            rpt_path /= fmt::format("noc_trace_dev{}_{}_ID{}.json", device_id, op_name, runtime_id);
+        } else {
+            rpt_path /= fmt::format("noc_trace_dev{}_ID{}.json", device_id, runtime_id);
+        }
+        std::ofstream file(rpt_path);
+        if (file.is_open()) {
+            // Write the final processed events for this op
+            file << nlohmann::json(std::move(events)).dump(2);
+        } else {
+            log_error(tt::LogMetal, "Could not write noc event json trace to '{}'", rpt_path);
+        }
+    }
+}
+
+void logDeviceProfilerDataToCSVFile(
+    std::ofstream& log_file_ofs, const std::vector<DeviceProfilerDataPoint>& device_profiler_data) {
+    for (const DeviceProfilerDataPoint& data_point : device_profiler_data) {
+        std::string meta_data_str = "";
+        if (!data_point.meta_data.is_null()) {
+            meta_data_str = data_point.meta_data.dump();
+            std::replace(meta_data_str.begin(), meta_data_str.end(), ',', ';');
+        }
+
+        log_file_ofs << fmt::format(
+            "{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+            data_point.device_id,
+            data_point.core_x,
+            data_point.core_y,
+            data_point.risc_name,
+            data_point.timer_id,
+            data_point.timestamp,
+            data_point.data,
+            data_point.run_host_id,
+            data_point.zone_name,
+            magic_enum::enum_name(data_point.packet_type),
+            data_point.source_line,
+            data_point.source_file,
+            meta_data_str);
+    }
+}
+
+void writeCSVHeader(std::ofstream& log_file_ofs, tt::ARCH device_architecture, int device_core_frequency) {
+    log_file_ofs << "ARCH: " << get_string_lowercase(device_architecture)
+                 << ", CHIP_FREQ[MHz]: " << device_core_frequency << std::endl;
+    log_file_ofs << "PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset], data, "
+                    "run host ID,  zone name, type, source line, source file, meta data"
+                 << std::endl;
+}
+
+std::ofstream openCSVFile(const std::filesystem::path& csv_path, const IDevice* device) {
+    std::ofstream log_file_ofs;
+
+    // append to existing CSV log file if it already exists
+    if (std::filesystem::exists(csv_path)) {
+        log_file_ofs.open(csv_path, std::ios_base::app);
+    } else {
+        log_file_ofs.open(csv_path);
+        writeCSVHeader(
+            log_file_ofs,
+            device->arch(),
+            tt::tt_metal::MetalContext::instance().get_cluster().get_device_aiclk(device->build_id()));
+    }
+
+    return log_file_ofs;
+}
+
 bool areAllCoresDispatchCores(IDevice* device, const std::vector<CoreCoord>& virtual_cores) {
     const chip_id_t device_id = device->id();
     const uint8_t device_num_hw_cqs = device->num_hw_cqs();
@@ -748,16 +1158,47 @@ bool areAllCoresDispatchCores(IDevice* device, const std::vector<CoreCoord>& vir
     return true;
 }
 
-void DumpDeviceProfileResults(
+std::vector<CoreCoord> getVirtualCoresToRead(const IDevice* device, ProfilerDumpState state) {
+    std::vector<CoreCoord> virtual_cores;
+
+    const chip_id_t device_id = device->id();
+    const uint8_t device_num_hw_cqs = device->num_hw_cqs();
+    const auto& dispatch_core_config = get_dispatch_core_config();
+
+    if (!onlyProfileDispatchCores(state)) {
+        for (const CoreCoord& core :
+             tt::get_logical_compute_cores(device_id, device_num_hw_cqs, dispatch_core_config)) {
+            const CoreCoord curr_core = device->worker_core_from_logical_core(core);
+            virtual_cores.push_back(curr_core);
+        }
+        for (const CoreCoord& core : device->get_active_ethernet_cores(true)) {
+            const CoreCoord curr_core = device->virtual_core_from_logical_core(core, CoreType::ETH);
+            virtual_cores.push_back(curr_core);
+        }
+    }
+
+    if (tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_do_dispatch_cores()) {
+        for (const CoreCoord& core :
+             tt::get_logical_dispatch_cores(device_id, device_num_hw_cqs, dispatch_core_config)) {
+            const CoreCoord curr_core =
+                device->virtual_core_from_logical_core(core, dispatch_core_config.get_core_type());
+            virtual_cores.push_back(curr_core);
+        }
+    }
+
+    return virtual_cores;
+}
+
+void ReadDeviceProfilerResults(
     IDevice* device,
-    const std::vector<CoreCoord>& virtual_cores,
     ProfilerDumpState state,
     const std::optional<ProfilerOptionalMetadata>& metadata,
-    bool is_parallel_dump) {
+    std::vector<DeviceProfilerDataPoint>& device_profiler_data) {
 #if defined(TRACY_ENABLE)
     ZoneScoped;
 
     if (getDeviceProfilerState()) {
+        const std::vector<CoreCoord> virtual_cores = getVirtualCoresToRead(device, state);
         if (state != ProfilerDumpState::ONLY_DISPATCH_CORES) {
             if (tt::DevicePool::instance().is_dispatch_firmware_active() && !isGalaxyMMIODevice(device)) {
                 for (uint8_t cq_id = 0; cq_id < device->num_hw_cqs(); ++cq_id) {
@@ -809,13 +1250,14 @@ void DumpDeviceProfileResults(
 
         TT_FATAL(
             not tt::tt_metal::MetalContext::instance().dprint_server(),
-            "Debug print server is running, cannot dump device profiler data");
+            "Debug print server is running, cannot read device profiler data");
 
         auto profiler_it = tt_metal_device_profiler_map.find(device->id());
         if (profiler_it != tt_metal_device_profiler_map.end()) {
             DeviceProfiler& profiler = profiler_it->second;
             // profiler.setDeviceArchitecture(device->arch());
-            profiler.dumpResults(device, virtual_cores, state, ProfilerDataBufferSource::DRAM, metadata);
+            device_profiler_data =
+                profiler.readResults(device, virtual_cores, state, ProfilerDataBufferSource::DRAM, metadata);
             if (tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_tracy_mid_run_push()) {
                 // wrap this with mutex
                 profiler.pushTracyDeviceResults();
@@ -830,34 +1272,48 @@ void DumpDeviceProfileResults(
 #if defined(TRACY_ENABLE)
     ZoneScoped;
 
-    std::vector<CoreCoord> virtual_cores;
-
     const chip_id_t device_id = device->id();
-    const uint8_t device_num_hw_cqs = device->num_hw_cqs();
-    const auto& dispatch_core_config = get_dispatch_core_config();
 
-    if (!onlyProfileDispatchCores(state)) {
-        for (const CoreCoord& core :
-             tt::get_logical_compute_cores(device_id, device_num_hw_cqs, dispatch_core_config)) {
-            const CoreCoord curr_core = device->worker_core_from_logical_core(core);
-            virtual_cores.push_back(curr_core);
-        }
-        for (const CoreCoord& core : device->get_active_ethernet_cores(true)) {
-            const CoreCoord curr_core = device->virtual_core_from_logical_core(core, CoreType::ETH);
-            virtual_cores.push_back(curr_core);
-        }
+    std::filesystem::path output_dir = tt_metal_device_profiler_map.at(device_id).getOutputDir();
+    std::filesystem::path log_path = output_dir / DEVICE_SIDE_LOG;
+    std::ofstream log_file_ofs = openCSVFile(log_path, device);
+
+    if (!log_file_ofs) {
+        log_error(tt::LogMetal, "Could not open kernel profiler dump file '{}'", log_path);
+        return;
     }
 
-    if (tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_do_dispatch_cores()) {
-        for (const CoreCoord& core :
-             tt::get_logical_dispatch_cores(device_id, device_num_hw_cqs, dispatch_core_config)) {
-            const CoreCoord curr_core =
-                device->virtual_core_from_logical_core(core, dispatch_core_config.get_core_type());
-            virtual_cores.push_back(curr_core);
-        }
+    if (tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_noc_events_enabled()) {
+        log_warning(
+            tt::LogAlways, "Profiler NoC events are enabled; this can add 1-15% cycle overhead to typical operations!");
     }
 
-    DumpDeviceProfileResults(device, virtual_cores, state, metadata);
+    DeviceProfiler& device_profiler = tt_metal_device_profiler_map.at(device_id);
+    device_profiler.hash_to_zone_src_locations = generateZoneSourceLocationsHashes();
+
+    std::vector<DeviceProfilerDataPoint> device_profiler_data;
+    ReadDeviceProfilerResults(device, state, metadata, device_profiler_data);
+
+    // serialize noc traces only in normal state, to avoid overwriting individual trace files
+    if (state == ProfilerDumpState::NORMAL &&
+        tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_noc_events_enabled()) {
+        // if defined, use profiler_noc_events_report_path to write json log. otherwise use output_dir
+        std::string rpt_path = tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_noc_events_report_path();
+        if (rpt_path.empty()) {
+            rpt_path = device_profiler.getOutputDir().string();
+        }
+
+        FabricRoutingLookup routing_lookup(device);
+        nlohmann::ordered_json noc_trace_json_log = nlohmann::json::array();
+        convertNocTraceDataToJSON(noc_trace_json_log, device_profiler_data);
+        serializeJSONNocTraces(noc_trace_json_log, rpt_path, device_id, routing_lookup);
+
+        dumpClusterCoordinatesAsJson(std::filesystem::path(rpt_path) / "cluster_coordinates.json");
+        dumpRoutingInfo(std::filesystem::path(rpt_path) / "topology.json");
+    }
+
+    logDeviceProfilerDataToCSVFile(log_file_ofs, device_profiler_data);
+    log_file_ofs.close();
 #endif
 }
 
@@ -895,28 +1351,9 @@ void DumpMeshDeviceProfileResults(
 #if defined(TRACY_ENABLE)
     ZoneScoped;
 
-    const std::unordered_map<uint16_t, ZoneDetails> hash_to_zone_src_locations =
-        detail::generateZoneSourceLocationsHashes();
-
-    // open CSV log file
     std::filesystem::path output_dir = detail::tt_metal_device_profiler_map.at(mesh_device.build_id()).getOutputDir();
     std::filesystem::path log_path = output_dir / DEVICE_SIDE_LOG;
-    std::ofstream log_file_ofs(log_path);
-    log_file_ofs << "ARCH: " << get_string_lowercase(mesh_device.arch()) << ", CHIP_FREQ[MHz]: "
-                 << tt::tt_metal::MetalContext::instance().get_cluster().get_device_aiclk(mesh_device.build_id())
-                 << std::endl;
-    log_file_ofs << "PCIe slot, core_x, core_y, RISC processor type, timer_id, time[cycles since reset], data, "
-                    "run host ID,  zone name, type, source line, source file, meta data"
-                 << std::endl;
-
-    // NOT THREAD SAFE
-    // append to existing CSV log file if it already exists
-    // if (std::filesystem::exists(log_path)) {
-    //     log_file_ofs.open(log_path, std::ios_base::app);
-    // } else {
-    //     log_file_ofs.open(log_path);
-    //     emitCSVHeader(log_file_ofs, mesh_device.arch(), device_core_frequency);
-    // }
+    std::ofstream log_file_ofs = detail::openCSVFile(log_path, &mesh_device);
 
     if (!log_file_ofs) {
         log_error(tt::LogMetal, "Could not open kernel profiler dump file '{}'", log_path);
@@ -928,40 +1365,51 @@ void DumpMeshDeviceProfileResults(
             tt::LogAlways, "Profiler NoC events are enabled; this can add 1-15% cycle overhead to typical operations!");
     }
 
+    const std::unordered_map<uint16_t, ZoneDetails> hash_to_zone_src_locations =
+        detail::generateZoneSourceLocationsHashes();
     for (auto& [_, device_profiler] : detail::tt_metal_device_profiler_map) {
-        // device_profiler.device_core_frequency =
-        //     tt::tt_metal::MetalContext::instance().get_cluster().get_device_aiclk(mesh_device.build_id());
         device_profiler.hash_to_zone_src_locations = hash_to_zone_src_locations;
     }
 
+    std::unordered_map<chip_id_t, std::vector<DeviceProfilerDataPoint>> device_profiler_data;
+
     for (IDevice* device : mesh_device.get_devices()) {
-        // call version that takes in virtual cores as parameter
-        detail::DumpDeviceProfileResults(device, state, metadata);
+        const chip_id_t device_id = device->build_id();
+        device_profiler_data[device_id] = std::vector<DeviceProfilerDataPoint>();
+
+        std::vector<DeviceProfilerDataPoint>& profiler_data = device_profiler_data.at(device_id);
+        mesh_device.enqueue_to_thread_pool([device, state, metadata, &profiler_data]() {
+            detail::ReadDeviceProfilerResults(device, state, metadata, profiler_data);
+        });
     }
 
-    std::unordered_map<chip_id_t, std::vector<DeviceProfilerDataPoint>> device_profiler_data;
+    mesh_device.wait_for_thread_pool();
 
     // serialize noc traces only in normal state, to avoid overwriting individual trace files
     if (state == ProfilerDumpState::NORMAL &&
         tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_noc_events_enabled()) {
         for (auto& [device_id, device_profiler] : detail::tt_metal_device_profiler_map) {
-            // if defined, used profiler_noc_events_report_path to write json log. otherwise use output_dir
+            // if defined, use profiler_noc_events_report_path to write json log. otherwise use output_dir
             std::string rpt_path =
                 tt::tt_metal::MetalContext::instance().rtoptions().get_profiler_noc_events_report_path();
             if (rpt_path.empty()) {
                 rpt_path = device_profiler.getOutputDir().string();
             }
+
             FabricRoutingLookup routing_lookup(tt::DevicePool::instance().get_active_device(device_id));
+            nlohmann::ordered_json noc_trace_json_log = nlohmann::json::array();
+            detail::convertNocTraceDataToJSON(noc_trace_json_log, device_profiler_data.at(device_id));
+            detail::serializeJSONNocTraces(noc_trace_json_log, rpt_path, device_id, routing_lookup);
 
-            // convert data from all devices to nlohmann json format
-
-            serializeJsonNocTraces(noc_trace_json_log, rpt_path, device_id, routing_lookup);
             dumpClusterCoordinatesAsJson(std::filesystem::path(rpt_path) / "cluster_coordinates.json");
             dumpRoutingInfo(std::filesystem::path(rpt_path) / "topology.json");
         }
     }
 
-    // write data for all devices to csv file
+    for (IDevice* device : mesh_device.get_devices()) {
+        const chip_id_t device_id = device->build_id();
+        detail::logDeviceProfilerDataToCSVFile(log_file_ofs, device_profiler_data.at(device_id));
+    }
 
     log_file_ofs.close();
 #endif

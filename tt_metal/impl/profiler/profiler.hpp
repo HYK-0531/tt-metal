@@ -116,6 +116,23 @@ struct SyncInfo {
     SyncInfo() : SyncInfo(0.0, 0.0, 0.0) {}
 };
 
+struct DeviceProfilerDataPoint {
+    chip_id_t device_id;
+    int core_x;
+    int core_y;
+    std::string risc_name;
+    uint32_t timer_id;
+    uint64_t timestamp;
+    uint64_t data;
+    uint32_t run_host_id;
+    std::string op_name;
+    std::string zone_name;
+    kernel_profiler::PacketTypes packet_type;
+    uint64_t source_line;
+    std::string source_file;
+    nlohmann::json meta_data;
+};
+
 class DeviceProfiler {
 private:
     // Smallest timestamp
@@ -146,18 +163,18 @@ private:
     // Storage for all core's control buffers
     std::unordered_map<CoreCoord, std::vector<uint32_t>> core_control_buffers;
 
-    // serialize all noc trace data into per-op json trace files
-    void serializeJsonNocTraces(
-        const nlohmann::ordered_json& noc_trace_json_log,
-        const std::filesystem::path& output_dir,
-        chip_id_t device_id,
-        const FabricRoutingLookup& routing_lookup);
+    // // serialize all noc trace data into per-op json trace files
+    // void serializeJsonNocTraces(
+    //     const nlohmann::ordered_json& noc_trace_json_log,
+    //     const std::filesystem::path& output_dir,
+    //     chip_id_t device_id,
+    //     const FabricRoutingLookup& routing_lookup);
 
     // void emitCSVHeader(
     //     std::ofstream& log_file_ofs, const tt::ARCH& device_architecture, int device_core_frequency) const;
 
     // translates potentially-virtual coordinates recorded on Device into physical coordinates
-    CoreCoord getPhysicalAddressFromVirtual(chip_id_t device_id, const CoreCoord& c) const;
+    // CoreCoord getPhysicalAddressFromVirtual(chip_id_t device_id, const CoreCoord& c) const;
 
     // Read all control buffers
     void readControlBuffers(
@@ -204,10 +221,9 @@ private:
     void issueSlowDispatchReadFromL1DataBuffer(
         IDevice* device, const CoreCoord& worker_core, std::vector<uint32_t>& core_l1_data_buffer);
 
-    // Dumping profile result to file
-    void logPacketData(
-        std::ofstream& log_file_ofs,
-        nlohmann::ordered_json& noc_trace_json_log,
+    // Read device profilerdata and copy to device_profiler_data
+    void readPacketData(
+        std::vector<DeviceProfilerDataPoint>& device_profiler_data,
         uint32_t runHostID,
         const std::string& opname,
         chip_id_t device_id,
@@ -256,8 +272,7 @@ private:
         const std::vector<uint32_t>& data_buffer,
         ProfilerDataBufferSource data_source,
         const std::optional<ProfilerOptionalMetadata>& metadata,
-        std::ofstream& log_file_ofs,
-        nlohmann::ordered_json& noc_trace_json_log);
+        std::vector<DeviceProfilerDataPoint>& device_profiler_data);
 
     // Track the smallest timestamp dumped to file
     void firstTimestamp(uint64_t timestamp);
@@ -309,12 +324,12 @@ public:
     // Get the output dir of device profile logs
     std::filesystem::path getOutputDir() const;
 
-    // Traverse all cores on the device and dump the device profile results
-    void dumpResults(
+    // Traverse all cores on the device and read the device profile results
+    std::vector<DeviceProfilerDataPoint> readResults(
         IDevice* device,
         const std::vector<CoreCoord>& virtual_cores,
-        ProfilerDumpState state = ProfilerDumpState::NORMAL,
-        ProfilerDataBufferSource data_source = ProfilerDataBufferSource::DRAM,
+        ProfilerDumpState state,
+        ProfilerDataBufferSource data_source,
         const std::optional<ProfilerOptionalMetadata>& metadata = {});
 
     // Push device results to tracy
@@ -331,6 +346,9 @@ bool useFastDispatchForControlBuffers(const IDevice* device, ProfilerDumpState s
 
 void writeToCoreControlBuffer(
     IDevice* device, const CoreCoord& virtual_core, ProfilerDumpState state, const std::vector<uint32_t>& data);
+
+// Translates potentially-virtual coordinates recorded on device into physical coordinates
+CoreCoord getPhysicalAddressFromVirtual(chip_id_t device_id, const CoreCoord& c);
 
 bool onlyProfileDispatchCores(ProfilerDumpState state);
 

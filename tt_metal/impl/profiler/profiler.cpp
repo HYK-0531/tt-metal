@@ -194,6 +194,27 @@ std::vector<std::reference_wrapper<const tracy::TTDeviceEvent>> getDeviceEventsV
     return device_events_vec;
 }
 
+CoreCoord getPhysicalAddressFromVirtual(chip_id_t device_id, const CoreCoord& c) {
+    const bool coord_is_translated = c.x >= MetalContext::instance().hal().get_virtual_worker_start_x() - 1 ||
+                                     c.y >= MetalContext::instance().hal().get_virtual_worker_start_y() - 1;
+    try {
+        if (MetalContext::instance().hal().is_coordinate_virtualization_enabled() && coord_is_translated) {
+            const metal_SocDescriptor& soc_desc =
+                tt::tt_metal::MetalContext::instance().get_cluster().get_soc_desc(device_id);
+            // disable linting here; slicing is __intended__
+            // NOLINTBEGIN
+            return soc_desc.translate_coord_to(c, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
+            // NOLINTEND
+        } else {
+            return c;
+        }
+    } catch (const std::exception& e) {
+        log_error(tt::LogMetal, "Failed to translate virtual coordinate {},{} to physical", c.x, c.y);
+        return c;
+    }
+    return c;
+}
+
 bool doAllDispatchCoresComeAfterNonDispatchCores(const IDevice* device, const std::vector<CoreCoord>& virtual_cores) {
     const auto& dispatch_core_config = get_dispatch_core_config();
     const std::vector<CoreCoord> logical_dispatch_cores =
@@ -475,8 +496,7 @@ void DeviceProfiler::readRiscProfilerResults(
     const std::vector<uint32_t>& data_buffer,
     const ProfilerDataBufferSource data_source,
     const std::optional<ProfilerOptionalMetadata>& metadata,
-    std::ofstream& log_file_ofs,
-    nlohmann::ordered_json& noc_trace_json_log) {
+    std::vector<DeviceProfilerDataPoint>& device_profiler_data) {
     ZoneScoped;
 
     const std::vector<uint32_t>& control_buffer = core_control_buffers.at(worker_core);
@@ -606,9 +626,8 @@ void DeviceProfiler::readRiscProfilerResults(
                                     runHostCounterRead,
                                     index);
 
-                                logPacketData(
-                                    log_file_ofs,
-                                    noc_trace_json_log,
+                                readPacketData(
+                                    device_profiler_data,
                                     runHostCounterRead,
                                     opname,
                                     device_id,
@@ -624,9 +643,8 @@ void DeviceProfiler::readRiscProfilerResults(
 
                             uint32_t time_H = opTime_H;
                             uint32_t time_L = opTime_L;
-                            logPacketData(
-                                log_file_ofs,
-                                noc_trace_json_log,
+                            readPacketData(
+                                device_profiler_data,
                                 runHostCounterRead,
                                 opname,
                                 device_id,
@@ -644,9 +662,8 @@ void DeviceProfiler::readRiscProfilerResults(
                             index += kernel_profiler::PROFILER_L1_MARKER_UINT32_SIZE;
                             uint32_t data_H = data_buffer.at(index);
                             uint32_t data_L = data_buffer.at(index + 1);
-                            logPacketData(
-                                log_file_ofs,
-                                noc_trace_json_log,
+                            readPacketData(
+                                device_profiler_data,
                                 runHostCounterRead,
                                 opname,
                                 device_id,
@@ -660,9 +677,8 @@ void DeviceProfiler::readRiscProfilerResults(
                         case kernel_profiler::TS_EVENT: {
                             uint32_t time_H = data_buffer.at(index) & 0xFFF;
                             uint32_t time_L = data_buffer.at(index + 1);
-                            logPacketData(
-                                log_file_ofs,
-                                noc_trace_json_log,
+                            readPacketData(
+                                device_profiler_data,
                                 runHostCounterRead,
                                 opname,
                                 device_id,
@@ -694,9 +710,8 @@ ZoneDetails DeviceProfiler::getZoneDetails(uint16_t timer_id) const {
     }
 }
 
-void DeviceProfiler::logPacketData(
-    std::ofstream& log_file_ofs,
-    nlohmann::ordered_json& noc_trace_json_log,
+void DeviceProfiler::readPacketData(
+    std::vector<DeviceProfilerDataPoint>& device_profiler_data,
     uint32_t run_host_id,
     const std::string& opname,
     chip_id_t device_id,
@@ -821,8 +836,7 @@ void DeviceProfiler::logPacketData(
 
     firstTimestamp(timestamp);
 
-    logPacketDataToCSV(
-        log_file_ofs,
+    device_profiler_data.emplace_back(
         device_id,
         core.x,
         core.y,
@@ -831,198 +845,215 @@ void DeviceProfiler::logPacketData(
         timestamp,
         data,
         run_host_id,
+        opname,
         zone_details.zone_name,
         packet_type,
         zone_details.source_line_num,
         zone_details.source_file,
         metaData);
 
-    logNocTracePacketDataToJson(
-        noc_trace_json_log,
-        device_id,
-        core.x,
-        core.y,
-        tracy::riscName[risc_num],
-        timestamp,
-        data,
-        run_host_id,
-        opname,
-        zone_details.zone_name,
-        packet_type);
+    // logPacketDataToCSV(
+    //     log_file_ofs,
+    //     device_id,
+    //     core.x,
+    //     core.y,
+    //     tracy::riscName[risc_num],
+    //     t_id,
+    //     timestamp,
+    //     data,
+    //     run_host_id,
+    //     zone_details.zone_name,
+    //     packet_type,
+    //     zone_details.source_line_num,
+    //     zone_details.source_file,
+    //     metaData);
+
+    // logNocTracePacketDataToJson(
+    //     noc_trace_json_log,
+    //     device_id,
+    //     core.x,
+    //     core.y,
+    //     tracy::riscName[risc_num],
+    //     timestamp,
+    //     data,
+    //     run_host_id,
+    //     opname,
+    //     zone_details.zone_name,
+    //     packet_type);
 }
 
-void DeviceProfiler::logPacketDataToCSV(
-    std::ofstream& log_file_ofs,
-    chip_id_t device_id,
-    int core_x,
-    int core_y,
-    const std::string_view risc_name,
-    uint32_t timer_id,
-    uint64_t timestamp,
-    uint64_t data,
-    uint32_t run_host_id,
-    const std::string_view zone_name,
-    kernel_profiler::PacketTypes packet_type,
-    uint64_t source_line,
-    const std::string_view source_file,
-    const nlohmann::json& metaData) {
-    std::string metaDataStr = "";
+// void DeviceProfiler::logPacketDataToCSV(
+//     std::ofstream& log_file_ofs,
+//     chip_id_t device_id,
+//     int core_x,
+//     int core_y,
+//     const std::string_view risc_name,
+//     uint32_t timer_id,
+//     uint64_t timestamp,
+//     uint64_t data,
+//     uint32_t run_host_id,
+//     const std::string_view zone_name,
+//     kernel_profiler::PacketTypes packet_type,
+//     uint64_t source_line,
+//     const std::string_view source_file,
+//     const nlohmann::json& metaData) {
+//     std::string metaDataStr = "";
 
-    if (!metaData.is_null()) {
-        metaDataStr = metaData.dump();
-        std::replace(metaDataStr.begin(), metaDataStr.end(), ',', ';');
-    }
+//     if (!metaData.is_null()) {
+//         metaDataStr = metaData.dump();
+//         std::replace(metaDataStr.begin(), metaDataStr.end(), ',', ';');
+//     }
 
-    log_file_ofs << fmt::format(
-        "{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
-        device_id,
-        core_x,
-        core_y,
-        risc_name,
-        timer_id,
-        timestamp,
-        data,
-        run_host_id,
-        zone_name,
-        magic_enum::enum_name(packet_type),
-        source_line,
-        source_file,
-        metaDataStr);
-}
+//     log_file_ofs << fmt::format(
+//         "{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
+//         device_id,
+//         core_x,
+//         core_y,
+//         risc_name,
+//         timer_id,
+//         timestamp,
+//         data,
+//         run_host_id,
+//         zone_name,
+//         magic_enum::enum_name(packet_type),
+//         source_line,
+//         source_file,
+//         metaDataStr);
+// }
 
-void DeviceProfiler::logNocTracePacketDataToJson(
-    nlohmann::ordered_json& noc_trace_json_log,
-    chip_id_t device_id,
-    int core_x,
-    int core_y,
-    const std::string_view risc_name,
-    uint64_t timestamp,
-    uint64_t data,
-    uint32_t run_host_id,
-    const std::string_view opname,
-    const std::string_view zone_name,
-    kernel_profiler::PacketTypes packet_type) {
-    if (!MetalContext::instance().rtoptions().get_profiler_noc_events_enabled()) {
-        return;
-    }
+// void DeviceProfiler::logNocTracePacketDataToJson(
+//     nlohmann::ordered_json& noc_trace_json_log,
+//     chip_id_t device_id,
+//     int core_x,
+//     int core_y,
+//     const std::string_view risc_name,
+//     uint64_t timestamp,
+//     uint64_t data,
+//     uint32_t run_host_id,
+//     const std::string_view opname,
+//     const std::string_view zone_name,
+//     kernel_profiler::PacketTypes packet_type) {
+//     if (!MetalContext::instance().rtoptions().get_profiler_noc_events_enabled()) {
+//         return;
+//     }
 
-    if (packet_type == kernel_profiler::ZONE_START || packet_type == kernel_profiler::ZONE_END) {
-        if ((risc_name == "NCRISC" || risc_name == "BRISC") &&
-            (zone_name.starts_with("TRUE-KERNEL-END") || zone_name.ends_with("-KERNEL"))) {
-            tracy::TTDeviceEventPhase zone_phase = (packet_type == kernel_profiler::ZONE_END)
-                                                       ? tracy::TTDeviceEventPhase::end
-                                                       : tracy::TTDeviceEventPhase::begin;
-            noc_trace_json_log.push_back(nlohmann::ordered_json{
-                {"run_host_id", run_host_id},
-                {"op_name", opname},
-                {"proc", risc_name},
-                {"zone", zone_name},
-                {"zone_phase", magic_enum::enum_name(zone_phase)},
-                {"sx", core_x},
-                {"sy", core_y},
-                {"timestamp", timestamp},
-            });
-        }
-    } else if (packet_type == kernel_profiler::TS_DATA) {
-        using EMD = KernelProfilerNocEventMetadata;
-        EMD ev_md(data);
-        std::variant<EMD::LocalNocEvent, EMD::FabricNoCEvent, EMD::FabricRoutingFields> ev_md_contents =
-            ev_md.getContents();
-        if (std::holds_alternative<EMD::LocalNocEvent>(ev_md_contents)) {
-            auto local_noc_event = std::get<EMD::LocalNocEvent>(ev_md_contents);
+//     if (packet_type == kernel_profiler::ZONE_START || packet_type == kernel_profiler::ZONE_END) {
+//         if ((risc_name == "NCRISC" || risc_name == "BRISC") &&
+//             (zone_name.starts_with("TRUE-KERNEL-END") || zone_name.ends_with("-KERNEL"))) {
+//             tracy::TTDeviceEventPhase zone_phase = (packet_type == kernel_profiler::ZONE_END)
+//                                                        ? tracy::TTDeviceEventPhase::end
+//                                                        : tracy::TTDeviceEventPhase::begin;
+//             noc_trace_json_log.push_back(nlohmann::ordered_json{
+//                 {"run_host_id", run_host_id},
+//                 {"op_name", opname},
+//                 {"proc", risc_name},
+//                 {"zone", zone_name},
+//                 {"zone_phase", magic_enum::enum_name(zone_phase)},
+//                 {"sx", core_x},
+//                 {"sy", core_y},
+//                 {"timestamp", timestamp},
+//             });
+//         }
+//     } else if (packet_type == kernel_profiler::TS_DATA) {
+//         using EMD = KernelProfilerNocEventMetadata;
+//         EMD ev_md(data);
+//         std::variant<EMD::LocalNocEvent, EMD::FabricNoCEvent, EMD::FabricRoutingFields> ev_md_contents =
+//             ev_md.getContents();
+//         if (std::holds_alternative<EMD::LocalNocEvent>(ev_md_contents)) {
+//             auto local_noc_event = std::get<EMD::LocalNocEvent>(ev_md_contents);
 
-            // NOTE: assume here that src and dest device_id are local;
-            // serialization will coalesce and update to correct destination
-            // based on fabric events
-            nlohmann::ordered_json data = {
-                {"run_host_id", run_host_id},
-                {"op_name", opname},
-                {"proc", risc_name},
-                {"noc", magic_enum::enum_name(local_noc_event.noc_type)},
-                {"vc", int(local_noc_event.noc_vc)},
-                {"src_device_id", device_id},
-                {"sx", core_x},
-                {"sy", core_y},
-                {"num_bytes", local_noc_event.getNumBytes()},
-                {"type", magic_enum::enum_name(ev_md.noc_xfer_type)},
-                {"timestamp", timestamp},
-            };
+//             // NOTE: assume here that src and dest device_id are local;
+//             // serialization will coalesce and update to correct destination
+//             // based on fabric events
+//             nlohmann::ordered_json data = {
+//                 {"run_host_id", run_host_id},
+//                 {"op_name", opname},
+//                 {"proc", risc_name},
+//                 {"noc", magic_enum::enum_name(local_noc_event.noc_type)},
+//                 {"vc", int(local_noc_event.noc_vc)},
+//                 {"src_device_id", device_id},
+//                 {"sx", core_x},
+//                 {"sy", core_y},
+//                 {"num_bytes", local_noc_event.getNumBytes()},
+//                 {"type", magic_enum::enum_name(ev_md.noc_xfer_type)},
+//                 {"timestamp", timestamp},
+//             };
 
-            // handle dst coordinates correctly for different NocEventType
-            if (local_noc_event.dst_x == -1 || local_noc_event.dst_y == -1 ||
-                ev_md.noc_xfer_type == EMD::NocEventType::READ_WITH_STATE ||
-                ev_md.noc_xfer_type == EMD::NocEventType::WRITE_WITH_STATE) {
-                // DO NOT emit destination coord; it isn't meaningful
+//             // handle dst coordinates correctly for different NocEventType
+//             if (local_noc_event.dst_x == -1 || local_noc_event.dst_y == -1 ||
+//                 ev_md.noc_xfer_type == EMD::NocEventType::READ_WITH_STATE ||
+//                 ev_md.noc_xfer_type == EMD::NocEventType::WRITE_WITH_STATE) {
+//                 // DO NOT emit destination coord; it isn't meaningful
 
-            } else if (ev_md.noc_xfer_type == EMD::NocEventType::WRITE_MULTICAST) {
-                auto phys_start_coord =
-                    getPhysicalAddressFromVirtual(device_id, {local_noc_event.dst_x, local_noc_event.dst_y});
-                data["mcast_start_x"] = phys_start_coord.x;
-                data["mcast_start_y"] = phys_start_coord.y;
-                auto phys_end_coord = getPhysicalAddressFromVirtual(
-                    device_id, {local_noc_event.mcast_end_dst_x, local_noc_event.mcast_end_dst_y});
-                data["mcast_end_x"] = phys_end_coord.x;
-                data["mcast_end_y"] = phys_end_coord.y;
-            } else {
-                auto phys_coord =
-                    getPhysicalAddressFromVirtual(device_id, {local_noc_event.dst_x, local_noc_event.dst_y});
-                data["dx"] = phys_coord.x;
-                data["dy"] = phys_coord.y;
-            }
+//             } else if (ev_md.noc_xfer_type == EMD::NocEventType::WRITE_MULTICAST) {
+//                 auto phys_start_coord =
+//                     getPhysicalAddressFromVirtual(device_id, {local_noc_event.dst_x, local_noc_event.dst_y});
+//                 data["mcast_start_x"] = phys_start_coord.x;
+//                 data["mcast_start_y"] = phys_start_coord.y;
+//                 auto phys_end_coord = getPhysicalAddressFromVirtual(
+//                     device_id, {local_noc_event.mcast_end_dst_x, local_noc_event.mcast_end_dst_y});
+//                 data["mcast_end_x"] = phys_end_coord.x;
+//                 data["mcast_end_y"] = phys_end_coord.y;
+//             } else {
+//                 auto phys_coord =
+//                     getPhysicalAddressFromVirtual(device_id, {local_noc_event.dst_x, local_noc_event.dst_y});
+//                 data["dx"] = phys_coord.x;
+//                 data["dy"] = phys_coord.y;
+//             }
 
-            noc_trace_json_log.push_back(std::move(data));
-        } else if (std::holds_alternative<EMD::FabricNoCEvent>(ev_md_contents)) {
-            EMD::FabricNoCEvent fabric_noc_event = std::get<EMD::FabricNoCEvent>(ev_md_contents);
+//             noc_trace_json_log.push_back(std::move(data));
+//         } else if (std::holds_alternative<EMD::FabricNoCEvent>(ev_md_contents)) {
+//             EMD::FabricNoCEvent fabric_noc_event = std::get<EMD::FabricNoCEvent>(ev_md_contents);
 
-            nlohmann::ordered_json data = {
-                {"run_host_id", run_host_id},
-                {"op_name", opname},
-                {"proc", risc_name},
-                {"sx", core_x},
-                {"sy", core_y},
-                {"type", magic_enum::enum_name(ev_md.noc_xfer_type)},
-                {"routing_fields_type", magic_enum::enum_name(fabric_noc_event.routing_fields_type)},
-                {"timestamp", timestamp},
-            };
+//             nlohmann::ordered_json data = {
+//                 {"run_host_id", run_host_id},
+//                 {"op_name", opname},
+//                 {"proc", risc_name},
+//                 {"sx", core_x},
+//                 {"sy", core_y},
+//                 {"type", magic_enum::enum_name(ev_md.noc_xfer_type)},
+//                 {"routing_fields_type", magic_enum::enum_name(fabric_noc_event.routing_fields_type)},
+//                 {"timestamp", timestamp},
+//             };
 
-            // For scatter write operations, include additional scatter information
-            if (ev_md.noc_xfer_type == EMD::NocEventType::FABRIC_UNICAST_SCATTER_WRITE) {
-                data["scatter_address_index"] = fabric_noc_event.mcast_end_dst_x;
-                data["scatter_total_addresses"] = fabric_noc_event.mcast_end_dst_y;
-            }
+//             // For scatter write operations, include additional scatter information
+//             if (ev_md.noc_xfer_type == EMD::NocEventType::FABRIC_UNICAST_SCATTER_WRITE) {
+//                 data["scatter_address_index"] = fabric_noc_event.mcast_end_dst_x;
+//                 data["scatter_total_addresses"] = fabric_noc_event.mcast_end_dst_y;
+//             }
 
-            // handle dst coordinates correctly for different NocEventType
-            if (KernelProfilerNocEventMetadata::isFabricUnicastEventType(ev_md.noc_xfer_type)) {
-                auto phys_coord =
-                    getPhysicalAddressFromVirtual(device_id, {fabric_noc_event.dst_x, fabric_noc_event.dst_y});
-                data["dx"] = phys_coord.x;
-                data["dy"] = phys_coord.y;
-            } else {
-                auto phys_start_coord =
-                    getPhysicalAddressFromVirtual(device_id, {fabric_noc_event.dst_x, fabric_noc_event.dst_y});
-                data["mcast_start_x"] = phys_start_coord.x;
-                data["mcast_start_y"] = phys_start_coord.y;
-                auto phys_end_coord = getPhysicalAddressFromVirtual(
-                    device_id, {fabric_noc_event.mcast_end_dst_x, fabric_noc_event.mcast_end_dst_y});
-                data["mcast_end_x"] = phys_end_coord.x;
-                data["mcast_end_y"] = phys_end_coord.y;
-            }
+//             // handle dst coordinates correctly for different NocEventType
+//             if (KernelProfilerNocEventMetadata::isFabricUnicastEventType(ev_md.noc_xfer_type)) {
+//                 auto phys_coord =
+//                     getPhysicalAddressFromVirtual(device_id, {fabric_noc_event.dst_x, fabric_noc_event.dst_y});
+//                 data["dx"] = phys_coord.x;
+//                 data["dy"] = phys_coord.y;
+//             } else {
+//                 auto phys_start_coord =
+//                     getPhysicalAddressFromVirtual(device_id, {fabric_noc_event.dst_x, fabric_noc_event.dst_y});
+//                 data["mcast_start_x"] = phys_start_coord.x;
+//                 data["mcast_start_y"] = phys_start_coord.y;
+//                 auto phys_end_coord = getPhysicalAddressFromVirtual(
+//                     device_id, {fabric_noc_event.mcast_end_dst_x, fabric_noc_event.mcast_end_dst_y});
+//                 data["mcast_end_x"] = phys_end_coord.x;
+//                 data["mcast_end_y"] = phys_end_coord.y;
+//             }
 
-            noc_trace_json_log.push_back(std::move(data));
-        } else if (std::holds_alternative<EMD::FabricRoutingFields>(ev_md_contents)) {
-            uint32_t routing_fields_value = std::get<EMD::FabricRoutingFields>(ev_md_contents).routing_fields_value;
-            noc_trace_json_log.push_back(nlohmann::ordered_json{
-                {"run_host_id", run_host_id},
-                {"op_name", opname},
-                {"proc", risc_name},
-                {"sx", core_x},
-                {"sy", core_y},
-                {"routing_fields_value", routing_fields_value},
-                {"timestamp", timestamp},
-            });
-        }
-    }
-}
+//             noc_trace_json_log.push_back(std::move(data));
+//         } else if (std::holds_alternative<EMD::FabricRoutingFields>(ev_md_contents)) {
+//             uint32_t routing_fields_value = std::get<EMD::FabricRoutingFields>(ev_md_contents).routing_fields_value;
+//             noc_trace_json_log.push_back(nlohmann::ordered_json{
+//                 {"run_host_id", run_host_id},
+//                 {"op_name", opname},
+//                 {"proc", risc_name},
+//                 {"sx", core_x},
+//                 {"sy", core_y},
+//                 {"routing_fields_value", routing_fields_value},
+//                 {"timestamp", timestamp},
+//             });
+//         }
+//     }
+// }
 
 // void DeviceProfiler::emitCSVHeader(
 //     std::ofstream& log_file_ofs, const tt::ARCH& device_architecture, int device_core_frequency) const {
@@ -1033,255 +1064,256 @@ void DeviceProfiler::logNocTracePacketDataToJson(
 //                  << std::endl;
 // }
 
-void DeviceProfiler::serializeJsonNocTraces(
-    const nlohmann::ordered_json& noc_trace_json_log,
-    const std::filesystem::path& output_dir,
-    chip_id_t device_id,
-    const FabricRoutingLookup& routing_lookup) {
-    // create output directory if it does not exist
-    std::filesystem::create_directories(output_dir);
-    if (!std::filesystem::is_directory(output_dir)) {
-        log_error(
-            tt::LogMetal,
-            "Could not write noc event json trace to '{}' because the directory path could not be created!",
-            output_dir);
-        return;
-    }
+// void DeviceProfiler::serializeJsonNocTraces(
+//     const nlohmann::ordered_json& noc_trace_json_log,
+//     const std::filesystem::path& output_dir,
+//     chip_id_t device_id,
+//     const FabricRoutingLookup& routing_lookup) {
+//     // create output directory if it does not exist
+//     std::filesystem::create_directories(output_dir);
+//     if (!std::filesystem::is_directory(output_dir)) {
+//         log_error(
+//             tt::LogMetal,
+//             "Could not write noc event json trace to '{}' because the directory path could not be created!",
+//             output_dir);
+//         return;
+//     }
 
-    // bin events by runtime id
-    using RuntimeID = uint32_t;
-    std::unordered_map<RuntimeID, nlohmann::json::array_t> events_by_opname;
-    for (auto& json_event : noc_trace_json_log) {
-        RuntimeID runtime_id = json_event.value("run_host_id", -1);
-        events_by_opname[runtime_id].push_back(json_event);
-    }
+//     // bin events by runtime id
+//     using RuntimeID = uint32_t;
+//     std::unordered_map<RuntimeID, nlohmann::json::array_t> events_by_opname;
+//     for (auto& json_event : noc_trace_json_log) {
+//         RuntimeID runtime_id = json_event.value("run_host_id", -1);
+//         events_by_opname[runtime_id].push_back(json_event);
+//     }
 
-    // sort events in each opname group by proc first, then timestamp
-    for (auto& [runtime_id, events] : events_by_opname) {
-        std::sort(events.begin(), events.end(), [](const auto& a, const auto& b) {
-            auto sx_a = a.value("sx", 0);
-            auto sy_a = a.value("sy", 0);
-            auto sx_b = b.value("sx", 0);
-            auto sy_b = b.value("sy", 0);
-            auto proc_a = a.value("proc", "");
-            auto proc_b = b.value("proc", "");
-            auto timestamp_a = a.value("timestamp", 0);
-            auto timestamp_b = b.value("timestamp", 0);
-            return std::tie(sx_a, sy_a, proc_a, timestamp_a) < std::tie(sx_b, sy_b, proc_b, timestamp_b);
-        });
-    }
+//     // sort events in each opname group by proc first, then timestamp
+//     for (auto& [runtime_id, events] : events_by_opname) {
+//         std::sort(events.begin(), events.end(), [](const auto& a, const auto& b) {
+//             auto sx_a = a.value("sx", 0);
+//             auto sy_a = a.value("sy", 0);
+//             auto sx_b = b.value("sx", 0);
+//             auto sy_b = b.value("sy", 0);
+//             auto proc_a = a.value("proc", "");
+//             auto proc_b = b.value("proc", "");
+//             auto timestamp_a = a.value("timestamp", 0);
+//             auto timestamp_b = b.value("timestamp", 0);
+//             return std::tie(sx_a, sy_a, proc_a, timestamp_a) < std::tie(sx_b, sy_b, proc_b, timestamp_b);
+//         });
+//     }
 
-    // for each opname in events_by_opname, adjust timestamps to be relative to the smallest timestamp within the
-    // group with identical sx,sy,proc
-    for (auto& [runtime_id, events] : events_by_opname) {
-        std::tuple<int, int, std::string> reference_event_loc;
-        uint64_t reference_timestamp = 0;
-        for (auto& event : events) {
-            std::string zone = event.value("zone", "");
-            std::string zone_phase = event.value("zone_phase", "");
-            uint64_t curr_timestamp = event.value("timestamp", 0);
-            // if -KERNEL::begin event is found, reset the reference timestamp
-            if (zone.ends_with("-KERNEL") && zone_phase == "begin") {
-                reference_timestamp = curr_timestamp;
-            }
+//     // for each opname in events_by_opname, adjust timestamps to be relative to the smallest timestamp within the
+//     // group with identical sx,sy,proc
+//     for (auto& [runtime_id, events] : events_by_opname) {
+//         std::tuple<int, int, std::string> reference_event_loc;
+//         uint64_t reference_timestamp = 0;
+//         for (auto& event : events) {
+//             std::string zone = event.value("zone", "");
+//             std::string zone_phase = event.value("zone_phase", "");
+//             uint64_t curr_timestamp = event.value("timestamp", 0);
+//             // if -KERNEL::begin event is found, reset the reference timestamp
+//             if (zone.ends_with("-KERNEL") && zone_phase == "begin") {
+//                 reference_timestamp = curr_timestamp;
+//             }
 
-            // fix timestamp to be relative to reference_timestamp
-            event["timestamp"] = curr_timestamp - reference_timestamp;
-        }
-    }
+//             // fix timestamp to be relative to reference_timestamp
+//             event["timestamp"] = curr_timestamp - reference_timestamp;
+//         }
+//     }
 
-    auto process_fabric_event_group_if_valid =
-        [&](const nlohmann::ordered_json& fabric_event,
-            const nlohmann::ordered_json& fabric_routing_fields_event,
-            const nlohmann::ordered_json& local_noc_write_event) -> std::optional<nlohmann::ordered_json> {
-        bool local_event_is_valid_type =
-            local_noc_write_event.contains("type") && local_noc_write_event["type"] == "WRITE_";
-        if (!local_event_is_valid_type) {
-            log_error(
-                tt::LogMetal,
-                "[profiler noc tracing] local noc event following fabric event is not a regular noc write, but instead "
-                ": {}",
-                local_noc_write_event["type"].get<std::string>());
-            return std::nullopt;
-        }
+//     auto process_fabric_event_group_if_valid =
+//         [&](const nlohmann::ordered_json& fabric_event,
+//             const nlohmann::ordered_json& fabric_routing_fields_event,
+//             const nlohmann::ordered_json& local_noc_write_event) -> std::optional<nlohmann::ordered_json> {
+//         bool local_event_is_valid_type =
+//             local_noc_write_event.contains("type") && local_noc_write_event["type"] == "WRITE_";
+//         if (!local_event_is_valid_type) {
+//             log_error(
+//                 tt::LogMetal,
+//                 "[profiler noc tracing] local noc event following fabric event is not a regular noc write, but
+//                 instead "
+//                 ": {}",
+//                 local_noc_write_event["type"].get<std::string>());
+//             return std::nullopt;
+//         }
 
-        // Check if timestamps are close enough; otherwise
-        double ts_diff = local_noc_write_event.value("timestamp", 0.0) - fabric_event.value("timestamp", 0.0);
-        if (ts_diff > 1000) {
-            log_warning(
-                tt::LogMetal,
-                "[profiler noc tracing] Failed to coalesce fabric noc trace events because timestamps are implausibly "
-                "far apart.");
-            return std::nullopt;
-        }
+//         // Check if timestamps are close enough; otherwise
+//         double ts_diff = local_noc_write_event.value("timestamp", 0.0) - fabric_event.value("timestamp", 0.0);
+//         if (ts_diff > 1000) {
+//             log_warning(
+//                 tt::LogMetal,
+//                 "[profiler noc tracing] Failed to coalesce fabric noc trace events because timestamps are implausibly
+//                 " "far apart.");
+//             return std::nullopt;
+//         }
 
-        try {
-            // router eth core location is derived from the following noc WRITE_ event
-            CoreCoord virt_eth_route_coord = {
-                local_noc_write_event.at("dx").get<int>(), local_noc_write_event.at("dy").get<int>()};
-            CoreCoord phys_eth_route_coord = getPhysicalAddressFromVirtual(device_id, virt_eth_route_coord);
+//         try {
+//             // router eth core location is derived from the following noc WRITE_ event
+//             CoreCoord virt_eth_route_coord = {
+//                 local_noc_write_event.at("dx").get<int>(), local_noc_write_event.at("dy").get<int>()};
+//             CoreCoord phys_eth_route_coord = getPhysicalAddressFromVirtual(device_id, virt_eth_route_coord);
 
-            auto routing_fields_type_str = fabric_event.at("routing_fields_type").get<std::string>();
-            auto maybe_routing_fields_type =
-                magic_enum::enum_cast<KernelProfilerNocEventMetadata::FabricPacketType>(routing_fields_type_str);
-            if (!maybe_routing_fields_type) {
-                log_error(
-                    tt::LogMetal,
-                    "[profiler noc tracing] Failed to parse routing fields type: {}",
-                    routing_fields_type_str);
-                return std::nullopt;
-            }
-            auto routing_fields_type = maybe_routing_fields_type.value();
+//             auto routing_fields_type_str = fabric_event.at("routing_fields_type").get<std::string>();
+//             auto maybe_routing_fields_type =
+//                 magic_enum::enum_cast<KernelProfilerNocEventMetadata::FabricPacketType>(routing_fields_type_str);
+//             if (!maybe_routing_fields_type) {
+//                 log_error(
+//                     tt::LogMetal,
+//                     "[profiler noc tracing] Failed to parse routing fields type: {}",
+//                     routing_fields_type_str);
+//                 return std::nullopt;
+//             }
+//             auto routing_fields_type = maybe_routing_fields_type.value();
 
-            // determine hop count and other routing metadata from routing fields value
-            uint32_t routing_fields_value = fabric_routing_fields_event.at("routing_fields_value").get<uint32_t>();
-            int start_distance = 0;
-            int range = 0;
-            switch (routing_fields_type) {
-                case KernelProfilerNocEventMetadata::FabricPacketType::REGULAR: {
-                    std::tie(start_distance, range) = get_routing_start_distance_and_range(routing_fields_value);
-                    break;
-                }
-                case KernelProfilerNocEventMetadata::FabricPacketType::LOW_LATENCY: {
-                    std::tie(start_distance, range) =
-                        get_low_latency_routing_start_distance_and_range(routing_fields_value);
-                    break;
-                }
-                case KernelProfilerNocEventMetadata::FabricPacketType::LOW_LATENCY_MESH: {
-                    log_error(
-                        tt::LogMetal, "[profiler noc tracing] noc tracing does not support LOW_LATENCY_MESH packets!");
-                    return std::nullopt;
-                }
-            }
+//             // determine hop count and other routing metadata from routing fields value
+//             uint32_t routing_fields_value = fabric_routing_fields_event.at("routing_fields_value").get<uint32_t>();
+//             int start_distance = 0;
+//             int range = 0;
+//             switch (routing_fields_type) {
+//                 case KernelProfilerNocEventMetadata::FabricPacketType::REGULAR: {
+//                     std::tie(start_distance, range) = get_routing_start_distance_and_range(routing_fields_value);
+//                     break;
+//                 }
+//                 case KernelProfilerNocEventMetadata::FabricPacketType::LOW_LATENCY: {
+//                     std::tie(start_distance, range) =
+//                         get_low_latency_routing_start_distance_and_range(routing_fields_value);
+//                     break;
+//                 }
+//                 case KernelProfilerNocEventMetadata::FabricPacketType::LOW_LATENCY_MESH: {
+//                     log_error(
+//                         tt::LogMetal, "[profiler noc tracing] noc tracing does not support LOW_LATENCY_MESH
+//                         packets!");
+//                     return std::nullopt;
+//                 }
+//             }
 
-            auto eth_chan_opt = routing_lookup.getRouterEthCoreToChannelLookup(device_id, phys_eth_route_coord);
-            if (!eth_chan_opt) {
-                log_warning(
-                    tt::LogMetal,
-                    "[profiler noc tracing] Fabric edm_location->channel lookup failed for event in op '{}' at ts {}: "
-                    "src_dev={}, "
-                    "eth_core=({}, {}), start_distance={}. Keeping original events.",
-                    fabric_event.value("op_name", "N/A"),
-                    fabric_event.value("timestamp", 0.0),
-                    device_id,
-                    phys_eth_route_coord.x,
-                    phys_eth_route_coord.y,
-                    start_distance);
-                return std::nullopt;
-            }
+//             auto eth_chan_opt = routing_lookup.getRouterEthCoreToChannelLookup(device_id, phys_eth_route_coord);
+//             if (!eth_chan_opt) {
+//                 log_warning(
+//                     tt::LogMetal,
+//                     "[profiler noc tracing] Fabric edm_location->channel lookup failed for event in op '{}' at ts {}:
+//                     " "src_dev={}, " "eth_core=({}, {}), start_distance={}. Keeping original events.",
+//                     fabric_event.value("op_name", "N/A"),
+//                     fabric_event.value("timestamp", 0.0),
+//                     device_id,
+//                     phys_eth_route_coord.x,
+//                     phys_eth_route_coord.y,
+//                     start_distance);
+//                 return std::nullopt;
+//             }
 
-            tt::tt_fabric::chan_id_t eth_chan = *eth_chan_opt;
+//             tt::tt_fabric::chan_id_t eth_chan = *eth_chan_opt;
 
-            nlohmann::ordered_json modified_write_event = local_noc_write_event;
-            modified_write_event["timestamp"] = fabric_event["timestamp"];
+//             nlohmann::ordered_json modified_write_event = local_noc_write_event;
+//             modified_write_event["timestamp"] = fabric_event["timestamp"];
 
-            // replace original eth core destination with true destination
-            auto noc_xfer_type = magic_enum::enum_cast<KernelProfilerNocEventMetadata::NocEventType>(
-                fabric_event["type"].get<std::string>());
+//             // replace original eth core destination with true destination
+//             auto noc_xfer_type = magic_enum::enum_cast<KernelProfilerNocEventMetadata::NocEventType>(
+//                 fabric_event["type"].get<std::string>());
 
-            if (!noc_xfer_type.has_value() ||
-                !KernelProfilerNocEventMetadata::isFabricEventType(noc_xfer_type.value())) {
-                log_error(
-                    tt::LogMetal,
-                    "[profiler noc tracing] Failed to parse noc transfer type: {}",
-                    fabric_event["type"].get<std::string>());
-                return std::nullopt;
-            }
+//             if (!noc_xfer_type.has_value() ||
+//                 !KernelProfilerNocEventMetadata::isFabricEventType(noc_xfer_type.value())) {
+//                 log_error(
+//                     tt::LogMetal,
+//                     "[profiler noc tracing] Failed to parse noc transfer type: {}",
+//                     fabric_event["type"].get<std::string>());
+//                 return std::nullopt;
+//             }
 
-            if (KernelProfilerNocEventMetadata::isFabricUnicastEventType(noc_xfer_type.value())) {
-                modified_write_event["dx"] = fabric_event.at("dx").get<int>();
-                modified_write_event["dy"] = fabric_event.at("dy").get<int>();
-            } else {
-                log_error(tt::LogMetal, "[profiler noc tracing] Noc multicasts in fabric events are not supported!");
-                return std::nullopt;
-            }
+//             if (KernelProfilerNocEventMetadata::isFabricUnicastEventType(noc_xfer_type.value())) {
+//                 modified_write_event["dx"] = fabric_event.at("dx").get<int>();
+//                 modified_write_event["dy"] = fabric_event.at("dy").get<int>();
+//             } else {
+//                 log_error(tt::LogMetal, "[profiler noc tracing] Noc multicasts in fabric events are not supported!");
+//                 return std::nullopt;
+//             }
 
-            // replace the type with fabric event type
-            modified_write_event["type"] = fabric_event["type"];
+//             // replace the type with fabric event type
+//             modified_write_event["type"] = fabric_event["type"];
 
-            modified_write_event["fabric_send"] = {
-                {"eth_chan", eth_chan}, {"start_distance", start_distance}, {"range", range}};
+//             modified_write_event["fabric_send"] = {
+//                 {"eth_chan", eth_chan}, {"start_distance", start_distance}, {"range", range}};
 
-            return modified_write_event;
-        } catch (const nlohmann::json::exception& e) {
-            log_warning(
-                tt::LogMetal,
-                "[profiler noc tracing] JSON parsing error during event coalescing for event in op '{}': {}",
-                fabric_event.value("op_name", "N/A"),
-                e.what());
-            return std::nullopt;
-        }
-    };
+//             return modified_write_event;
+//         } catch (const nlohmann::json::exception& e) {
+//             log_warning(
+//                 tt::LogMetal,
+//                 "[profiler noc tracing] JSON parsing error during event coalescing for event in op '{}': {}",
+//                 fabric_event.value("op_name", "N/A"),
+//                 e.what());
+//             return std::nullopt;
+//         }
+//     };
 
-    // coalesce fabric events into single logical trace events with extra 'fabric_send' metadata
-    std::unordered_map<RuntimeID, nlohmann::json::array_t> processed_events_by_opname;
-    for (auto& [runtime_id, events] : events_by_opname) {
-        nlohmann::json::array_t coalesced_events;
-        for (size_t i = 0; i < events.size(); /* manual increment */) {
-            const auto& current_event = events[i];
+//     // coalesce fabric events into single logical trace events with extra 'fabric_send' metadata
+//     std::unordered_map<RuntimeID, nlohmann::json::array_t> processed_events_by_opname;
+//     for (auto& [runtime_id, events] : events_by_opname) {
+//         nlohmann::json::array_t coalesced_events;
+//         for (size_t i = 0; i < events.size(); /* manual increment */) {
+//             const auto& current_event = events[i];
 
-            bool fabric_event_group_detected =
-                (current_event.contains("type") && current_event["type"].get<std::string>().starts_with("FABRIC_") &&
-                 (i + 2 < events.size()));
-            if (fabric_event_group_detected) {
-                if (auto maybe_fabric_event =
-                        process_fabric_event_group_if_valid(events[i], events[i + 1], events[i + 2]);
-                    maybe_fabric_event) {
-                    coalesced_events.push_back(maybe_fabric_event.value());
-                }
-                // Unconditionally advance past all coalesced events (fabric_event, fabric_routing_fields,
-                // local_noc_write_event), even if a valid event cannot be generated
-                i += 3;
-            } else {
-                // If not a fabric event group, simply copy existing event as-is
-                coalesced_events.push_back(current_event);
-                i += 1;
-            }
-        }
-        // Store the final coalesced/processed list for this op_name
-        processed_events_by_opname[runtime_id] = std::move(coalesced_events);
-    }
+//             bool fabric_event_group_detected =
+//                 (current_event.contains("type") && current_event["type"].get<std::string>().starts_with("FABRIC_") &&
+//                  (i + 2 < events.size()));
+//             if (fabric_event_group_detected) {
+//                 if (auto maybe_fabric_event =
+//                         process_fabric_event_group_if_valid(events[i], events[i + 1], events[i + 2]);
+//                     maybe_fabric_event) {
+//                     coalesced_events.push_back(maybe_fabric_event.value());
+//                 }
+//                 // Unconditionally advance past all coalesced events (fabric_event, fabric_routing_fields,
+//                 // local_noc_write_event), even if a valid event cannot be generated
+//                 i += 3;
+//             } else {
+//                 // If not a fabric event group, simply copy existing event as-is
+//                 coalesced_events.push_back(current_event);
+//                 i += 1;
+//             }
+//         }
+//         // Store the final coalesced/processed list for this op_name
+//         processed_events_by_opname[runtime_id] = std::move(coalesced_events);
+//     }
 
-    log_info(tt::LogMetal, "Writing profiler noc traces to '{}'", output_dir);
-    for (auto& [runtime_id, events] : processed_events_by_opname) {
-        // dump events to a json file inside directory output_dir named after the opname
-        std::filesystem::path rpt_path = output_dir;
-        std::string op_name = events.front().value("op_name", "UnknownOP");
-        if (!op_name.empty()) {
-            rpt_path /= fmt::format("noc_trace_dev{}_{}_ID{}.json", device_id, op_name, runtime_id);
-        } else {
-            rpt_path /= fmt::format("noc_trace_dev{}_ID{}.json", device_id, runtime_id);
-        }
-        std::ofstream file(rpt_path);
-        if (file.is_open()) {
-            // Write the final processed events for this op
-            file << nlohmann::json(std::move(events)).dump(2);
-        } else {
-            log_error(tt::LogMetal, "Could not write noc event json trace to '{}'", rpt_path);
-        }
-    }
-}
+//     log_info(tt::LogMetal, "Writing profiler noc traces to '{}'", output_dir);
+//     for (auto& [runtime_id, events] : processed_events_by_opname) {
+//         // dump events to a json file inside directory output_dir named after the opname
+//         std::filesystem::path rpt_path = output_dir;
+//         std::string op_name = events.front().value("op_name", "UnknownOP");
+//         if (!op_name.empty()) {
+//             rpt_path /= fmt::format("noc_trace_dev{}_{}_ID{}.json", device_id, op_name, runtime_id);
+//         } else {
+//             rpt_path /= fmt::format("noc_trace_dev{}_ID{}.json", device_id, runtime_id);
+//         }
+//         std::ofstream file(rpt_path);
+//         if (file.is_open()) {
+//             // Write the final processed events for this op
+//             file << nlohmann::json(std::move(events)).dump(2);
+//         } else {
+//             log_error(tt::LogMetal, "Could not write noc event json trace to '{}'", rpt_path);
+//         }
+//     }
+// }
 
-CoreCoord DeviceProfiler::getPhysicalAddressFromVirtual(chip_id_t device_id, const CoreCoord& c) const {
-    bool coord_is_translated = c.x >= MetalContext::instance().hal().get_virtual_worker_start_x() - 1 ||
-                               c.y >= MetalContext::instance().hal().get_virtual_worker_start_y() - 1;
-    try {
-        if (MetalContext::instance().hal().is_coordinate_virtualization_enabled() && coord_is_translated) {
-            const metal_SocDescriptor& soc_desc =
-                tt::tt_metal::MetalContext::instance().get_cluster().get_soc_desc(device_id);
-            // disable linting here; slicing is __intended__
-            // NOLINTBEGIN
-            return soc_desc.translate_coord_to(c, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
-            // NOLINTEND
-        } else {
-            return c;
-        }
-    } catch (const std::exception& e) {
-        log_error(tt::LogMetal, "Failed to translate virtual coordinate {},{} to physical", c.x, c.y);
-        return c;
-    }
-    return c;
-}
+// CoreCoord DeviceProfiler::getPhysicalAddressFromVirtual(chip_id_t device_id, const CoreCoord& c) const {
+//     bool coord_is_translated = c.x >= MetalContext::instance().hal().get_virtual_worker_start_x() - 1 ||
+//                                c.y >= MetalContext::instance().hal().get_virtual_worker_start_y() - 1;
+//     try {
+//         if (MetalContext::instance().hal().is_coordinate_virtualization_enabled() && coord_is_translated) {
+//             const metal_SocDescriptor& soc_desc =
+//                 tt::tt_metal::MetalContext::instance().get_cluster().get_soc_desc(device_id);
+//             // disable linting here; slicing is __intended__
+//             // NOLINTBEGIN
+//             return soc_desc.translate_coord_to(c, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
+//             // NOLINTEND
+//         } else {
+//             return c;
+//         }
+//     } catch (const std::exception& e) {
+//         log_error(tt::LogMetal, "Failed to translate virtual coordinate {},{} to physical", c.x, c.y);
+//         return c;
+//     }
+//     return c;
+// }
 
 DeviceProfiler::DeviceProfiler(const IDevice* device, const bool new_logs) {
 #if defined(TRACY_ENABLE)
@@ -1333,7 +1365,7 @@ std::filesystem::path DeviceProfiler::getOutputDir() const {
 #endif
 }
 
-void DeviceProfiler::dumpResults(
+std::vector<DeviceProfilerDataPoint> DeviceProfiler::readResults(
     IDevice* device,
     const std::vector<CoreCoord>& virtual_cores,
     const ProfilerDumpState state,
@@ -1347,6 +1379,7 @@ void DeviceProfiler::dumpResults(
         fmt::format("{}-{}-{}", device_id, magic_enum::enum_name(state), magic_enum::enum_name(data_source));
     ZoneName(zone_name.c_str(), zone_name.size());
 
+    std::vector<DeviceProfilerDataPoint> device_profiler_data;
     // FabricRoutingLookup routing_lookup;
     // if (state == ProfilerDumpState::NORMAL && rtoptions.get_profiler_noc_events_enabled()) {
     //     routing_lookup = FabricRoutingLookup(device);
@@ -1378,7 +1411,7 @@ void DeviceProfiler::dumpResults(
     // }
 
     // create nlohmann json log object
-    nlohmann::ordered_json noc_trace_json_log = nlohmann::json::array();
+    // nlohmann::ordered_json noc_trace_json_log = nlohmann::json::array();
 
     // Dispatch cores must be added after non-dispatch cores as they must be profiled after non-dispatch cores in order
     // to minimize the amount of dispatch data that is lost
@@ -1399,8 +1432,7 @@ void DeviceProfiler::dumpResults(
                 profile_buffer,
                 ProfilerDataBufferSource::DRAM,
                 metadata,
-                log_file_ofs,
-                noc_trace_json_log);
+                device_profiler_data);
         }
     } else {
         TT_ASSERT(data_source == ProfilerDataBufferSource::L1);
@@ -1419,8 +1451,7 @@ void DeviceProfiler::dumpResults(
                 core_l1_data_buffers.at(virtual_core),
                 ProfilerDataBufferSource::L1,
                 metadata,
-                log_file_ofs,
-                noc_trace_json_log);
+                device_profiler_data);
         }
     }
 
@@ -1439,6 +1470,8 @@ void DeviceProfiler::dumpResults(
     // }
 
     // log_file_ofs.close();
+
+    return device_profiler_data;
 #endif
 }
 

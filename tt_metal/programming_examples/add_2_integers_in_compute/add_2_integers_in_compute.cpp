@@ -25,7 +25,6 @@ int main() {
     distributed::MeshWorkload workload;
     distributed::MeshCoordinateRange device_range = distributed::MeshCoordinateRange(mesh_device->shape());
     Program program = CreateProgram();
-    auto device = mesh_device->get_devices()[0];
 
     constexpr CoreCoord core = {0, 0};
 

@@ -111,8 +111,12 @@ static void configure_risc_settings(
 }
 
 static size_t get_num_riscv_cores() {
-    return tt::tt_metal::MetalContext::instance().hal().get_processor_classes_count(
-        tt::tt_metal::HalProgrammableCoreType::ACTIVE_ETH);
+    if (getenv("TT_METAL_FABRIC_BLACKHOLE_ONE_ERISC") != nullptr) {
+        return 1;
+    } else {
+        return tt::tt_metal::MetalContext::instance().hal().get_processor_classes_count(
+            tt::tt_metal::HalProgrammableCoreType::ACTIVE_ETH);
+    }
 }
 
 FabricRiscConfig::FabricRiscConfig(uint32_t risc_id) :
@@ -254,7 +258,7 @@ void FabricEriscDatamoverConfig::configure_buffer_slots_helper(
     std::array<size_t, num_receiver_channels>& num_remote_receiver_buffer_slots,
     std::array<size_t, num_downstream_sender_channels>& num_downstream_sender_buffer_slots) {
     static const std::vector<std::vector<std::pair<size_t, size_t>>> linear_buffer_slot_options = {
-        {{8, 16}}, {{8, 16}}};
+        {{8, 16}}, {{16, 16}}};
 
     static const std::vector<std::vector<std::pair<size_t, size_t>>> ring_buffer_slot_options = {
         {{8, 8}, {4, 8}}, {{8, 8}, {4, 8}}};

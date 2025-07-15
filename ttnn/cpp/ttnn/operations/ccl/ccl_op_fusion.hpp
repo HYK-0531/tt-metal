@@ -147,7 +147,8 @@ struct MatmulFusedOpSignaler {
     void push_llama_rs_rt_args_for_rs(std::vector<uint32_t>& out_rt_args) const;
     // Is_privilaged, if yes: target_value, num_cores_to_signal, array_of_cores, if no: core_xy of signaler
     // First core to run this is the privilaged core
-    void push_llama_rs_rt_args_for_mm(std::vector<uint32_t>& out_rt_args, CoreCoord current_core) const;
+    void push_llama_rs_rt_args_for_mm(
+        std::vector<uint32_t>& out_rt_args, CoreCoord current_core, tt::tt_metal::NOC writer_noc) const;
 
     void init_fused_op(
         tt::tt_metal::Program& program,

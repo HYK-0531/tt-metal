@@ -306,7 +306,7 @@ void MatmulFusedOpSignaler::push_llama_rs_rt_args_for_rs(std::vector<uint32_t>& 
 }
 
 void MatmulFusedOpSignaler::push_llama_rs_rt_args_for_mm(
-    std::vector<uint32_t>& out_rt_args, CoreCoord current_core) const {
+    std::vector<uint32_t>& out_rt_args, CoreCoord current_core, tt::tt_metal::NOC writer_noc) const {
     out_rt_args.push_back(static_cast<uint32_t>(this->privilaged_core.x));
     out_rt_args.push_back(static_cast<uint32_t>(this->privilaged_core.y));
     out_rt_args.push_back(static_cast<uint32_t>(this->matmul_privilaged_semaphore));
@@ -314,10 +314,23 @@ void MatmulFusedOpSignaler::push_llama_rs_rt_args_for_mm(
         auto rs_cores_superset = this->rs_cores.bounding_box();
         out_rt_args.push_back(1);
         out_rt_args.push_back(this->matmul_semaphore_target);
-        out_rt_args.push_back(rs_cores_superset.start_coord.x);
-        out_rt_args.push_back(rs_cores_superset.start_coord.y);
-        out_rt_args.push_back(rs_cores_superset.end_coord.x);
-        out_rt_args.push_back(rs_cores_superset.end_coord.y);
+        // coordinates of the bounding box
+        if (writer_noc == NOC::NOC_1) {
+            out_rt_args.push_back(rs_cores_superset.end_coord.x);
+            out_rt_args.push_back(rs_cores_superset.end_coord.y);
+            out_rt_args.push_back(rs_cores_superset.start_coord.x);
+            out_rt_args.push_back(rs_cores_superset.start_coord.y);
+        } else {
+            out_rt_args.push_back(rs_cores_superset.start_coord.x);
+            out_rt_args.push_back(rs_cores_superset.start_coord.y);
+            out_rt_args.push_back(rs_cores_superset.end_coord.x);
+            out_rt_args.push_back(rs_cores_superset.end_coord.y);
+        }
+        // Size of the bounding box
+        out_rt_args.push_back(
+            (rs_cores_superset.end_coord.y - rs_cores_superset.end_coord.x + 1) *
+            (rs_cores_superset.start_coord.y - rs_cores_superset.start_coord.x + 1));
+        out_rt_args.push_back(static_cast<uint32_t>(this->rs_semaphore));
     } else {
         out_rt_args.push_back(0);
     }

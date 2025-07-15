@@ -128,14 +128,11 @@ void kernel_main() {
                     const std::pair<uint32_t, uint32_t> remote_core_physical =
                         get_core_physical_coordinates(other_core_id, physical_core_lookup_table_cb_index);
 
-                    sort_noc_exchange_Wt_tiles(
+                    sort_noc_exchange_tiles(
                         value_tensor_intermediate_cb_index,
-                        index_tensor_intermediate_cb_index,
                         value_tensor_peer_cb_index,
-                        index_tensor_peer_cb_index,
                         number_of_tiles_per_core,
                         input_tensor_tile_size_bytes,
-                        index_tensor_output_tile_size_bytes,
                         remote_core_physical.first,
                         remote_core_physical.second,
                         sem_self_exchange_ptr);

@@ -551,7 +551,8 @@ SortProgramFactoryCrossCoreDataExchange::cached_program_t SortProgramFactoryCros
     // Semaphores
     const uint32_t semaphore_exchange_readers = CreateSemaphore(program, core_range, 0);
     const uint32_t semaphore_exchange_writers = CreateSemaphore(program, core_range, 0);
-    const uint32_t semaphore_barrier = CreateSemaphore(program, core_range, 0);
+    const uint32_t semaphore_barrier_reader = CreateSemaphore(program, core_range, 0);
+    const uint32_t semaphore_barrier_writer = CreateSemaphore(program, core_range, 0);
 
     // Kernels
     const std::vector<uint32_t> reader_compile_time_args = {
@@ -573,7 +574,7 @@ SortProgramFactoryCrossCoreDataExchange::cached_program_t SortProgramFactoryCros
         all_core_utilization_count,
         !attributes.descending,
         semaphore_exchange_readers,
-        semaphore_barrier,
+        semaphore_barrier_reader,
     };
     const std::string reader_kernel_path =
         "ttnn/cpp/ttnn/operations/experimental/reduction/sort/device/kernels/dataflow/"
@@ -598,8 +599,11 @@ SortProgramFactoryCrossCoreDataExchange::cached_program_t SortProgramFactoryCros
         Ht,
         number_of_tiles_per_core,
         total_number_of_cores_virtual,
-        semaphore_exchange_readers,
-        static_cast<uint32_t>(is_32_bit_data)};
+        semaphore_exchange_writers,
+        static_cast<uint32_t>(is_32_bit_data),
+        semaphore_barrier_writer,
+        index_tensor_peer_cb_index,
+        index_tensor_intermediate_cb_index};
     const std::string writer_kernel_path =
         "ttnn/cpp/ttnn/operations/experimental/reduction/sort/device/kernels/dataflow/"
         "writer_cross_core_data_exchange.cpp";

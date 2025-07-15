@@ -23,33 +23,27 @@ using sem_ptr_t = volatile tt_l1_ptr uint32_t*;
 constexpr uint32_t ilog2(uint32_t n) { return 31 - __builtin_clz(n); }
 
 /**
- * @brief Exchanges Wt tiles between two cores over NoC.
+ * @brief Sends tiles from a circular buffer to a peer core over NoC.
  *
- * This function coordinates the exchange of Wt tiles between the calling core and a peer core.
- * It reads Wt tiles from the local value and index circular buffers, sends them to the peer core,
- * and then receives Wt tiles from the peer, writing them into the specified peer circular buffers.
- * Synchronization is handled using NoC semaphores to ensure correct ordering of tile transfers.
+ * This function coordinates the transfer of tiles from the calling core's circular buffer
+ * to a peer core's circular buffer. It reads tiles from the local buffer, sends them to the
+ * peer core, and synchronizes the transfer using NoC semaphores to ensure correct ordering.
+ * Only one circular buffer is involved in the exchange (no index/value pairing).
  *
- * @param value_tensor_this_cb_index   Circular buffer index for this core's value tensor tiles (read from).
- * @param index_tensor_this_cb_index   Circular buffer index for this core's index tensor tiles (read from).
- * @param cb_value_peer_index          Circular buffer index for peer's value tensor tiles (write to).
- * @param cb_index_peer_index          Circular buffer index for peer's index tensor tiles (write to).
- * @param Wt                           Number of tiles to exchange.
- * @param value_cb_tile_size           Size (in bytes) of each tile in value buffers.
- * @param index_cb_tile_size           Size (in bytes) of each tile in index buffers.
- * @param other_core_x                 Physical X coordinate of the peer core.
- * @param other_core_y                 Physical Y coordinate of the peer core.
- * @param sem_self_ptr                 Pointer to this core's semaphore for synchronization.
+ * @param base_cb_index        Circular buffer index for this core's tiles (read from).
+ * @param cb_peer_index        Circular buffer index for peer's tiles (write to).
+ * @param Wt                   Number of tiles to send.
+ * @param cb_tile_size         Size (in bytes) of each tile in the buffer.
+ * @param other_core_x         Physical X coordinate of the peer core.
+ * @param other_core_y         Physical Y coordinate of the peer core.
+ * @param sem_self_ptr         Pointer to this core's semaphore for synchronization.
  */
 FORCE_INLINE
-void sort_noc_exchange_Wt_tiles(
-    uint32_t value_tensor_this_cb_index,
-    uint32_t index_tensor_this_cb_index,
-    uint32_t cb_value_peer_index,
-    uint32_t cb_index_peer_index,
+void sort_noc_exchange_tiles(
+    uint32_t base_cb_index,
+    uint32_t cb_peer_index,
     uint32_t Wt,
-    uint32_t value_cb_tile_size,
-    uint32_t index_cb_tile_size,
+    uint32_t cb_tile_size,
     uint32_t other_core_x,
     uint32_t other_core_y,
     sem_ptr_t sem_self_ptr) {
@@ -59,43 +53,32 @@ void sort_noc_exchange_Wt_tiles(
 
     for (uint32_t w = 0, sem_counter = 1; w < Wt; w++, sem_counter += 2) {
         // Reserve space for new tiles
-        cb_reserve_back(cb_value_peer_index, ONE_TILE);
-        cb_reserve_back(cb_index_peer_index, ONE_TILE);
+        cb_reserve_back(cb_peer_index, ONE_TILE);
 
-        uint32_t cb_value_peer_local_write_addr = get_write_ptr(cb_value_peer_index);
-        uint32_t cb_index_peer_local_write_addr = get_write_ptr(cb_index_peer_index);
-
-        uint64_t cb_value_peer_noc_write_addr =
-            get_noc_addr(other_core_x, other_core_y, cb_value_peer_local_write_addr);
-        uint64_t cb_index_peer_noc_write_addr =
-            get_noc_addr(other_core_x, other_core_y, cb_index_peer_local_write_addr);
+        uint32_t cb_peer_local_write_addr = get_write_ptr(cb_peer_index);
+        uint64_t cb_peer_noc_write_addr = get_noc_addr(other_core_x, other_core_y, cb_peer_local_write_addr);
 
         // Handshake for tile exchange
         noc_semaphore_inc(sem_noc_addr, 1);
         noc_semaphore_wait(sem_self_ptr, sem_counter);
 
-        // Send local indices and values to peer
-        cb_wait_front(value_tensor_this_cb_index, ONE_TILE);
-        cb_wait_front(index_tensor_this_cb_index, ONE_TILE);
-        uint32_t value_cb_self_read_addr = get_read_ptr(value_tensor_this_cb_index);
-        uint32_t index_cb_self_read_addr = get_read_ptr(index_tensor_this_cb_index);
+        // Send local tile to peer
+        cb_wait_front(base_cb_index, ONE_TILE);
+        uint32_t base_cb_self_read_addr = get_read_ptr(base_cb_index);
 
-        // Write tiles to peer core
-        noc_async_write(value_cb_self_read_addr, cb_value_peer_noc_write_addr, value_cb_tile_size);
-        noc_async_write(index_cb_self_read_addr, cb_index_peer_noc_write_addr, index_cb_tile_size);
+        // Write tile to peer core
+        noc_async_write(base_cb_self_read_addr, cb_peer_noc_write_addr, cb_tile_size);
 
         noc_async_write_barrier();
 
-        cb_pop_front(value_tensor_this_cb_index, ONE_TILE);
-        cb_pop_front(index_tensor_this_cb_index, ONE_TILE);
+        cb_pop_front(base_cb_index, ONE_TILE);
 
         // Indicate finish reading and wait for other core to finish
         noc_semaphore_inc(sem_noc_addr, 1);
         noc_semaphore_wait(sem_self_ptr, sem_counter + 1);
 
-        // Push incoming tiles to compute buffers
-        cb_push_back(cb_value_peer_index, ONE_TILE);
-        cb_push_back(cb_index_peer_index, ONE_TILE);
+        // Push incoming tile to compute buffer
+        cb_push_back(cb_peer_index, ONE_TILE);
     }  // Wt
 
     // Reset semaphore value

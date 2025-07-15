@@ -168,8 +168,6 @@ int main(int argc, char **argv) {
     {
         distributed::MeshWorkload workload;
         Program program = CreateProgram();
-        distributed::AddProgramToMeshWorkload(workload, std::move(program), device_range);
-        auto& program_ = workload.get_programs().at(device_range);
 
         ////////// TENSIX CORE SETUP //////////
         // Define logical sender core and receiver core range (for kernel creation on the host).
@@ -195,19 +193,19 @@ int main(int argc, char **argv) {
 
         ////////// COORDINATOR KERNEL SETUP //////////
         KernelHandle coordinator_kernel_id = CreateKernel(
-            program_,
+            program,
             "tt_metal/programming_examples/contributed/multicast/kernels/dataflow/coordinator_kernel.cpp",
             sender_core_logical,
             DataMovementConfigIn);
 
         ////////// DATAFLOW KERNELS SETUP //////////
         KernelHandle inbound_kernel_id = CreateKernel(
-            program_,
+            program,
             "tt_metal/programming_examples/contributed/multicast/kernels/dataflow/inbound_kernel.cpp",
             receiver_cores_logical,
             DataMovementConfigIn);
         KernelHandle outbound_kernel_id = CreateKernel(
-            program_,
+            program,
             "tt_metal/programming_examples/contributed/multicast/kernels/dataflow/outbound_kernel.cpp",
             receiver_cores_logical,
             DataMovementConfigOut);
@@ -215,7 +213,7 @@ int main(int argc, char **argv) {
         ////////// COMPUTE KERNEL SETUP //////////
         vector<uint32_t> compute_kernel_args = {};
         KernelHandle comp_kernel_id = CreateKernel(
-            program_,
+            program,
             "tt_metal/programming_examples/contributed/multicast/kernels/compute/void_compute_kernel.cpp",
             receiver_cores_logical,
             ComputeConfig{
@@ -225,26 +223,26 @@ int main(int argc, char **argv) {
                 .compile_args = compute_kernel_args});
 
         ////////// SEMAPHORE SETUP //////////
-        uint32_t sender = CreateSemaphore(program_, all_cores_logical, 0);
-        uint32_t receiver = CreateSemaphore(program_, all_cores_logical, 0);
+        uint32_t sender = CreateSemaphore(program, all_cores_logical, 0);
+        uint32_t receiver = CreateSemaphore(program, all_cores_logical, 0);
 
         ////////// DRAM & SRAM BUFFERS SETUP //////////
         constexpr uint32_t num_tiles = 1;
         uint32_t dram_bank_id = 0;
         auto src0_dram_buffer = MakeBufferBFP16(mesh_device, num_tiles, false);
         auto output_dram_buffer = MakeBufferBFP16(mesh_device, num_dests * num_tiles, false);
-        auto cb_src0 = MakeCircularBufferBFP16(program_, all_cores_logical, tt::CBIndex::c_0, num_tiles);
-        auto cb_output = MakeCircularBufferBFP16(program_, all_cores_logical, tt::CBIndex::c_16, num_tiles);
+        auto cb_src0 = MakeCircularBufferBFP16(program, all_cores_logical, tt::CBIndex::c_0, num_tiles);
+        auto cb_output = MakeCircularBufferBFP16(program, all_cores_logical, tt::CBIndex::c_16, num_tiles);
 
         ////////// IDENTITY MATRIX TILE SETUP //////////
         std::vector<bfloat16> identity_tile = create_identity_matrix(TILE_WIDTH, TILE_HEIGHT, TILE_WIDTH);
-        EnqueueWriteMeshBuffer(cq, src0_dram_buffer, identity_tile);
+        distributed::EnqueueWriteMeshBuffer(cq, src0_dram_buffer, identity_tile);
 
         ////////// RUNTIME ARGS SETUP //////////
         // Args for the sender core to multicast tile.
         // They must have access to coordinates of all receiver cores, to execute multicast operation.
         SetRuntimeArgs(
-            program_,
+            program,
             coordinator_kernel_id,
             sender_core_logical,
             {(uint32_t)(receiver_core_start.x),
@@ -260,7 +258,7 @@ int main(int argc, char **argv) {
         // Args for the receiver cores to receive tile.
         // They must have access to coordinates of the sender core, to listen for multicast operation.
         SetRuntimeArgs(
-            program_,
+            program,
             inbound_kernel_id,
             receiver_cores_logical,
             {(uint32_t)(sender_core.x), (uint32_t)(sender_core.y), sender, receiver});
@@ -269,7 +267,7 @@ int main(int argc, char **argv) {
         int tile_index = 0;
         for (const CoreCoord& core : receiver_cores_logical) {
             SetRuntimeArgs(
-                program_, outbound_kernel_id, core, {output_dram_buffer->address(), static_cast<uint32_t>(tile_index)});
+                program, outbound_kernel_id, core, {output_dram_buffer->address(), static_cast<uint32_t>(tile_index)});
             tile_index++;
         }
 
@@ -281,9 +279,10 @@ int main(int argc, char **argv) {
             sender_core_logical.x,
             sender_core_logical.y,
             device_id);
-        EnqueueMeshWorkload(cq, workload, false);
+        distributed::AddProgramToMeshWorkload(workload, std::move(program), device_range);
+        distributed::EnqueueMeshWorkload(cq, workload, false);
         fmt::print("Waiting until program finishes\n");
-        Finish(cq);
+        distributed::Finish(cq);
         fmt::print(
             "Thank you, Core ({}, {}) on Device {}, for the multicast.\n",
             sender_core_logical.x,
@@ -296,8 +295,7 @@ int main(int argc, char **argv) {
 
         ////////// TILE MULTICAST VERIFICATION //////////
         std::vector<bfloat16> received_tiles(num_dests * TILE_HW);
-        // EnqueueReadMeshBuffer(cq, received_tiles, output_dram_buffer);  // read all multicast-received tiles to host.
-        ReadShard(cq, received_tiles, output_dram_buffer, {0, 0});
+        distributed::ReadShard(cq, received_tiles, output_dram_buffer, {0, 0});
         bool verbose_verify =
             false;  // if enabled, the original and all multicast-received tiles are printed in full (32x32).
         verify_tiles(identity_tile, received_tiles, num_dests, verbose_verify);

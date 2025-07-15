@@ -14,6 +14,7 @@ class default_setup(metaclass=MergeMetaclass):
         "TRISC_1",
         "TRISC_2",
         "ERISC",
+        "CORE_AGG",
     ]
 
     riscTypes = [
@@ -24,6 +25,18 @@ class default_setup(metaclass=MergeMetaclass):
     ]
 
     timerAnalysis = {
+        "trace_fw_duration": {
+            "across": "device",
+            "type": "adjacent",
+            "start": {"core": "ANY", "risc": "CORE_AGG", "zone_name": "TRACE-FW"},
+            "end": {"core": "ANY", "risc": "CORE_AGG", "zone_name": "TRACE-FW"},
+        },
+        "trace_kernel_duration": {
+            "across": "device",
+            "type": "adjacent",
+            "start": {"core": "ANY", "risc": "CORE_AGG", "zone_name": "TRACE-KERNEL"},
+            "end": {"core": "ANY", "risc": "CORE_AGG", "zone_name": "TRACE-KERNEL"},
+        },
         "op2op": {
             "across": "core",
             "type": "adjacent",

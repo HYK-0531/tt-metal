@@ -13,6 +13,11 @@ using namespace tt::tt_metal;
 #endif
 int main() {
     /* Silicon accelerator setup */
+
+    /* A MeshDevice is a software concept that allows developers to virtualize a cluster 
+    of connected devices as a single object, maintaining uniform memory and runtime state 
+    across all physical devices. A UnitMesh is a 1x1 MeshDevice that allows users to interface
+    with a single physical device. */
     std::shared_ptr<distributed::MeshDevice> mesh_device = distributed::MeshDevice::create_unit_mesh(
         0, DEFAULT_L1_SMALL_SIZE, DEFAULT_TRACE_REGION_SIZE, 1, DispatchCoreType::WORKER);
 
@@ -22,6 +27,7 @@ int main() {
     distributed::MeshCoordinateRange device_range = distributed::MeshCoordinateRange(mesh_device->shape());
     Program program = CreateProgram();
 
+    const auto device_coord = distributed::MeshCoordinate(0, 0);
     constexpr CoreCoord core = {0, 0};
 
     constexpr uint32_t single_tile_size = 2 * 1024;
@@ -47,9 +53,10 @@ int main() {
     std::vector<uint32_t> src0_vec(1, 14);
     std::vector<uint32_t> src1_vec(1, 7);
 
-    auto coord = distributed::MeshCoordinate(0, 0);
-    distributed::WriteShard(cq, src0_dram_buffer, src0_vec, coord);
-    distributed::WriteShard(cq, src1_dram_buffer, src1_vec, coord);
+    //We're writing to a shard allocated on Device Coordinate 0, 0, since this is a 1x1 
+    // When the MeshDevice is 2 dimensional, this API can be used to target specific physical devices
+    distributed::WriteShard(cq, src0_dram_buffer, src0_vec, device_coord);
+    distributed::WriteShard(cq, src1_dram_buffer, src1_vec, device_coord);
 
     /* Use L1 circular buffers to set input buffers */
     constexpr uint32_t src0_cb_index = CBIndex::c_0;
@@ -89,7 +96,10 @@ int main() {
 
     /* Read in result into a host vector */
     std::vector<uint32_t> result_vec;
-    distributed::ReadShard(cq, result_vec, dst_dram_buffer, coord);
+
+    //We're reading from a shard allocated on Device Coordinate 0, 0, since this is a 1x1 
+    // When the MeshDevice is 2 dimensional, this API can be used to target specific physical devices
+    distributed::ReadShard(cq, result_vec, dst_dram_buffer, device_coord);
     printf("Result = %d : Expected = 21\n", result_vec[0]);
 
     mesh_device.reset();

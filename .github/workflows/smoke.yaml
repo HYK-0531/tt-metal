@@ -59,7 +59,10 @@ jobs:
         run: |
           # The first test that runs compiles fw for the card and can blow the time budget for the test.
           # Run one that we won't measure the time for and the subsequent tests will be told to not clear the cache.
+          echo "List of tests:"
+          /usr/bin/${{ inputs.product }}-validation-smoke --gtest_list_tests
           test_name=$(/usr/bin/${{ inputs.product }}-validation-smoke --gtest_list_tests | awk 'NF && !/^\s/ {suite=$1} /^\s/ {print suite $1; exit}')
+          echo "Chosen first test: '${test_name}'"
           /usr/bin/${{ inputs.product }}-validation-smoke --gtest_filter="$test_name"
 
       - name: Run a test

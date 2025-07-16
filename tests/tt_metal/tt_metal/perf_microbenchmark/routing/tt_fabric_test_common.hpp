@@ -196,32 +196,41 @@ public:
      * This function takes hop information and computes the actual destination nodes that would be visited during a ring
      * traversal multicast.
      *
-     * For ring topology, nodes are arranged in a serpentine pattern where:
-     * - Traffic flows in a ring/circular pattern around the mesh
-     * - The direction of turn (at mesh boundaries) depends on the current row/position
-     * - Upper rows: East → South, Lower rows: East → North
-     * - Left columns: South → East, Right columns: South → West
+     * For ring topology, there are two cases:
+     * 1. Wrap-around mesh: nodes are arranged in a serpentine pattern where traffic flows in a ring/circular pattern
+     *    around the mesh. The direction of turn (at mesh boundaries) depends on the current row/position.
+     * 2. Non wrap-around mesh: when hitting a boundary, traffic wraps around to the opposite edge of the mesh.
      */
-    std::vector<FabricNodeId> get_wrap_around_mesh_ring_topology_dst_node_ids(
+    std::vector<FabricNodeId> get_ring_topology_dst_node_ids(
         const FabricNodeId& src_node_id, RoutingDirection initial_direction, uint32_t total_hops) const {
-        // Use the common ring traversal helper
-        auto ring_path = trace_wrap_around_mesh_ring_path(src_node_id, initial_direction, total_hops);
+        std::vector<std::pair<FabricNodeId, RoutingDirection>> ring_path;
+
+        // Check if this is a wrap-around mesh
+        bool is_wrap_around = wrap_around_mesh(src_node_id);
+
+        if (is_wrap_around) {
+            // Use the existing wrap-around mesh logic
+            ring_path = trace_wrap_around_mesh_ring_path(src_node_id, initial_direction, total_hops);
+        } else {
+            // Use the new non wrap-around mesh logic
+            ring_path = trace_non_wrap_around_mesh_ring_path(src_node_id, initial_direction, total_hops);
+        }
 
         std::vector<FabricNodeId> ring_destinations;
         ring_destinations.reserve(total_hops);
 
         // Extract destination nodes (skip the source node, get the next nodes in path)
         for (const auto& [current_node, direction] : ring_path) {
-            // Get the next node in this direction
             ring_destinations.push_back(current_node);
         }
 
         log_debug(
             tt::LogTest,
-            "src_node: {}, ring_destinations: {}, total_hops: {}",
+            "src_node: {}, ring_destinations: {}, total_hops: {}, is_wrap_around: {}",
             src_node_id,
             ring_destinations,
-            total_hops);
+            total_hops,
+            is_wrap_around);
 
         return ring_destinations;
     }
@@ -335,7 +344,7 @@ public:
                 }
             }
             TT_FATAL(total_hops != 0, "all directions has 0 hops");
-            return get_wrap_around_mesh_ring_topology_dst_node_ids(src_node, initial_direction, total_hops);
+            return get_ring_topology_dst_node_ids(src_node, initial_direction, total_hops);
         }
 
         std::vector<FabricNodeId> dst_nodes;
@@ -692,8 +701,6 @@ public:
         hops[direction_forward] = num_forward_hops;
         hops[direction_backward] = num_backward_hops;
 
-        log_info(tt::LogTest, "hopss: {}, ", hops);
-
         return hops;
     }
 
@@ -792,6 +799,10 @@ public:
     MeshShape get_mesh_shape() const override { return mesh_shape_; }
 
     Topology get_topology() const { return topology_; }
+
+    bool wrap_around_mesh(FabricNodeId node) const override {
+        return control_plane_ptr_->get_fabric_context().is_wrap_around_mesh(node.mesh_id);
+    }
 
     RoutingDirection get_forwarding_direction(
         const FabricNodeId& src_node_id, const FabricNodeId& dst_node_id) const override {
@@ -1133,6 +1144,82 @@ public:
             // Move to next coordinate
             current_coord = next_coord;
             current_node = get_fabric_node_id(current_coord);
+            // Record current node and outgoing direction
+            path.emplace_back(current_node, current_direction);
+        }
+
+        return path;
+    }
+
+    // Helper function to trace ring path with boundary wraparound logic for non wrap-around meshes
+    std::vector<std::pair<FabricNodeId, RoutingDirection>> trace_non_wrap_around_mesh_ring_path(
+        const FabricNodeId& src_node_id, RoutingDirection initial_direction, uint32_t total_hops) const {
+        std::vector<std::pair<FabricNodeId, RoutingDirection>> path;
+        path.reserve(total_hops);
+
+        // Get starting coordinate
+        MeshCoordinate current_coord = get_device_coord(src_node_id);
+        RoutingDirection current_direction = initial_direction;
+        FabricNodeId current_node = src_node_id;
+
+        for (uint32_t hop = 0; hop < total_hops; ++hop) {
+            // Try to move in current direction
+            MeshCoordinate next_coord = current_coord;
+            bool need_wraparound = false;
+
+            switch (current_direction) {
+                case RoutingDirection::N:
+                    if (current_coord[NS_DIM] == 0) {
+                        // Wrap around to bottom edge
+                        next_coord = MeshCoordinate(mesh_shape_[NS_DIM] - 1, current_coord[EW_DIM]);
+                        need_wraparound = true;
+                    } else {
+                        next_coord = MeshCoordinate(current_coord[NS_DIM] - 1, current_coord[EW_DIM]);
+                    }
+                    break;
+                case RoutingDirection::S:
+                    if (current_coord[NS_DIM] == mesh_shape_[NS_DIM] - 1) {
+                        // Wrap around to top edge
+                        next_coord = MeshCoordinate(0, current_coord[EW_DIM]);
+                        need_wraparound = true;
+                    } else {
+                        next_coord = MeshCoordinate(current_coord[NS_DIM] + 1, current_coord[EW_DIM]);
+                    }
+                    break;
+                case RoutingDirection::E:
+                    if (current_coord[EW_DIM] == mesh_shape_[EW_DIM] - 1) {
+                        // Wrap around to left edge
+                        next_coord = MeshCoordinate(current_coord[NS_DIM], 0);
+                        need_wraparound = true;
+                    } else {
+                        next_coord = MeshCoordinate(current_coord[NS_DIM], current_coord[EW_DIM] + 1);
+                    }
+                    break;
+                case RoutingDirection::W:
+                    if (current_coord[EW_DIM] == 0) {
+                        // Wrap around to right edge
+                        next_coord = MeshCoordinate(current_coord[NS_DIM], mesh_shape_[EW_DIM] - 1);
+                        need_wraparound = true;
+                    } else {
+                        next_coord = MeshCoordinate(current_coord[NS_DIM], current_coord[EW_DIM] - 1);
+                    }
+                    break;
+                default: TT_THROW("routing direction not supported: {}", current_direction);
+            }
+
+            // Move to next coordinate
+            current_coord = next_coord;
+            current_node = get_fabric_node_id(current_coord);
+
+            log_debug(
+                tt::LogTest,
+                "hop {}: moved from {} to {} in direction {}, wraparound: {}",
+                hop,
+                get_device_coord(src_node_id),
+                current_coord,
+                current_direction,
+                need_wraparound);
+
             // Record current node and outgoing direction
             path.emplace_back(current_node, current_direction);
         }

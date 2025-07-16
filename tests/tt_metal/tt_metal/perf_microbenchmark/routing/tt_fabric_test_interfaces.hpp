@@ -62,6 +62,7 @@ public:
     virtual ~IRouteManager() = default;
     virtual MeshShape get_mesh_shape() const = 0;
     virtual uint32_t get_num_mesh_dims() const = 0;
+    virtual bool wrap_around_mesh(FabricNodeId node) const = 0;
     virtual std::vector<FabricNodeId> get_dst_node_ids_from_hops(
         FabricNodeId src_node_id,
         std::unordered_map<RoutingDirection, uint32_t>& hops,

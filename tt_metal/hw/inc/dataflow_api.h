@@ -961,7 +961,7 @@ FORCE_INLINE void noc_async_read_tile(
     uint32_t dst_local_l1_addr,
     uint32_t offset = 0,
     uint8_t noc = noc_index) {
-    noc_async_read_page<InterleavedAddrGen<DRAM>>(id, addrgen, dst_local_l1_addr, addrgen.page_size, offset, noc);
+    noc_async_read_page<InterleavedAddrGen<DRAM>>(id, addrgen, dst_local_l1_addr, offset, noc);
 }
 
 // clang-format off
@@ -981,7 +981,7 @@ FORCE_INLINE void noc_async_read_page(
     uint32_t offset = 0,
     uint8_t noc = noc_index) {
     RECORD_NOC_EVENT_WITH_ID(NocEventType::READ, id, addrgen.page_size, -1);
-    noc_async_read_page<InterleavedAddrGen<DRAM>>(id, addrgen, dst_local_l1_addr, addrgen.page_size, offset, noc);
+    noc_async_read_page<InterleavedAddrGen<DRAM>>(id, addrgen, dst_local_l1_addr, offset, noc);
 }
 
 // clang-format off
@@ -1007,8 +1007,7 @@ FORCE_INLINE void noc_async_read_tile(
     uint32_t offset = 0,
     uint8_t noc = noc_index) {
     RECORD_NOC_EVENT_WITH_ID(NocEventType::READ, id, addrgen.page_size, -1);
-    noc_async_read_page<InterleavedAddrGenFast<DRAM, tile_hw>>(
-        id, addrgen, dst_local_l1_addr, addrgen.page_size, offset, noc);
+    noc_async_read_page<InterleavedAddrGenFast<DRAM, tile_hw>>(id, addrgen, dst_local_l1_addr, offset, noc);
 }
 
 // clang-format off

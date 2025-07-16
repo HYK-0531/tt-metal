@@ -16,6 +16,7 @@
 void kernel_main() {
     // Runtime args
     const uint32_t output_tensor_buffer_addr = get_arg_val<uint32_t>(0);
+    const uint32_t physical_core_lookup_table_buffer_addr = get_arg_val<uint32_t>(1);
 
     // Compile time args
     constexpr uint32_t compute_with_storage_grid_size_x = get_compile_time_arg_val(0);
@@ -34,6 +35,7 @@ void kernel_main() {
     const uint32_t sem_barrier_addr = get_semaphore(get_compile_time_arg_val(13));
     constexpr uint32_t index_tensor_peer_cb_index = get_compile_time_arg_val(14);
     constexpr uint32_t index_tensor_intermediate_cb_index = get_compile_time_arg_val(15);
+    constexpr bool physical_core_lookup_table_is_dram = get_compile_time_arg_val(16) == 1;
 
     // Constants
     constexpr uint32_t one_tile = 1;
@@ -57,6 +59,21 @@ void kernel_main() {
         .bank_base_address = output_tensor_buffer_addr,
         .page_size = value_tensor_tile_size_bytes,
         .data_format = value_tensor_data_format};
+
+    // Physical core lookup table config
+    constexpr uint32_t physical_core_lookup_table_tile_size_bytes = get_tile_size(physical_core_lookup_table_cb_index);
+    constexpr DataFormat physical_core_lookup_table_data_format = get_dataformat(physical_core_lookup_table_cb_index);
+    const InterleavedAddrGenFast<physical_core_lookup_table_is_dram> physical_core_lookup_table_accessor = {
+        .bank_base_address = physical_core_lookup_table_buffer_addr,
+        .page_size = physical_core_lookup_table_tile_size_bytes,
+        .data_format = physical_core_lookup_table_data_format};
+
+    // Read lookup table for physical core IDs
+    cb_reserve_back(physical_core_lookup_table_cb_index, one_tile);
+    const uint32_t physical_core_lookup_table_l1_write_addr = get_write_ptr(physical_core_lookup_table_cb_index);
+    uint64_t noc_addr = get_noc_addr(0, physical_core_lookup_table_accessor);
+    noc_async_read(noc_addr, physical_core_lookup_table_l1_write_addr, physical_core_lookup_table_tile_size_bytes);
+    noc_async_read_barrier();
 
     // Semaphore setup
     sem_ptr_t sem_self_exchange_ptr = reinterpret_cast<sem_ptr_t>(sem_exchange_addr);

@@ -540,7 +540,16 @@ SortProgramFactoryCrossCoreDataExchange::cached_program_t SortProgramFactoryCros
     const auto cb_physical_core_lookup_table =
         tt::tt_metal::CreateCircularBuffer(program, core_range, physical_core_lookup_table_cb_config);
 
-    constexpr uint32_t packer_unpacker_sync_cb_index = tt::CBIndex::c_11;
+    constexpr uint32_t physical_core_lookup_table_writer_cb_index = tt::CBIndex::c_11;
+    const tt::tt_metal::CircularBufferConfig physical_core_lookup_table_writer_cb_config =
+        tt::tt_metal::CircularBufferConfig(
+            physical_core_lookup_table_tile_size,
+            {{physical_core_lookup_table_writer_cb_index, physical_core_lookup_table_cb_data_format}})
+            .set_page_size(physical_core_lookup_table_writer_cb_index, physical_core_lookup_table_tile_size);
+    const auto cb_physical_core_lookup_table_writer =
+        tt::tt_metal::CreateCircularBuffer(program, core_range, physical_core_lookup_table_writer_cb_config);
+
+    constexpr uint32_t packer_unpacker_sync_cb_index = tt::CBIndex::c_12;
     const tt::tt_metal::CircularBufferConfig packer_unpacker_sync_cb_config =
         tt::tt_metal::CircularBufferConfig(
             packer_unpacker_sync_tile_size, {{packer_unpacker_sync_cb_index, packer_unpacker_sync_cb_data_format}})
@@ -593,23 +602,28 @@ SortProgramFactoryCrossCoreDataExchange::cached_program_t SortProgramFactoryCros
         index_tensor_cb_index,
         value_tensor_cb_index,
         value_tensor_peer_cb_index,
-        physical_core_lookup_table_cb_index,
+        physical_core_lookup_table_writer_cb_index,
         value_tensor_is_dram,
         Wt,
         Ht,
         number_of_tiles_per_core,
-        total_number_of_cores_virtual,
+        all_core_utilization_count,
         semaphore_exchange_writers,
         static_cast<uint32_t>(is_32_bit_data),
         semaphore_barrier_writer,
         index_tensor_peer_cb_index,
-        index_tensor_intermediate_cb_index};
+        index_tensor_intermediate_cb_index,
+        physical_core_lookup_table_is_dram};
     const std::string writer_kernel_path =
         "ttnn/cpp/ttnn/operations/experimental/reduction/sort/device/kernels/dataflow/"
         "writer_cross_core_data_exchange.cpp";
     tt::tt_metal::KernelHandle writer_kernel_id = tt::tt_metal::CreateKernel(
         program, writer_kernel_path, core_range, tt::tt_metal::WriterDataMovementConfig{writer_compile_time_args});
-    SetRuntimeArgs(program, writer_kernel_id, core_range, {value_buffer->address()});
+    SetRuntimeArgs(
+        program,
+        writer_kernel_id,
+        core_range,
+        {value_buffer->address(), physical_core_lookup_table_tensor_buffer->address()});
 
     const std::vector<uint32_t> compute_compile_time_args = {
         compute_with_storage_grid_size.x,

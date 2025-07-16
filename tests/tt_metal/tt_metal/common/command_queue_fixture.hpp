@@ -145,18 +145,6 @@ protected:
     void CreateDevices(const size_t trace_region_size) { this->create_devices(trace_region_size); }
 };
 
-class UnitMeshCQTraceFixture : public UnitMeshCQFixture {
-protected:
-    void SetUp() override {
-        if (!this->validate_dispatch_mode()) {
-            GTEST_SKIP();
-        }
-        this->arch_ = tt::get_arch_from_string(tt::test_utils::get_umd_arch_name());
-    }
-
-    void CreateDevices(const size_t trace_region_size) { this->create_devices(trace_region_size); }
-};
-
 // #22835: These Fixtures will be removed once tests are fully migrated, and replaced by UnitMeshCQSingleCardFixture and
 // UnitMeshCQSingleCardProgramFixture
 class CommandQueueSingleCardFixture : virtual public DispatchFixture {

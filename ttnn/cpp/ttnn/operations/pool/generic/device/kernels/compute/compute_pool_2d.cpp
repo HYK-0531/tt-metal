@@ -40,7 +40,7 @@ void MAIN {
     constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(12);
     constexpr uint32_t out_cb_id = get_compile_time_arg_val(13);
     constexpr bool one_scalar_per_core = get_compile_time_arg_val(14);
-    constexpr uint32_t bf32_scalar = get_compile_time_arg_val(15);
+    constexpr uint32_t fp32_scalar = get_compile_time_arg_val(15);
     constexpr uint32_t sync_cb_id = get_compile_time_arg_val(16);
 
     constexpr bool is_partial_tile = in_c < 32;
@@ -81,7 +81,7 @@ void MAIN {
         const bool reader0 = !(split_reader && (n & 0x1));
         const uint32_t curr_scalar_cb_id = (!reader0 && !one_scalar_per_core) ? in_scalar_cb_id_1 : in_scalar_cb_id_0;
         const uint32_t curr_in_cb_id = !reader0 ? in_cb_id_1 : in_cb_id_0;
-        uint32_t bf32_scalar_var = 0;
+        uint32_t fp32_scalar_var = 0;
         if constexpr (!one_scalar_per_core) {
             cb_wait_front(curr_scalar_cb_id, 1);
 
@@ -91,12 +91,12 @@ void MAIN {
             cb_wait_front(sync_cb_id, 1);
             cb_pop_front(sync_cb_id, 1);
 
-            volatile uint32_t* bf32_scalar_ptr;
-            cb_get_tile(curr_scalar_cb_id, 0, &bf32_scalar_ptr);
-            bf32_scalar_ptr += reader0 ? multi_buffer_offset_0 : multi_buffer_offset_1;
-            uint32_t pointer_cast = (uint32_t)bf32_scalar_ptr;
-            bf32_scalar_var = bf32_scalar_ptr[4];  // value from get tile is offset by 4 elements
-            // DPRINT << "GET TILE value: " << bf32_scalar_var << " from: " << pointer_cast + 16 << ENDL();
+            volatile uint32_t* fp32_scalar_ptr;
+            cb_get_tile(curr_scalar_cb_id, 0, &fp32_scalar_ptr);
+            fp32_scalar_ptr += reader0 ? multi_buffer_offset_0 : multi_buffer_offset_1;
+            uint32_t pointer_cast = (uint32_t)fp32_scalar_ptr;
+            fp32_scalar_var = fp32_scalar_ptr[4];  // value from get tile is offset by 4 elements
+            // DPRINT << "GET TILE value: " << fp32_scalar_var << " from: " << pointer_cast + 16 << ENDL();
             cb_release_tile(curr_scalar_cb_id);
 
             if (reader0) {
@@ -131,9 +131,9 @@ void MAIN {
                         // 3x3 kernel -> 1/9 = 1038323257
                         // 9x9 kernel -> 1/81 = 1011500424
                         if constexpr (one_scalar_per_core) {
-                            mul_unary_tile(math_tile_idx, bf32_scalar);
+                            mul_unary_tile(math_tile_idx, fp32_scalar);
                         } else {
-                            mul_unary_tile(math_tile_idx, bf32_scalar_var);
+                            mul_unary_tile(math_tile_idx, fp32_scalar_var);
                         }
                     }
                 }

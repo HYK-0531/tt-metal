@@ -420,8 +420,8 @@ tt::tt_metal::operation::ProgramWithCallbacks ring_reduce_scatter_minimal_async_
                 uint32_t num_workers = num_links * num_workers_per_direction;
                 uint32_t tiles_read = (worker_id * batch_slice_num_pages / num_workers);
                 uint32_t tiles_to_read = (worker_id + 1) * batch_slice_num_pages / num_workers;
-                uint32_t chunks_per_sync_val =
-                    chunks_per_sync.value_or((tiles_to_read - tiles_read) / tile_granularity / 2);
+                uint32_t chunks_per_sync_val = chunks_per_sync.value_or(
+                    std::max((tiles_to_read - tiles_read) / tile_granularity / 2, (uint32_t)1));
 
                 auto sender_reader_kernel_config = tt::tt_metal::ReaderDataMovementConfig{};
                 sender_reader_kernel_config.compile_args = {
@@ -907,7 +907,7 @@ tt::tt_metal::operation::ProgramWithCallbacks line_reduce_scatter_minimal_async_
                 uint32_t tiles_to_read = (link * num_workers_per_direction + worker + 1) * batch_slice_num_pages /
                                          (num_links * num_workers_per_direction);
                 uint32_t chunks_per_sync_val =
-                    chunks_per_sync.value_or((tiles_to_read - tiles_read) / tile_granularity);
+                    chunks_per_sync.value_or(std::max((tiles_to_read - tiles_read) / tile_granularity, (uint32_t)1));
 
                 // Reader
                 auto sender_reader_kernel_config = tt::tt_metal::ReaderDataMovementConfig{};

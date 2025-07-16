@@ -1299,7 +1299,7 @@ private:
             // Extract the valid ring neighbors
             auto [dst_node_forward, dst_node_backward] = ring_neighbors.value();
 
-            auto hops = this->route_manager_.get_full_or_half_ring_mcast_hops(
+            auto hops = this->route_manager_.get_wrap_around_mesh_full_or_half_ring_mcast_hops(
                 src_node, dst_node_forward, dst_node_backward, pattern_type);
 
             ParsedTrafficPatternConfig specific_pattern;
@@ -1374,10 +1374,10 @@ private:
         auto [multi_directional_hops, global_sync_val] =
             this->route_manager_.get_sync_hops_and_val(src_device, devices);
 
+        log_info(tt::LogTest, "src_device: {} multi_directional_hops: {}, ", src_device, multi_directional_hops);
+
         // Split multi-directional hops into single-direction patterns
         auto split_hops_vec = this->route_manager_.split_multicast_hops(multi_directional_hops);
-
-        log_info(tt::LogTest, "src_device: {} split_hops_vec: {}, ", src_device, split_hops_vec);
 
         log_debug(
             LogTest,

@@ -623,7 +623,7 @@ public:
         }
     }
 
-    std::unordered_map<RoutingDirection, uint32_t> get_full_or_half_ring_mcast_hops(
+    std::unordered_map<RoutingDirection, uint32_t> get_wrap_around_mesh_full_or_half_ring_mcast_hops(
         const FabricNodeId& src_node_id,
         const FabricNodeId& dst_node_forward_id,
         const FabricNodeId& dst_node_backward_id,
@@ -638,8 +638,53 @@ public:
 
         auto num_forward_hops = 0;
         auto num_backward_hops = 0;
-        // TODO: fix for 6U since this is not a valide config for it.
         uint32_t full_hop_count = 2 * (mesh_shape_[NS_DIM] - 1 + mesh_shape_[EW_DIM] - 1) - 1;
+
+        if (pattern_type == HighLevelTrafficPattern::FullRingMulticast) {
+            num_forward_hops = full_hop_count;
+            num_backward_hops = full_hop_count;
+        } else if (pattern_type == HighLevelTrafficPattern::HalfRingMulticast) {
+            num_forward_hops = tt::div_up(full_hop_count, 2);
+            num_backward_hops = full_hop_count - num_forward_hops;
+            if (src_node_id.chip_id % 2 == 0) {
+                std::swap(num_forward_hops, num_backward_hops);
+            }
+        } else {
+            TT_THROW(
+                "Unsupported pattern type for ring multicast: only FullRingMulticast and HalfRingMulticast are "
+                "supported");
+        }
+
+        hops[direction_forward] = num_forward_hops;
+        hops[direction_backward] = num_backward_hops;
+
+        return hops;
+    }
+
+    std::unordered_map<RoutingDirection, uint32_t> get_full_or_half_ring_mcast_hops(
+        const FabricNodeId& src_node_id, HighLevelTrafficPattern pattern_type, uint32_t dim) const override {
+        std::unordered_map<RoutingDirection, uint32_t> hops;
+        for (const auto& direction : FabricContext::routing_directions) {
+            hops[direction] = 0;
+        }
+
+        auto num_forward_hops = 0;
+        auto num_backward_hops = 0;
+        uint32_t full_hop_count = 0;
+        RoutingDirection direction_forward = RoutingDirection::N;
+        RoutingDirection direction_backward = RoutingDirection::N;
+
+        if (dim == NS_DIM) {
+            full_hop_count = mesh_shape_[NS_DIM] - 1;
+            direction_forward = RoutingDirection::N;
+            direction_backward = RoutingDirection::S;
+        } else if (dim == EW_DIM) {
+            full_hop_count = mesh_shape_[EW_DIM] - 1;
+            direction_forward = RoutingDirection::E;
+            direction_backward = RoutingDirection::W;
+        } else {
+            TT_THROW("input mesh dim is not supported: {}", dim);
+        }
 
         if (pattern_type == HighLevelTrafficPattern::FullRingMulticast) {
             num_forward_hops = full_hop_count;
@@ -821,29 +866,45 @@ public:
         const FabricNodeId& src_device, const std::vector<FabricNodeId>& devices) const override {
         std::unordered_map<RoutingDirection, uint32_t> multi_directional_hops;
         uint32_t global_sync_val = 0;
+        bool wrap_around_mesh = control_plane_ptr_->get_fabric_context().is_wrap_around_mesh(src_device.mesh_id);
+
+        log_info(tt::LogTest, "wrap_around_mesh: {}, ", wrap_around_mesh);
 
         switch (topology_) {
             case tt::tt_fabric::Topology::Ring: {
-                // Get ring neighbors - returns nullopt for non-perimeter devices
-                auto ring_neighbors = this->get_wrap_around_mesh_ring_neighbors(src_device, devices);
+                if (wrap_around_mesh) {
+                    // Get ring neighbors - returns nullopt for non-perimeter devices
+                    auto ring_neighbors = this->get_wrap_around_mesh_ring_neighbors(src_device, devices);
+                    // Check if the result is valid (has value)
+                    if (!ring_neighbors.has_value()) {
+                        // Skip this device as it's not on the perimeter and can't participate in ring multicast
+                        log_info(LogTest, "Skipping device {} as it's not on the perimeter ring", src_device.chip_id);
+                        return {{}, 0};
+                    }
 
-                // Check if the result is valid (has value)
-                if (!ring_neighbors.has_value()) {
-                    // Skip this device as it's not on the perimeter and can't participate in ring multicast
-                    log_info(LogTest, "Skipping device {} as it's not on the perimeter ring", src_device.chip_id);
-                    return {{}, 0};
+                    // Extract the valid ring neighbors
+                    auto [dst_node_forward, dst_node_backward] = ring_neighbors.value();
+
+                    multi_directional_hops = this->get_wrap_around_mesh_full_or_half_ring_mcast_hops(
+                        src_device, dst_node_forward, dst_node_backward, HighLevelTrafficPattern::FullRingMulticast);
+
+                    // minus 2 because full ring pattern traverse each node twice.
+                    auto num_sync_devices = this->get_num_sync_devices();
+                    global_sync_val = 2 * num_sync_devices -
+                                      2;  // minus 2 because in a full ring pattern we dont mcast to self (twice).
+                } else {
+                    // if not wrap around mesh, then need to get the neighbours on all directions.
+                    auto ns_hops = this->get_full_or_half_ring_mcast_hops(
+                        src_device, HighLevelTrafficPattern::FullRingMulticast, NS_DIM);
+                    auto ew_hops = this->get_full_or_half_ring_mcast_hops(
+                        src_device, HighLevelTrafficPattern::FullRingMulticast, EW_DIM);
+                    for (const auto& [direction, hops] : ns_hops) {
+                        multi_directional_hops[direction] = hops;
+                    }
+                    for (const auto& [direction, hops] : ew_hops) {
+                        multi_directional_hops[direction] = hops;
+                    }
                 }
-
-                // Extract the valid ring neighbors
-                auto [dst_node_forward, dst_node_backward] = ring_neighbors.value();
-
-                multi_directional_hops = this->get_full_or_half_ring_mcast_hops(
-                    src_device, dst_node_forward, dst_node_backward, HighLevelTrafficPattern::FullRingMulticast);
-
-                // minus 2 because full ring pattern traverse each node twice.
-                auto num_sync_devices = this->get_num_sync_devices();
-                global_sync_val =
-                    2 * num_sync_devices - 2;  // minus 2 because in a full ring pattern we dont mcast to self (twice).
                 break;
             }
             case tt::tt_fabric::Topology::Linear: {

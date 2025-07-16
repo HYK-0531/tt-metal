@@ -188,7 +188,6 @@ class MultiCommandQueueSingleDeviceBufferFixture : public MultiCommandQueueSingl
 
 class MultiCommandQueueSingleDeviceProgramFixture : public MultiCommandQueueSingleDeviceFixture {};
 
-class MultiCommandQueueSingleDeviceTraceFixture : public MultiCommandQueueSingleDeviceFixture {
 protected:
     void SetUp() override {
         if (!this->validate_dispatch_mode()) {

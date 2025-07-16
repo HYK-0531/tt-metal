@@ -231,8 +231,8 @@ void ControlPlane::initialize_dynamic_routing_plane_counts(
                 auto fabric_chip_id =
                     this->routing_table_generator_->mesh_graph->coordinate_to_chip(mesh_id, mesh_coord);
                 const auto fabric_node_id = FabricNodeId(mesh_id, fabric_chip_id);
-                auto mesh_coord_x = mesh_coord[0];
-                auto mesh_coord_y = mesh_coord[1];
+                auto mesh_coord_x = mesh_coord[1];
+                auto mesh_coord_y = mesh_coord[0];
 
                 const auto& port_directions = this->router_port_directions_to_physical_eth_chan_map_.at(fabric_node_id);
 
@@ -277,8 +277,8 @@ void ControlPlane::initialize_dynamic_routing_plane_counts(
                 auto fabric_chip_id =
                     this->routing_table_generator_->mesh_graph->coordinate_to_chip(mesh_id, mesh_coord);
                 const auto fabric_node_id = FabricNodeId(mesh_id, fabric_chip_id);
-                auto mesh_coord_x = mesh_coord[0];
-                auto mesh_coord_y = mesh_coord[1];
+                auto mesh_coord_x = mesh_coord[1];
+                auto mesh_coord_y = mesh_coord[0];
 
                 apply_count(fabric_node_id, RoutingDirection::E, row_min_planes.at(mesh_coord_y));
                 apply_count(fabric_node_id, RoutingDirection::W, row_min_planes.at(mesh_coord_y));
@@ -1890,7 +1890,7 @@ void ControlPlane::generate_local_intermesh_link_table() {
         tt_metal::HalProgrammableCoreType::ACTIVE_ETH, tt_metal::HalL1MemAddrType::ETH_LINK_REMOTE_INFO);
     for (const auto& chip_id : cluster.user_exposed_chip_ids()) {
         if (this->has_intermesh_links(chip_id)) {
-            for (const auto& [eth_core, chan_id] : this->get_intermesh_eth_links(chip_id)) {                
+            for (const auto& [eth_core, chan_id] : this->get_intermesh_eth_links(chip_id)) {
                 // TODO: remove below logic, should at very least be using UMD apis to get ids
                 // But all this data can be provided by UMD
                 tt_cxy_pair virtual_eth_core(

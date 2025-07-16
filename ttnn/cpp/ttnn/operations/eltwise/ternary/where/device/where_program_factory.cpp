@@ -176,7 +176,7 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
     // READER KERNEL
     auto reader_kernel_id = tt_metal::CreateKernel(
         program,
-        "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/dataflow/eltwise_ternary_reader_sfpu.cpp",
+        "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/dataflow/ternary_reader_nobcast_ttt.cpp",
         all_device_cores,
         tt_metal::ReaderDataMovementConfig(
             {predicate_is_dram,
@@ -221,11 +221,13 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
 
     if (predicate_tensor.dtype() == DataType::FLOAT32) {
         kernel_defines["WHERE_LLK"] = "where_fp32_tile";
+    } else if (predicate_tensor.dtype() == DataType::INT32) {
+        kernel_defines["WHERE_LLK"] = "where_int32_tile";
     }
 
     auto compute_kernel_id = tt_metal::CreateKernel(
         program,
-        "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/compute/eltwise_ternary_sfpu_no_bcast.cpp",
+        "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/compute/where_sfpu_no_bcast_ttt.cpp",
         all_device_cores,
         tt_metal::ComputeConfig{
             .fp32_dest_acc_en = fp32_dest_acc_en,

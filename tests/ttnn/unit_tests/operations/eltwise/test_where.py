@@ -7,19 +7,26 @@ import ttnn
 import pytest
 
 
-def test_ttnn_where(device):
-    C = torch.ones((2, 3, 64, 128), dtype=torch.float32)
-    T = torch.randn((2, 3, 64, 128), dtype=torch.float32)
-    F = torch.ones((2, 3, 64, 128), dtype=torch.float32) * 10
-    golden = torch.where(C != 0, T, F)
+@pytest.mark.parametrize(
+    "a_shape, b_shape, c_shape",
+    [
+        ((2, 3, 64, 128), (2, 3, 64, 128), (2, 3, 64, 128)),
+        ((2, 3, 1, 1), (2, 3, 32, 32), (2, 3, 32, 32)),
+    ],
+)
+def test_ttnn_where(a_shape, b_shape, c_shape, device):
+    C = torch.ones(a_shape, dtype=torch.float32)
+    T = torch.randn(b_shape, dtype=torch.float32)
+    F = torch.ones(c_shape, dtype=torch.float32) * 10
+    golden = torch.where(C.bool(), T, F)
 
     ttnn_C = ttnn.from_torch(C, dtype=ttnn.float32, layout=ttnn.TILE_LAYOUT, device=device)
     ttnn_T = ttnn.from_torch(T, dtype=ttnn.float32, layout=ttnn.TILE_LAYOUT, device=device)
     ttnn_F = ttnn.from_torch(F, dtype=ttnn.float32, layout=ttnn.TILE_LAYOUT, device=device)
     ttnn_result = ttnn.where(ttnn_C, ttnn_T, ttnn_F)
     result = ttnn.to_torch(ttnn_result)
-    print(result)
-    print(golden)
+    # print(result)
+    # print(golden)
 
 
 def torch_equal_nan(a, b):

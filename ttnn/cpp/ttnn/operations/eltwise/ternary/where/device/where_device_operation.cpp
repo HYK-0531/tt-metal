@@ -147,6 +147,7 @@ WhereDeviceOperation::invoke(
         .memory_config = memory_config.value_or(predicate.memory_config()),
         .input_dtype = predicate.dtype(),
         .dtype = output_dtype,
+        .where_variant = WhereVariant::TTT,
         .compute_kernel_config = std::nullopt,
 
     };

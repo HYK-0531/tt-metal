@@ -7,9 +7,15 @@
 #include "ttnn/decorators.hpp"
 #include "ttnn/device_operation.hpp"
 #include "ttnn/operations/core/compute_kernel/compute_kernel_config.hpp"
-#include "ttnn/operations/eltwise/unary/common/unary_op_types.hpp"
 
 namespace ttnn::operations::ternary {
+
+enum class WhereVariant {
+    TTT,
+    TTS,
+    TST,
+    TSS,
+};
 
 struct WhereDeviceOperation {
     using spec_return_value_t = TensorSpec;
@@ -19,6 +25,7 @@ struct WhereDeviceOperation {
         tt::tt_metal::MemoryConfig memory_config;
         DataType input_dtype;
         std::optional<DataType> dtype;
+        WhereVariant where_variant;
         std::optional<DeviceComputeKernelConfig> compute_kernel_config;
 
         DataType get_dtype() const;

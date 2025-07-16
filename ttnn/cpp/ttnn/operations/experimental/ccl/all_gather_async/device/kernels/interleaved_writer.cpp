@@ -106,54 +106,54 @@ void kernel_main() {
 
             // Will have more cases once scatter-write supports more than 2 distinct addresses
             switch (tiles_to_put_in_current_packet) {
-                case 2: {
-                    uint32_t tile_one_id = tile_id_start + row_offset + pages_read_in_row;
-                    pages_read_in_row++;
-                    if (pages_read_in_row >= input_tensor_Wt) {
-                        row_offset += output_tensor_Wt;
-                        pages_read_in_row = 0;
-                    }
+                // case 2: {
+                //     uint32_t tile_one_id = tile_id_start + row_offset + pages_read_in_row;
+                //     pages_read_in_row++;
+                //     if (pages_read_in_row >= input_tensor_Wt) {
+                //         row_offset += output_tensor_Wt;
+                //         pages_read_in_row = 0;
+                //     }
 
-                    uint32_t tile_two_id = tile_id_start + row_offset + pages_read_in_row;
-                    pages_read_in_row++;
-                    if (pages_read_in_row >= input_tensor_Wt) {
-                        row_offset += output_tensor_Wt;
-                        pages_read_in_row = 0;
-                    }
+                //     uint32_t tile_two_id = tile_id_start + row_offset + pages_read_in_row;
+                //     pages_read_in_row++;
+                //     if (pages_read_in_row >= input_tensor_Wt) {
+                //         row_offset += output_tensor_Wt;
+                //         pages_read_in_row = 0;
+                //     }
 
-                    uint64_t noc0_dest_noc_addr_tile_one =
-                        get_noc_addr(tile_one_id, output_addrgen, 0 /*offset*/, 0 /*noc_id*/);
-                    uint64_t noc0_dest_noc_addr_tile_two =
-                        get_noc_addr(tile_two_id, output_addrgen, 0 /*offset*/, 0 /*noc_id*/);
+                //     uint64_t noc0_dest_noc_addr_tile_one =
+                //         get_noc_addr(tile_one_id, output_addrgen, 0 /*offset*/, 0 /*noc_id*/);
+                //     uint64_t noc0_dest_noc_addr_tile_two =
+                //         get_noc_addr(tile_two_id, output_addrgen, 0 /*offset*/, 0 /*noc_id*/);
 
-                    if (direction == 1) {
-                        if (num_targets_backward_direction) {
-                            scatter_write_for_fabric_write_backward(
-                                noc0_dest_noc_addr_tile_one,
-                                noc0_dest_noc_addr_tile_two,
-                                pkt_hdr,
-                                fabric_connection,
-                                l1_read_addr,
-                                output_page_size,
-                                output_page_size);
-                        }
-                        noc_async_write_tile(tile_one_id, output_addrgen, l1_read_addr);
-                        noc_async_write_tile(tile_two_id, output_addrgen, l1_read_addr + output_page_size);
-                        noc_async_write_barrier();
-                    } else {
-                        if (num_targets_forward_direction) {
-                            scatter_write_for_fabric_write_forward(
-                                noc0_dest_noc_addr_tile_one,
-                                noc0_dest_noc_addr_tile_two,
-                                pkt_hdr,
-                                fabric_connection,
-                                l1_read_addr,
-                                output_page_size,
-                                output_page_size);
-                        }
-                    }
-                    break;
-                }
+                //     if (direction == 1) {
+                //         if (num_targets_backward_direction) {
+                //             scatter_write_for_fabric_write_backward(
+                //                 noc0_dest_noc_addr_tile_one,
+                //                 noc0_dest_noc_addr_tile_two,
+                //                 pkt_hdr,
+                //                 fabric_connection,
+                //                 l1_read_addr,
+                //                 output_page_size,
+                //                 output_page_size);
+                //         }
+                //         noc_async_write_tile(tile_one_id, output_addrgen, l1_read_addr);
+                //         noc_async_write_tile(tile_two_id, output_addrgen, l1_read_addr + output_page_size);
+                //         noc_async_write_barrier();
+                //     } else {
+                //         if (num_targets_forward_direction) {
+                //             scatter_write_for_fabric_write_forward(
+                //                 noc0_dest_noc_addr_tile_one,
+                //                 noc0_dest_noc_addr_tile_two,
+                //                 pkt_hdr,
+                //                 fabric_connection,
+                //                 l1_read_addr,
+                //                 output_page_size,
+                //                 output_page_size);
+                //         }
+                //     }
+                //     break;
+                // }
                 case 1:
                 default: {
                     uint32_t tile_id = tile_id_start + row_offset + pages_read_in_row;
@@ -282,47 +282,47 @@ void kernel_main() {
 
                 // Will have more cases once scatter-write supports more than 2 distinct addresses
                 switch (tiles_to_put_in_current_packet) {
-                    case 2: {
-                        uint32_t tile_one_id = tile_id_start + row_offset + pages_read_in_row;
-                        pages_read_in_row++;
-                        if (pages_read_in_row >= slice_Wt) {
-                            row_offset += stride_Wt;
-                            pages_read_in_row = 0;
-                        }
+                    // case 2: {
+                    //     uint32_t tile_one_id = tile_id_start + row_offset + pages_read_in_row;
+                    //     pages_read_in_row++;
+                    //     if (pages_read_in_row >= slice_Wt) {
+                    //         row_offset += stride_Wt;
+                    //         pages_read_in_row = 0;
+                    //     }
 
-                        uint32_t tile_two_id = tile_id_start + row_offset + pages_read_in_row;
-                        pages_read_in_row++;
-                        if (pages_read_in_row >= slice_Wt) {
-                            row_offset += stride_Wt;
-                            pages_read_in_row = 0;
-                        }
+                    //     uint32_t tile_two_id = tile_id_start + row_offset + pages_read_in_row;
+                    //     pages_read_in_row++;
+                    //     if (pages_read_in_row >= slice_Wt) {
+                    //         row_offset += stride_Wt;
+                    //         pages_read_in_row = 0;
+                    //     }
 
-                        uint64_t noc0_dest_noc_addr_tile_one =
-                            get_noc_addr(tile_one_id, output_addrgen, 0 /*offset*/, 0 /*noc_id*/);
-                        uint64_t noc0_dest_noc_addr_tile_two =
-                            get_noc_addr(tile_two_id, output_addrgen, 0 /*offset*/, 0 /*noc_id*/);
+                    //     uint64_t noc0_dest_noc_addr_tile_one =
+                    //         get_noc_addr(tile_one_id, output_addrgen, 0 /*offset*/, 0 /*noc_id*/);
+                    //     uint64_t noc0_dest_noc_addr_tile_two =
+                    //         get_noc_addr(tile_two_id, output_addrgen, 0 /*offset*/, 0 /*noc_id*/);
 
-                        if (direction == 1) {
-                            scatter_write_for_fabric_write_backward(
-                                noc0_dest_noc_addr_tile_one,
-                                noc0_dest_noc_addr_tile_two,
-                                pkt_hdr,
-                                fabric_connection,
-                                l1_read_addr,
-                                output_page_size,
-                                output_page_size);
-                        } else {
-                            scatter_write_for_fabric_write_forward(
-                                noc0_dest_noc_addr_tile_one,
-                                noc0_dest_noc_addr_tile_two,
-                                pkt_hdr,
-                                fabric_connection,
-                                l1_read_addr,
-                                output_page_size,
-                                output_page_size);
-                        }
-                        break;
-                    }
+                    //     if (direction == 1) {
+                    //         scatter_write_for_fabric_write_backward(
+                    //             noc0_dest_noc_addr_tile_one,
+                    //             noc0_dest_noc_addr_tile_two,
+                    //             pkt_hdr,
+                    //             fabric_connection,
+                    //             l1_read_addr,
+                    //             output_page_size,
+                    //             output_page_size);
+                    //     } else {
+                    //         scatter_write_for_fabric_write_forward(
+                    //             noc0_dest_noc_addr_tile_one,
+                    //             noc0_dest_noc_addr_tile_two,
+                    //             pkt_hdr,
+                    //             fabric_connection,
+                    //             l1_read_addr,
+                    //             output_page_size,
+                    //             output_page_size);
+                    //     }
+                    //     break;
+                    // }
                     case 1:
                     default: {
                         uint32_t tile_id = tile_id_start + row_offset + pages_read_in_row;

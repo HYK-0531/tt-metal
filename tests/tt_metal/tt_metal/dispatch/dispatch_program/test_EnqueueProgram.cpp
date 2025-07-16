@@ -1780,9 +1780,6 @@ TEST_F(UnitMeshMultiCQSingleDeviceProgramFixture, TensixTestRandomizedProgram) {
     if (this->arch_ == tt::ARCH::BLACKHOLE) {
         GTEST_SKIP();  // Running on second CQ is hanging on CI
     }
-    if (this->arch_ == tt::ARCH::BLACKHOLE) {
-        GTEST_SKIP();  // Running on second CQ is hanging on CI
-    }
 
     // Make random
     auto random_seed = 0;  // (unsigned int)time(NULL);
@@ -2152,7 +2149,6 @@ TEST_F(UnitMeshCQProgramFixture, TensixTestRandomizedProgram) {
             num_brisc_unique_rtargs,
             num_brisc_common_rtargs,
             page_size};
-       
         // ncrisc
         uint32_t NCRISC_OUTER_LOOP, NCRISC_MIDDLE_LOOP, NCRISC_INNER_LOOP;
         if (i == 0) {
@@ -2204,7 +2200,21 @@ TEST_F(UnitMeshCQProgramFixture, TensixTestRandomizedProgram) {
             page_size};
 
         bool at_least_one_kernel = false;
-
+        if (i == 0 or ((rand() % 2) == 0)) {
+            auto dummy_brisc_kernel = CreateKernel(
+                program_,
+                "tests/tt_metal/tt_metal/test_kernels/dataflow/unit_tests/command_queue/random_program.cpp",
+                cr_set,
+                DataMovementConfig{
+                    .processor = DataMovementProcessor::RISCV_0,
+                    .noc = NOC::RISCV_0_default,
+                    .compile_args = brisc_compile_args,
+                    .defines = data_movement_defines});
+            SetRuntimeArgs(program_, dummy_brisc_kernel, cr_set, brisc_unique_rtargs);
+            SetCommonRuntimeArgs(program_, dummy_brisc_kernel, brisc_common_rtargs);
+            at_least_one_kernel = true;
+        }
+        
         if (i == 0 or ((rand() % 2) == 0)) {
             auto dummy_ncrisc_kernel = CreateKernel(
                 program_,

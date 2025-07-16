@@ -131,6 +131,7 @@ public:
     void SetupDevices() override {
         ValidateEnvironment();
 
+        tt_fabric::SetFabricConfig(tt::tt_fabric::FabricConfig::FABRIC_1D);
         const MeshShape cluster_shape = GetDeterminedMeshShape();
         const auto& physical_device_ids = SystemMesh::instance().get_mapped_physical_device_ids(cluster_shape);
         physical_devices_ = tt::tt_metal::detail::CreateDevices(physical_device_ids);
@@ -2448,30 +2449,13 @@ static std::vector<std::vector<IDevice*>> generate_line_fabrics_under_test(
     return fabrics_under_test;
 }
 
-template <typename FABRIC_DEVICE_FIXTURE>
 void create_fabric_fixture(std::unique_ptr<Fabric1DFixture>& test_fixture, bool use_galaxy) {
-    auto fixture_recreate_needed = []() -> bool {
-        auto fabric_config = tt::tt_metal::MetalContext::instance().get_fabric_config();
-        return (
-            // prev not Fabric1D, now Fabric1D
-            (fabric_config != tt::tt_fabric::FabricConfig::DISABLED &&
-             std::is_same_v<FABRIC_DEVICE_FIXTURE, Fabric1DFixture>) ||
-            // prev not Fabric1DLine, now Fabric1DLine
-            (fabric_config != tt::tt_fabric::FabricConfig::FABRIC_1D &&
-             std::is_same_v<FABRIC_DEVICE_FIXTURE, Fabric1DLineDeviceInitFixture>) ||
-            // prev not Fabric1DRing, now Fabric1DRing
-            (fabric_config != tt::tt_fabric::FabricConfig::FABRIC_1D_RING &&
-             std::is_same_v<FABRIC_DEVICE_FIXTURE, Fabric1DRingDeviceInitFixture>));
-    }();
-
     if (test_fixture == nullptr) {
-        test_fixture = std::make_unique<FABRIC_DEVICE_FIXTURE>();
-    } else {
+        test_fixture = std::make_unique<Fabric1DFixture>();
+    } else if (use_galaxy) {
         // NOTE: Currently (device init fabric || galaxy) is always recreate fabrix fixture
-        if (fixture_recreate_needed || use_galaxy) {
-            test_fixture.reset();
-            test_fixture = std::make_unique<FABRIC_DEVICE_FIXTURE>();
-        }
+        test_fixture.reset();
+        test_fixture = std::make_unique<Fabric1DFixture>();
     }
 }
 
@@ -2761,7 +2745,7 @@ void Run1DFabricPacketSendTest(
 
     log_info(tt::LogTest, "Device open and fabric init");
     // MeshFabric1DLineDeviceInitFixture test_fixture;
-    create_fabric_fixture<FABRIC_DEVICE_FIXTURE>(test_fixture, use_galaxy);
+    create_fabric_fixture(test_fixture, use_galaxy);
     log_info(tt::LogTest, "\tDone");
     auto view = *(test_fixture->view_);
 
@@ -3560,7 +3544,7 @@ void Run1DFullMeshFabricPacketSendTest(
     const bool use_tg = use_galaxy && tt::tt_metal::GetNumPCIeDevices() == 4;
     const bool is_6u_galaxy = use_galaxy && tt::tt_metal::GetNumPCIeDevices() == 32;
 
-    create_fabric_fixture<FABRIC_DEVICE_FIXTURE>(test_fixture_, use_galaxy);
+    create_fabric_fixture(test_fixture_, use_galaxy);
     auto view = *(test_fixture_->view_);
     // FABRIC_DEVICE_FIXTURE test_fixture;
     // auto view = *(test_fixture.view_);

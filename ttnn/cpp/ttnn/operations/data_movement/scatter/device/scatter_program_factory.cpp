@@ -182,9 +182,19 @@ ScatterProgramFactory::cached_program_t ScatterProgramFactory::create(
             program,
             reader_kernel,
             core,
-            {input_buffer->address(), index_buffer->address(), src_buffer->address(), stick_offset, sticks_per_core, input_and_output_chunk_size, index_and_source_chunk_size});
+            {input_buffer->address(),
+             index_buffer->address(),
+             src_buffer->address(),
+             stick_offset,
+             sticks_per_core,
+             input_and_output_chunk_size,
+             index_and_source_chunk_size});
 
-        SetRuntimeArgs(program, writer_kernel, core, {output_buffer->address(), stick_offset, sticks_per_core, input_and_output_chunk_size});
+        SetRuntimeArgs(
+            program,
+            writer_kernel,
+            core,
+            {output_buffer->address(), stick_offset, sticks_per_core, input_and_output_chunk_size});
 
         stick_offset += sticks_per_core;
     }
@@ -207,7 +217,7 @@ void ScatterProgramFactory::override_runtime_arguments(
     auto source_buffer_address = tensor_args.src_tensor.buffer()->address();
     auto output_buffer_address = output_tensor.buffer()->address();
     for (const auto& core : cores) {
-        auto& reader_runtime_args  = GetRuntimeArgs(program, reader_kernel_id, core);
+        auto& reader_runtime_args = GetRuntimeArgs(program, reader_kernel_id, core);
         auto& writer_runtime_args = GetRuntimeArgs(program, writer_kernel_id, core);
         reader_runtime_args[0] = input_buffer_address;
         reader_runtime_args[1] = index_buffer_address;

@@ -9,9 +9,23 @@
 #include <tt-metalium/work_split.hpp>
 #include "ttnn/operations/moreh/moreh_helper_functions.hpp"
 #include "ttnn/operations/core/compute_kernel/compute_kernel_config.hpp"
-#include <ttnn/tensor/tensor_accessor_args.hpp>
+#include "ttnn/operations/sharding_utilities.hpp"
+#include <tt-metalium/distributed.hpp>
+#include <tt-metalium/buffer_distribution_spec.hpp>
 
 namespace ttnn::operations::moreh::moreh_bug_report_rank_crta {
+
+BufferDistributionSpec get_buffer_distribution_spec(const Tensor& tensor) {
+    const auto mesh_buffer = tensor.device_storage().get_mesh_buffer();
+    const auto device_local_config = mesh_buffer->device_local_config();
+    const auto& shard_parameters = device_local_config.sharding_args;
+    return shard_parameters.buffer_distribution_spec().value();
+}
+
+inline constexpr ArgConfig CRTA_EXCEPT_RANK = static_cast<ArgConfig>(
+    static_cast<std::underlying_type_t<ArgConfig>>(ArgConfig::CRTA) &
+    ~static_cast<std::underlying_type_t<ArgConfig>>(ArgConfig::RankCRTA));
+
 MorehBugReportRankCrtaOperation::ProgramFactory::cached_program_t
 MorehBugReportRankCrtaOperation::ProgramFactory::create(
     const operation_attributes_t& operation_attributes,
@@ -79,13 +93,39 @@ MorehBugReportRankCrtaOperation::ProgramFactory::create(
     ////////////////////////////////////////////////////////////////////////////
     //                      DataMovementKernel SetUp
     ////////////////////////////////////////////////////////////////////////////
+    ArgConfig args_config = ArgConfig::CRTA;  // This will cause the bug
+    // ArgConfig args_config = CRTA_EXCEPT_RANK; // Replace the above line with this to workaround the bug
+    const auto* input_mesh_device = input.mesh_device();
+    const auto& input_buffer_distribution_spec = get_buffer_distribution_spec(input);
+    const auto input_mesh_buffer = input.device_storage().get_mesh_buffer();
+    const tt::tt_metal::distributed::MeshCoordinate input_mesh_coordinate{0, 0};
+    const auto& input_shard_view = input_mesh_buffer->get_device_buffer(input_mesh_coordinate);
+    auto input_sharding_args = tt::tt_metal::sharded_accessor_utils::get_sharded_accessor_args(
+        *input_mesh_device, input_buffer_distribution_spec, input_shard_view->core_type(), args_config);
 
-    const auto input_accessor_args = TensorAccessorArgs(*input.buffer());
-    const auto other_accessor_args = TensorAccessorArgs(*other.buffer());
-    const auto output_accessor_args = TensorAccessorArgs(*output.buffer());
-    std::vector<uint32_t> input_compile_time_args = input_accessor_args.get_compile_time_args();
-    std::vector<uint32_t> other_compile_time_args = other_accessor_args.get_compile_time_args();
-    std::vector<uint32_t> output_compile_time_args = output_accessor_args.get_compile_time_args();
+    const auto* other_mesh_device = other.mesh_device();
+    const auto& other_buffer_distribution_spec = get_buffer_distribution_spec(other);
+    const auto other_mesh_buffer = other.device_storage().get_mesh_buffer();
+    const tt::tt_metal::distributed::MeshCoordinate other_mesh_coordinate{0, 0};
+    const auto& other_shard_view = other_mesh_buffer->get_device_buffer(other_mesh_coordinate);
+    auto other_sharding_args = tt::tt_metal::sharded_accessor_utils::get_sharded_accessor_args(
+        *other_mesh_device, other_buffer_distribution_spec, other_shard_view->core_type(), args_config);
+
+    const auto* output_mesh_device = output.mesh_device();
+    const auto& output_buffer_distribution_spec = get_buffer_distribution_spec(output);
+    const auto output_mesh_buffer = output.device_storage().get_mesh_buffer();
+    const tt::tt_metal::distributed::MeshCoordinate output_mesh_coordinate{0, 0};
+    const auto& output_shard_view = output_mesh_buffer->get_device_buffer(output_mesh_coordinate);
+    auto output_sharding_args = tt::tt_metal::sharded_accessor_utils::get_sharded_accessor_args(
+        *output_mesh_device, output_buffer_distribution_spec, output_shard_view->core_type(), args_config);
+
+    auto input_compile_time_args = input_sharding_args.compile_time_args;
+    auto other_compile_time_args = other_sharding_args.compile_time_args;
+    auto output_compile_time_args = output_sharding_args.compile_time_args;
+
+    auto input_runtime_args = input_sharding_args.runtime_args;
+    auto other_runtime_args = other_sharding_args.runtime_args;
+    auto output_runtime_args = output_sharding_args.runtime_args;
 
     std::vector<uint32_t> reader_compile_time_args{
         static_cast<uint32_t>(is_dram(input)),
@@ -167,9 +207,9 @@ MorehBugReportRankCrtaOperation::ProgramFactory::create(
         num_tiles_read += num_tiles_per_core;
     }
 
-    std::vector<uint32_t> input_runtime_args = input_accessor_args.get_common_runtime_args();
-    std::vector<uint32_t> other_runtime_args = other_accessor_args.get_common_runtime_args();
-    std::vector<uint32_t> output_runtime_args = output_accessor_args.get_common_runtime_args();
+    // std::vector<uint32_t> input_runtime_args = input_accessor_args.get_common_runtime_args();
+    // std::vector<uint32_t> other_runtime_args = other_accessor_args.get_common_runtime_args();
+    // std::vector<uint32_t> output_runtime_args = output_accessor_args.get_common_runtime_args();
 
     const auto input_addr = input.buffer()->address();
     const auto other_addr = other.buffer()->address();

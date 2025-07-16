@@ -87,7 +87,13 @@ def test_moreh_bug_report_rank_crta(device):
         packer_l1_acc=False,
     )
 
-    # shape = [1, 1, 32 * 1, 32 * 1]
+    # shard same shape, this test will pass
+    # shape = [56, 3, 32 * 6, 32 * 2]
+    # input_shard_shape = [1, 1, 32 * 2, 32 * 2]
+    # other_shard_shape = [1, 1, 32 * 2, 32 * 2]
+    # output_shard_shape = [1, 1, 32 * 2, 32 * 2]
+
+    # shard different shape, this test will fail
     shape = [56, 3, 32 * 6, 32 * 2]
     input_shard_shape = [1, 1, 32 * 1, 32 * 2]
     other_shard_shape = [1, 1, 32 * 3, 32 * 1]
@@ -97,9 +103,6 @@ def test_moreh_bug_report_rank_crta(device):
     other_dtype = ttnn.bfloat16
     output_dtype = ttnn.bfloat16
     cpu_dtype = torch.bfloat16
-
-    # torch_input = torch.ones(shape, dtype=cpu_dtype)
-    # torch_other = torch.ones(shape, dtype=cpu_dtype)
 
     torch_input = torch.rand(shape, dtype=cpu_dtype)
     torch_other = torch.rand(shape, dtype=cpu_dtype)
@@ -154,8 +157,8 @@ def test_moreh_bug_report_rank_crta(device):
         rtol=1e-2,
         atol=1e-3,
     )
-    print(f"torch_output={torch_output}")
-    print(f"ttnn_cpu_output={ttnn_cpu_output}")
+    # print(f"torch_output={torch_output}")
+    # print(f"ttnn_cpu_output={ttnn_cpu_output}")
     logger.info(f"passing={passing}")
     logger.info(f"out={out}")
     assert passing

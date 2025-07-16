@@ -85,6 +85,7 @@ void MAIN {
         if constexpr (!one_scalar_per_core) {
             cb_wait_front(curr_scalar_cb_id, 1);
 
+            // sync PACK and UNPACK
             cb_reserve_back(sync_cb_id, 1);
             cb_push_back(sync_cb_id, 1);
             cb_wait_front(sync_cb_id, 1);

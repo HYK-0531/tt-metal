@@ -25,6 +25,9 @@ class YOLOv7PerformanceRunnerInfra:
         model_location_generator=None,
         resolution=(640, 640),
         torch_input_tensor=None,
+        inputs_mesh_mapper=None,
+        weights_mesh_mapper=None,
+        outputs_mesh_composer=None,
     ):
         torch.manual_seed(0)
         self.resolution = resolution
@@ -36,18 +39,26 @@ class YOLOv7PerformanceRunnerInfra:
         self.weight_dtype = weight_dtype
         self.model_location_generator = model_location_generator
         self.torch_input_tensor = torch_input_tensor
+
+        self.num_devices = device.get_num_devices()
+        self.inputs_mesh_mapper = inputs_mesh_mapper
+        self.weights_mesh_mapper = weights_mesh_mapper
+        self.outputs_mesh_composer = outputs_mesh_composer
+
         self.torch_model = Yolov7_model()
         weights_path = "tests/ttnn/integration_tests/yolov7/yolov7.pt"
         weights_path = download_yolov7_weights(weights_path)
         load_weights(self.torch_model, weights_path)
         self.torch_input_tensor = (
-            torch.randn((1, 3, 640, 640), dtype=torch.float32)
+            torch.randn((batch_size, 3, 640, 640), dtype=torch.float32)
             if self.torch_input_tensor is None
             else self.torch_input_tensor
         )
 
         self.parameters = preprocess_model_parameters(
-            initialize_model=lambda: self.torch_model, custom_preprocessor=create_custom_preprocessor(None), device=None
+            initialize_model=lambda: self.torch_model,
+            custom_preprocessor=create_custom_preprocessor(weights_mesh_mapper),
+            device=device,
         )
 
         nx_ny = [80, 40, 20]
@@ -72,12 +83,15 @@ class YOLOv7PerformanceRunnerInfra:
         ## Converting from image based channels (3) to min channels (16)
         if c == 3:
             c = 16
+        n = n // self.num_devices if n // self.num_devices != 0 else n
         input_mem_config = ttnn.create_sharded_memory_config(
             [n, c, h, w],
             ttnn.CoreGrid(x=8, y=8),
             ttnn.ShardStrategy.HEIGHT,
         )
-        tt_inputs_host = ttnn.from_torch(torch_input_tensor, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT)
+        tt_inputs_host = ttnn.from_torch(
+            torch_input_tensor, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT, mesh_mapper=self.inputs_mesh_mapper
+        )
 
         return tt_inputs_host, input_mem_config
 
@@ -106,7 +120,7 @@ class YOLOv7PerformanceRunnerInfra:
     def validate(self, output_tensor=None, torch_output_tensor=None):
         ttnn_output_tensor = self.output_tensor if output_tensor is None else output_tensor
         torch_output_tensor = self.torch_output_tensor if torch_output_tensor is None else torch_output_tensor
-        output_tensor = ttnn.to_torch(ttnn_output_tensor)
+        output_tensor = ttnn.to_torch(ttnn_output_tensor, mesh_composer=self.outputs_mesh_composer)
 
         self.pcc_passed, self.pcc_message = assert_with_pcc(self.torch_output_tensor, output_tensor, pcc=0.99)
 

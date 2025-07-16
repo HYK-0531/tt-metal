@@ -3327,9 +3327,6 @@ def test_conv2d_vae_sdxl(
     act_block_h_override
 ):
 
-    # Skip all on N300
-    if device.core_grid.y != 8 and is_wormhole_b0():
-        pytest.skip("Needs 8x8 grid for wormhole_b0")
     # Skip specific test case for Blackhole devices
     if is_blackhole() and (batch, input_channels, output_channels, input_height, input_width, weights_dtype) == (1, 4, 4, 128, 128, ttnn.bfloat8_b):
         pytest.skip("Skipping this test case for Blackhole devices due to PCC issue, tracked in ISSUE-24463")

@@ -2214,7 +2214,7 @@ TEST_F(UnitMeshCQProgramFixture, TensixTestRandomizedProgram) {
             SetCommonRuntimeArgs(program_, dummy_brisc_kernel, brisc_common_rtargs);
             at_least_one_kernel = true;
         }
-        
+
         if (i == 0 or ((rand() % 2) == 0)) {
             auto dummy_ncrisc_kernel = CreateKernel(
                 program_,

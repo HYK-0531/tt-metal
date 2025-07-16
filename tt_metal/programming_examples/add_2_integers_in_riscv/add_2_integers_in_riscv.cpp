@@ -101,6 +101,5 @@ int main() {
     // When the MeshDevice is 2 dimensional, this API can be used to target specific physical devices
     distributed::ReadShard(cq, result_vec, dst_dram_buffer, device_coord);
     printf("Result = %d : Expected = 21\n", result_vec[0]);
-
     mesh_device.reset();
 }

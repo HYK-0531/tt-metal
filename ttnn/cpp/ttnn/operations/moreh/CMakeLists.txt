@@ -141,6 +141,9 @@ target_sources(
         moreh_clip_grad_norm/moreh_clip_grad_norm_step3/device/moreh_clip_grad_norm_step3_device_operation.cpp
         moreh_clip_grad_norm/moreh_clip_grad_norm_step3/device/moreh_clip_grad_norm_step3_program_factory.cpp
         moreh_clip_grad_norm/moreh_clip_grad_norm.cpp
+        moreh_bug_report_rank_crta/moreh_bug_report_rank_crta.cpp
+        moreh_bug_report_rank_crta/device/moreh_bug_report_rank_crta_device_operation.cpp
+        moreh_bug_report_rank_crta/device/moreh_bug_report_rank_crta_program_factory.cpp
 )
 file(GLOB_RECURSE kernels moreh_dot/device/kernels/*)
 target_sources(

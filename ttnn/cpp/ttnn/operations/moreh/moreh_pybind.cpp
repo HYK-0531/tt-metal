@@ -36,6 +36,7 @@
 #include "ttnn/operations/moreh/moreh_softmax_backward/moreh_softmax_backward_pybind.hpp"
 #include "ttnn/operations/moreh/moreh_sum/moreh_sum_pybind.hpp"
 #include "ttnn/operations/moreh/moreh_sum_backward/moreh_sum_backward_pybind.hpp"
+#include "ttnn/operations/moreh/moreh_bug_report_rank_crta/moreh_bug_report_rank_crta_pybind.hpp"
 
 namespace py = pybind11;
 
@@ -74,5 +75,7 @@ void bind_moreh_operations(py::module& module) {
     moreh_sum_backward::bind_moreh_sum_backward_operation(module);
     moreh_sum::bind_moreh_sum_operation(module);
     moreh_clip_grad_norm::bind_moreh_clip_grad_norm_operation(module);
+    moreh_bug_report_rank_crta::bind_moreh_bug_report_rank_crta_operation(module);
 }
+
 }  // namespace ttnn::operations::moreh

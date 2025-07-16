@@ -2,8 +2,9 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-import ttnn
 import ttnn._ttnn
+
+import ttnn
 
 abs = ttnn._ttnn.operations.moreh.moreh_abs_pow
 adam = ttnn._ttnn.operations.moreh.moreh_adam
@@ -42,6 +43,7 @@ softmin = ttnn._ttnn.operations.moreh.moreh_softmin
 softmin_backward = ttnn._ttnn.operations.moreh.moreh_softmin_backward
 sum = ttnn._ttnn.operations.moreh.moreh_sum
 sum_backward = ttnn._ttnn.operations.moreh.moreh_sum_backward
+bug_report_rank_crta = ttnn._ttnn.operations.moreh.moreh_bug_report_rank_crta
 
 SoftmaxBackwardOp = ttnn._ttnn.operations.moreh.MorehSoftmaxBackwardOp
 SoftmaxBackwardOpParallelizationStrategy = ttnn._ttnn.operations.moreh.MorehSoftmaxBackwardOpParallelizationStrategy

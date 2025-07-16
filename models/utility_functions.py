@@ -583,6 +583,7 @@ def comp_pcc(golden, calculated, pcc=0.99):
             np.ma.masked_invalid(torch.squeeze(calculated).detach().numpy()).flatten(),
         )
     )
+    logger.info("caclculated PCC={}", cal_pcc)
 
     if isinstance(cal_pcc, np.ma.core.MaskedConstant):
         return True, 1.0

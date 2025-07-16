@@ -281,8 +281,6 @@ set(TTNN_SRC_PYBIND
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/ttnn/operations/data_movement/sort/sort_${PY_BINDING}.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/ttnn/operations/data_movement/gather/gather_${PY_BINDING}.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/ttnn/operations/data_movement/gather/tosa/gather_tosa_${PY_BINDING}.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/ttnn/operations/test/test_hang_operation_${PY_BINDING}.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/ttnn/operations/experimental/test/hang_host/hang_host_operation_${PY_BINDING}.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/ttnn/operations/experimental/test/hang_device/hang_device_operation_${PY_BINDING}.cpp
 )
 
@@ -481,7 +479,6 @@ target_link_libraries(
         TTNN::Ops::Pool
         TTNN::Ops::Normalization
         TTNN::Ops::Rand
-        TTNN::Ops::Test
 )
 install(TARGETS ttnncpp LIBRARY COMPONENT ttnn-runtime)
 
@@ -624,4 +621,3 @@ add_subdirectory(cpp/ttnn/operations/pool)
 add_subdirectory(cpp/ttnn/operations/normalization)
 add_subdirectory(cpp/ttnn/operations/rand)
 add_subdirectory(cpp/ttnn/deprecated)
-add_subdirectory(cpp/ttnn/operations/test)

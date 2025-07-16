@@ -15,7 +15,7 @@ on:
       per-test-timeout:
         required: false
         type: string
-        default: 4.0 # TODO: Drop back to 3.5 when https://github.com/tenstorrent/github-ci-infra/issues/876 is resolved.
+        default: 2.0 # TODO: Drop back to 3.5 when https://github.com/tenstorrent/github-ci-infra/issues/876 is resolved.
       product:
         required: true
         type: string # tt-metalium or tt-nn
@@ -53,6 +53,15 @@ jobs:
           # Ideally only ${{ inputs.product }}-validation, but APT doesn't resolve dependencies from files on disk without being told about them.
           apt install -y ./pkgs/tt-metalium_*.deb ./pkgs/tt-metalium-jit_*.deb ./pkgs/${{ inputs.product }}_*.deb ./pkgs/${{ inputs.product }}-validation_*.deb
 
+      - name: Bootstrap tests
+        env:
+          TT_METAL_HOME: /usr/libexec/tt-metalium # TODO: Need to get away from env vars!
+        run: |
+          # The first test that runs compiles fw for the card and can blow the time budget for the test.
+          # Run one that we won't measure the time for and the subsequent tests will be told to not clear the cache.
+          test_name=$(/usr/bin/${{ inputs.product }}-validation-smoke --gtest_list_tests | awk 'NF && !/^\s/ {suite=$1} /^\s/ {print suite $1; exit}')
+          /usr/bin/${{ inputs.product }}-validation-smoke --gtest_filter="$test_name"
+
       - name: Run a test
         id: test
         timeout-minutes: 15
@@ -63,6 +72,7 @@ jobs:
           LSAN_OPTIONS: suppressions=/usr/share/tt-metalium/lsan.supp
           TT_METAL_WATCHER: 5
           TT_METAL_WATCHER_TEST_MODE: 1
+          TT_METAL_SKIP_DELETING_BUILT_CACHE: 1 # See Bootstrap tests above
         run: |
           /usr/bin/${{ inputs.product }}-validation-smoke
 

@@ -54,59 +54,72 @@ void kernel_main() {
 
     constexpr uint32_t ct_idx = 12;
 
-#ifdef INPUT_IS_SHARDED
-    constexpr uint32_t ct_offset = 7;
+    // #ifdef INPUT_IS_SHARDED
+    //     constexpr uint32_t ct_offset = 7;
 
-    using input_tensor_shard_info = ShardedInfo<
-        get_compile_time_arg_val(ct_idx),       // Memory layout
-        get_compile_time_arg_val(ct_idx + 1),   // The number of sharding cores
-        get_compile_time_arg_val(ct_idx + 2),   // The page size we offset each write to
-        get_compile_time_arg_val(ct_idx + 3),   // The number of pages in each sharding row not including padding pages
-        get_compile_time_arg_val(ct_idx + 4),   // This defines times when contiguous pages can't be calculated
-        get_compile_time_arg_val(ct_idx + 5),   // pages_per_shard_x
-        get_compile_time_arg_val(ct_idx + 6)>;  // pages_per_shard_y
+    //     using input_tensor_shard_info = ShardedInfo<
+    //         get_compile_time_arg_val(ct_idx),       // Memory layout
+    //         get_compile_time_arg_val(ct_idx + 1),   // The number of sharding cores
+    //         get_compile_time_arg_val(ct_idx + 2),   // The page size we offset each write to
+    //         get_compile_time_arg_val(ct_idx + 3),   // The number of pages in each sharding row not including padding
+    //         pages get_compile_time_arg_val(ct_idx + 4),   // This defines times when contiguous pages can't be
+    //         calculated get_compile_time_arg_val(ct_idx + 5),   // pages_per_shard_x get_compile_time_arg_val(ct_idx +
+    //         6)>;  // pages_per_shard_y
 
-    const auto [input_mapping_table, input_rt_increment] =
-        experimental::shard_addr_gen_utils::get_shard_map<input_tensor_shard_info>(get_arg_addr(arg_idx));
-    experimental::ShardedAddrGen<input_tensor_shard_info> input_tensor_addrgen = {
-        .bank_base_address = input_tensor_address, .shard_array = input_mapping_table};
+    //     const auto [input_mapping_table, input_rt_increment] =
+    //         experimental::shard_addr_gen_utils::get_shard_map<input_tensor_shard_info>(get_arg_addr(arg_idx));
+    //     experimental::ShardedAddrGen<input_tensor_shard_info> input_tensor_addrgen = {
+    //         .bank_base_address = input_tensor_address, .shard_array = input_mapping_table};
 
-    arg_idx += input_rt_increment;
-#else
-    constexpr uint32_t ct_offset = 0;
+    //     arg_idx += input_rt_increment;
+    // #else
+    //     constexpr uint32_t ct_offset = 0;
+
+    //     constexpr bool input_tensor_is_dram = input_buffer_type == tt::tt_metal::BufferType::DRAM;
+    //     const InterleavedAddrGenFast<input_tensor_is_dram> input_tensor_addrgen = {
+    //         .bank_base_address = input_tensor_address,
+    //         .page_size = input_tensor_page_size,
+    //         .data_format = get_dataformat(cb_output_id)};
+    // #endif
 
     constexpr bool input_tensor_is_dram = input_buffer_type == tt::tt_metal::BufferType::DRAM;
     const InterleavedAddrGenFast<input_tensor_is_dram> input_tensor_addrgen = {
         .bank_base_address = input_tensor_address,
         .page_size = input_tensor_page_size,
         .data_format = get_dataformat(cb_output_id)};
-#endif
 
-#ifdef OUTPUT_IS_SHARDED
-    using output_tensor_shard_info = ShardedInfo<
-        get_compile_time_arg_val(ct_idx + ct_offset),       // Memory layout
-        get_compile_time_arg_val(ct_idx + ct_offset + 1),   // The number of sharding cores
-        get_compile_time_arg_val(ct_idx + ct_offset + 2),   // The page size we offset each write to
-        get_compile_time_arg_val(ct_idx + ct_offset + 3),   // The number of pages in each sharding row not including
-                                                            // padding pages
-        get_compile_time_arg_val(ct_idx + ct_offset + 4),   // This defines times when contiguous pages can't be
-                                                            // calculated
-        get_compile_time_arg_val(ct_idx + ct_offset + 5),   // pages_per_shard_x
-        get_compile_time_arg_val(ct_idx + ct_offset + 6)>;  // pages_per_shard_y
+    // #ifdef OUTPUT_IS_SHARDED
+    //     using output_tensor_shard_info = ShardedInfo<
+    //         get_compile_time_arg_val(ct_idx + ct_offset),       // Memory layout
+    //         get_compile_time_arg_val(ct_idx + ct_offset + 1),   // The number of sharding cores
+    //         get_compile_time_arg_val(ct_idx + ct_offset + 2),   // The page size we offset each write to
+    //         get_compile_time_arg_val(ct_idx + ct_offset + 3),   // The number of pages in each sharding row not
+    //         including
+    //                                                             // padding pages
+    //         get_compile_time_arg_val(ct_idx + ct_offset + 4),   // This defines times when contiguous pages can't be
+    //                                                             // calculated
+    //         get_compile_time_arg_val(ct_idx + ct_offset + 5),   // pages_per_shard_x
+    //         get_compile_time_arg_val(ct_idx + ct_offset + 6)>;  // pages_per_shard_y
 
-    const auto [output_mapping_table, output_rt_increment] =
-        experimental::shard_addr_gen_utils::get_shard_map<output_tensor_shard_info>(get_arg_addr(arg_idx));
-    experimental::ShardedAddrGen<output_tensor_shard_info> output_tensor_addrgen = {
-        .bank_base_address = output_tensor_address, .shard_array = output_mapping_table};
+    //     const auto [output_mapping_table, output_rt_increment] =
+    //         experimental::shard_addr_gen_utils::get_shard_map<output_tensor_shard_info>(get_arg_addr(arg_idx));
+    //     experimental::ShardedAddrGen<output_tensor_shard_info> output_tensor_addrgen = {
+    //         .bank_base_address = output_tensor_address, .shard_array = output_mapping_table};
 
-    arg_idx += output_rt_increment;
-#else
+    //     arg_idx += output_rt_increment;
+    // #else
+    //     constexpr bool output_tensor_is_dram = output_buffer_type == tt::tt_metal::BufferType::DRAM;
+    //     const InterleavedAddrGenFast<output_tensor_is_dram> output_tensor_addrgen = {
+    //         .bank_base_address = output_tensor_address,
+    //         .page_size = input_tensor_page_size,
+    //         .data_format = get_dataformat(cb_output_id)};
+    // #endif
+
     constexpr bool output_tensor_is_dram = output_buffer_type == tt::tt_metal::BufferType::DRAM;
     const InterleavedAddrGenFast<output_tensor_is_dram> output_tensor_addrgen = {
         .bank_base_address = output_tensor_address,
         .page_size = input_tensor_page_size,
         .data_format = get_dataformat(cb_output_id)};
-#endif
 
     OpSignaler op_signaler;
     if constexpr (fuse_op) {

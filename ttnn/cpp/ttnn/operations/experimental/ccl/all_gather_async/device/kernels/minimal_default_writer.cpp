@@ -74,32 +74,36 @@ void kernel_main() {
     uint32_t start_pages_read_in_row = get_arg_val<uint32_t>(arg_idx++);
     uint32_t start_row_offset = get_arg_val<uint32_t>(arg_idx++);
 
-#ifdef OUTPUT_IS_SHARDED
-    using tensor_shard_info = ShardedInfo<
-        get_compile_time_arg_val(29),   // Memory layout
-        get_compile_time_arg_val(30),   // The number of sharding cores
-        get_compile_time_arg_val(31),   // The page size we offset each write to
-        get_compile_time_arg_val(32),   // The number of pages in each sharding row not including padding pages
-        get_compile_time_arg_val(33),   // This defines times when contiguous pages can't be calculated
-        get_compile_time_arg_val(34),   // pages_per_shard_x
-        get_compile_time_arg_val(35)>;  // pages_per_shard_y
+    // #ifdef OUTPUT_IS_SHARDED
+    //     using tensor_shard_info = ShardedInfo<
+    //         get_compile_time_arg_val(29),   // Memory layout
+    //         get_compile_time_arg_val(30),   // The number of sharding cores
+    //         get_compile_time_arg_val(31),   // The page size we offset each write to
+    //         get_compile_time_arg_val(32),   // The number of pages in each sharding row not including padding pages
+    //         get_compile_time_arg_val(33),   // This defines times when contiguous pages can't be calculated
+    //         get_compile_time_arg_val(34),   // pages_per_shard_x
+    //         get_compile_time_arg_val(35)>;  // pages_per_shard_y
 
-    const auto [mapping_table, rt_increment] =
-        experimental::shard_addr_gen_utils::get_shard_map<tensor_shard_info>(get_arg_addr(arg_idx));
-    experimental::ShardedAddrGen<tensor_shard_info> output_addrgen = {
-        .bank_base_address = output_address, .shard_array = mapping_table};
+    //     const auto [mapping_table, rt_increment] =
+    //         experimental::shard_addr_gen_utils::get_shard_map<tensor_shard_info>(get_arg_addr(arg_idx));
+    //     experimental::ShardedAddrGen<tensor_shard_info> output_addrgen = {
+    //         .bank_base_address = output_address, .shard_array = mapping_table};
 
-    arg_idx += rt_increment;
-#else
+    //     arg_idx += rt_increment;
+    // #else
+    //     constexpr bool output_is_dram = output_type == tt::tt_metal::BufferType::DRAM;
+    //     const InterleavedAddrGenFast<output_is_dram> output_addrgen = {
+    //         .bank_base_address = output_address,
+    //         .page_size = output_page_size,
+    //         .data_format = get_dataformat(cb_output_id)};
+    // #endif
+
     constexpr bool output_is_dram = output_type == tt::tt_metal::BufferType::DRAM;
     const InterleavedAddrGenFast<output_is_dram> output_addrgen = {
         .bank_base_address = output_address,
         .page_size = output_page_size,
         .data_format = get_dataformat(cb_output_id)};
-#endif
 
-    size_t arg_for_fab = arg_idx;
-    auto fabric_connection = FabricConnectionManager::build_from_args(arg_for_fab);
     bool mux_connection_valid = get_arg_val<uint32_t>(arg_idx++) == 1;
     uint32_t termination_sync_address = get_semaphore(get_arg_val<uint32_t>(arg_idx++));
     uint32_t local_fabric_mux_status_address = get_semaphore(get_arg_val<uint32_t>(arg_idx++));

@@ -28,14 +28,20 @@ inline void _calculate_where_fp16_b() {
 
     for (int i = 0; i < ITERATIONS; i++) {
         cond = sfpi::dst_reg[0];
-        true_tensor = sfpi::dst_reg[dst_tile_size];
-        false_tensor = sfpi::dst_reg[dst_tile_size * 2];
 
-        v_if(cond != 0.0f) { output_tensor = true_tensor; }
-        v_else { output_tensor = false_tensor; }
+        v_if(cond == 0.0f) {
+            // output_tensor = false_tensor;
+            TTI_SFPLOAD(p_sfpu::LREG3, 6, 0, 128);
+        }
+        v_else {
+            // output_tensor = true_tensor;
+            TTI_SFPLOAD(p_sfpu::LREG3, 6, 0, 64);
+        }
         v_endif;
 
-        sfpi::dst_reg[0] = output_tensor;
+        // sfpi::dst_reg[0] = output_tensor;
+        TTI_SFPSTORE(p_sfpu::LREG3, 6, 0, 0);
+
         sfpi::dst_reg++;
     }
 }

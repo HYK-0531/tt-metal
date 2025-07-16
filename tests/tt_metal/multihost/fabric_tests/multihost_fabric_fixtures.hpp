@@ -17,20 +17,7 @@ namespace fabric_router_tests {
 namespace {
 
 template <typename Fixture>
-void validate_and_setup_control_plane_config(Fixture* fixture) {
-    const char* mesh_id_str = std::getenv("TT_MESH_ID");
-    const char* host_rank_str = std::getenv("TT_HOST_RANK");
-    auto local_mesh_id = std::string(mesh_id_str);
-    auto local_host_rank = std::string(host_rank_str);
-
-    TT_FATAL(
-        local_mesh_id.size() and local_host_rank.size(),
-        "TT_MESH_ID and TT_HOST_RANK environment variables must be set for Multi-Host Fabric Tests.");
-
-    auto chip_to_eth_coord_mapping = multihost_utils::get_physical_chip_mapping_from_eth_coords_mapping(
-        fixture->get_eth_coord_mapping(), std::stoi(local_mesh_id));
-    tt::tt_metal::MetalContext::instance().set_custom_control_plane_mesh_graph(
-        fixture->get_path_to_mesh_graph_desc(), chip_to_eth_coord_mapping);
+void validate_system_configs(Fixture* fixture) {
     TT_FATAL(
         tt::tt_metal::MetalContext::instance().get_control_plane().system_has_intermesh_links(),
         "Multi-Host Routing tests require ethernet links to a remote host.");
@@ -92,7 +79,7 @@ public:
             GTEST_SKIP() << "Skipping since this is not a supported system.";
         }
 
-        validate_and_setup_control_plane_config(this);
+        validate_system_configs(this);
         this->DoSetUpTestSuite(tt::tt_fabric::FabricConfig::FABRIC_2D_DYNAMIC);
     }
 
@@ -122,7 +109,7 @@ public:
         if (not system_supported()) {
             GTEST_SKIP() << "Skipping since this is not a supported system.";
         }
-        validate_and_setup_control_plane_config(this);
+        validate_system_configs(this);
         tt::tt_metal::GenericMeshDevice2DFabricFixture::SetUp();
     }
 

@@ -567,14 +567,21 @@ std::map<FabricNodeId, chip_id_t> ControlPlane::get_logical_chip_to_physical_chi
         // Iterate over every mesh defined in the mesh-graph descriptor and embed it on top of
         // the physical cluster using the generic helper.
         for (const auto& mesh_id : this->routing_table_generator_->mesh_graph->get_mesh_ids()) {
-            const auto& mesh_container = this->routing_table_generator_->mesh_graph->get_chip_ids(mesh_id);
-            const auto& physical_chip_ids = this->get_mesh_physical_chip_ids(mesh_container);
-
-            for (std::uint32_t i = 0; i < physical_chip_ids.size(); ++i) {
-                logical_mesh_chip_id_to_physical_chip_id_mapping.emplace(
-                    FabricNodeId(mesh_id, i), physical_chip_ids[i]);
+            if (this->is_local_mesh(mesh_id)) {
+                const auto& mesh_container = this->routing_table_generator_->mesh_graph->get_chip_ids(mesh_id);
+                const auto& physical_chip_ids = this->get_mesh_physical_chip_ids(mesh_container);
+                for (std::uint32_t i = 0; i < physical_chip_ids.size(); ++i) {
+                    logical_mesh_chip_id_to_physical_chip_id_mapping.emplace(
+                        FabricNodeId(mesh_id, i), physical_chip_ids[i]);
+                }
             }
         }
+        // const auto& distributed_context = tt::tt_metal::MetalContext::instance().get_distributed_context();
+        // if (*distributed_context.rank() == 2) {
+        //     for (const auto& [fabric_node, phys_chip] : logical_mesh_chip_id_to_physical_chip_id_mapping) {
+        //         std::cout << fabric_node << " " << phys_chip << std::endl;
+        //     }
+        // }
     }
 
     return logical_mesh_chip_id_to_physical_chip_id_mapping;
@@ -2001,16 +2008,25 @@ void ControlPlane::assign_intermesh_link_directions_to_remote_host(const FabricN
 
     // Used to track the number of directions that could be assigned to intermesh links on this node
     uint32_t num_directions_assigned = 0;
-
+    const auto& distributed_context = tt::tt_metal::MetalContext::instance().get_distributed_context();
+    if (*distributed_context.rank() == 1) {
+        std::cout << "Assigning directions to: " << fabric_node_id << std::endl;
+    }
     for (const auto& [eth_core, eth_chan] : intermesh_links) {
         auto intermesh_routing_direction = RoutingDirection::NONE;
         auto curr_eth_chan_desc = EthChanDescriptor{.board_id = board_id, .chan_id = eth_chan};
         const auto& remote_eth_chan_desc = intermesh_link_table_.intermesh_links.at(curr_eth_chan_desc);
         for (const auto& [connected_mesh_id, edge] :
              inter_mesh_connectivity[*fabric_node_id.mesh_id][fabric_node_id.chip_id]) {
+            if (*distributed_context.rank() == 1) {
+                std::cout << "Checking connectivity to: " << *connected_mesh_id << std::endl;
+            }
             bool connection_found = false;
             for (const auto& [candidate_desc, candidate_peer_desc] : peer_intermesh_link_tables_[connected_mesh_id]) {
                 if (candidate_desc == remote_eth_chan_desc && candidate_peer_desc == curr_eth_chan_desc) {
+                    if (*distributed_context.rank() == 1) {
+                        std::cout << "Found direction" << std::endl;
+                    }
                     // Found the matching intermesh link
                     num_directions_assigned++;
                     intermesh_routing_direction = edge.port_direction;
@@ -2033,6 +2049,10 @@ void ControlPlane::assign_intermesh_link_directions_to_remote_host(const FabricN
     for (const auto& [connected_mesh_id, edge] :
          inter_mesh_connectivity[*fabric_node_id.mesh_id][fabric_node_id.chip_id]) {
         num_links_requested_on_node += edge.connected_chip_ids.size();
+    }
+    if (*distributed_context.rank() == 1) {
+        std::cout << "Num links requested: " << num_links_requested_on_node
+                  << " Num Links found: " << num_directions_assigned << std::endl;
     }
     TT_FATAL(
         num_directions_assigned == num_links_requested_on_node,

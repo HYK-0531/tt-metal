@@ -76,13 +76,13 @@ void kernel_main() {
 
 #ifdef OUTPUT_IS_SHARDED
     using tensor_shard_info = ShardedInfo<
-        get_compile_time_arg_val(13),   // Memory layout
-        get_compile_time_arg_val(14),   // The number of sharding cores
-        get_compile_time_arg_val(15),   // The page size we offset each write to
-        get_compile_time_arg_val(16),   // The number of pages in each sharding row not including padding pages
-        get_compile_time_arg_val(17),   // This defines times when contiguous pages can't be calculated
-        get_compile_time_arg_val(18),   // pages_per_shard_x
-        get_compile_time_arg_val(19)>;  // pages_per_shard_y
+        get_compile_time_arg_val(29),   // Memory layout
+        get_compile_time_arg_val(30),   // The number of sharding cores
+        get_compile_time_arg_val(31),   // The page size we offset each write to
+        get_compile_time_arg_val(32),   // The number of pages in each sharding row not including padding pages
+        get_compile_time_arg_val(33),   // This defines times when contiguous pages can't be calculated
+        get_compile_time_arg_val(34),   // pages_per_shard_x
+        get_compile_time_arg_val(35)>;  // pages_per_shard_y
 
     const auto [mapping_table, rt_increment] =
         experimental::shard_addr_gen_utils::get_shard_map<tensor_shard_info>(get_arg_addr(arg_idx));
@@ -219,7 +219,7 @@ void kernel_main() {
 
                     if (direction == 1) {
                         if (num_targets_backward_direction) {
-                            scatter_write_for_fabric_write_backward(
+                            scatter_write_for_fabric_write(
                                 remote_noc0_dest_noc_addr_tile_one,
                                 remote_noc0_dest_noc_addr_tile_two,
                                 pkt_hdr,
@@ -237,7 +237,7 @@ void kernel_main() {
                         noc_async_write_barrier();
                     } else {
                         if (num_targets_forward_direction) {
-                            scatter_write_for_fabric_write_forward(
+                            scatter_write_for_fabric_write(
                                 remote_noc0_dest_noc_addr_tile_one,
                                 remote_noc0_dest_noc_addr_tile_two,
                                 pkt_hdr,
@@ -265,7 +265,11 @@ void kernel_main() {
                     if (direction == 1) {
                         if (num_targets_backward_direction) {
                             write_for_fabric_write(
-                                noc0_dest_noc_addr, pkt_hdr, *mux_connection_handle, l1_read_addr, output_page_size);
+                                remote_noc0_dest_noc_addr,
+                                pkt_hdr,
+                                *mux_connection_handle,
+                                l1_read_addr,
+                                output_page_size);
                         }
                         uint64_t local_noc0_dest_noc_addr = get_noc_addr(tile_id, output_addrgen);
                         noc_async_write(l1_read_addr, local_noc0_dest_noc_addr, output_page_size);
@@ -273,7 +277,11 @@ void kernel_main() {
                     } else {
                         if (num_targets_forward_direction) {
                             write_for_fabric_write(
-                                noc0_dest_noc_addr, pkt_hdr, *mux_connection_handle, l1_read_addr, output_page_size);
+                                remote_noc0_dest_noc_addr,
+                                pkt_hdr,
+                                *mux_connection_handle,
+                                l1_read_addr,
+                                output_page_size);
                         }
                     }
                     tiles_read++;
@@ -397,8 +405,8 @@ void kernel_main() {
                             get_noc_addr(tile_two_id, output_addrgen, 0 /*offset*/, 0 /*noc_id*/);
 
                         scatter_write_for_fabric_write(
-                            noc0_dest_noc_addr_tile_one,
-                            noc0_dest_noc_addr_tile_two,
+                            remote_noc0_dest_noc_addr_tile_one,
+                            remote_noc0_dest_noc_addr_tile_two,
                             pkt_hdr,
                             *mux_connection_handle,
                             l1_read_addr,
@@ -420,7 +428,7 @@ void kernel_main() {
                             get_noc_addr(tile_id, output_addrgen, 0 /*offset*/, 0 /*noc_id*/);
 
                         write_for_fabric_write(
-                            noc0_dest_noc_addr, pkt_hdr, *mux_connection_handle, l1_read_addr, output_page_size);
+                            remote_noc0_dest_noc_addr, pkt_hdr, *mux_connection_handle, l1_read_addr, output_page_size);
                         break;
                     }
                 }

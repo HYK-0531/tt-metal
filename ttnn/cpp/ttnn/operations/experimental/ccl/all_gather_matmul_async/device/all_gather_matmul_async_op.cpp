@@ -267,15 +267,11 @@ std::vector<ttnn::Tensor> all_gather_matmul_async(
         topology,
         multi_device_global_semaphore,
         sub_device_id,
-<<<<<<< HEAD
-        /*cluster_axis=*/std::nullopt);
-=======
         /*cluster_axis=*/std::nullopt,
         false,
         chunks_per_sync,
         num_workers_per_link,
         num_buffers_per_channel);
->>>>>>> 216f4fc0cd (pipe num chunks through)
 
     // Create the all gather output tensor used as input (activation) to the matmul
     ttnn::Tensor all_gather_out_tensor =

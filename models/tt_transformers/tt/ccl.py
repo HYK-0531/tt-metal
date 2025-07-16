@@ -121,6 +121,8 @@ class TT_CCL:
         if self.extract_shapes:
             self.ag_persistent_buffer_keys.add(persistent_buffer_key)
 
+        print(persistent_buffer_key)
+
         return persistent_buffer_key
 
     def create_rs_persistent_buffer_keys(

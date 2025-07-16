@@ -66,7 +66,6 @@ void scatter_write_for_fabric_write(
         fabric_mux_connection, pkt_hdr, l1_read_addr, first_payload_size_bytes + second_payload_size_bytes);
     noc_async_writes_flushed();
 }
-#endif
 
 template <uint8_t FABRIC_MUX_CHANNEL_NUM_BUFFERS = 0>
 void write_for_fabric_write(

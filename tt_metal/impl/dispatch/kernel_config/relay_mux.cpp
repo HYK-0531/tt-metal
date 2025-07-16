@@ -144,26 +144,6 @@ void RelayMux::GenerateStaticConfigs() {
         num_slots,
         l1_size);
 
-    uint32_t mux_buffer_end =
-        mux_kernel_config_->get_start_address_to_clear() + mux_kernel_config_->get_num_bytes_to_clear();
-    TT_ASSERT(mux_buffer_end < l1_size, "RelayMux Buffer End {} Exceeds Max L1 {}", mux_buffer_end, l1_size);
-
-    mux_rt_args_.clear();
-    int destination_device_id = -1;
-    TT_ASSERT(!(d2h_ && device_->is_mmio_capable()), "There is no D2H (return path) for MMIO devices");
-    if (d2h_) {
-        // Get the device which is upstream
-        destination_device_id = tt::tt_metal::FDKernel::GetUpstreamDeviceId(device_id_);
-    } else {
-        // Get the device which is downstream on the specified tunnel
-        destination_device_id = tt::tt_metal::FDKernel::GetDownstreamDeviceId(device_id_, tunnel_id_);
-    }
-    const auto src_fabric_node_id = tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(device_id_);
-    const auto dst_fabric_node_id = tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(destination_device_id);
-    const auto& available_links = tt_fabric::get_forwarding_link_indices(src_fabric_node_id, dst_fabric_node_id);
-    TT_ASSERT(!available_links.empty());
-    tt_fabric::append_fabric_connection_rt_args(src_fabric_node_id, dst_fabric_node_id, link_index);
-
     mux_rt_args_ = mux_kernel_config_->get_fabric_mux_run_time_args(
         src_fabric_node_id, dst_fabric_node_id, link_index, *program_, {logical_core_});
 }

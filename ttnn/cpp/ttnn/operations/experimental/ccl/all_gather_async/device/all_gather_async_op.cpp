@@ -279,26 +279,6 @@ tt::tt_metal::operation::ProgramWithCallbacks AllGatherAsync::create_program_at(
     log_trace(tt::LogOp, "version: {}", static_cast<uint32_t>(version));
 
     switch (version) {
-        case AllGatherAsyncVersion::MINIMAL_INTERLEAVED: {
-            log_trace(
-                tt::LogOp, "Detected all gather specialized shape. all_gather_async_minimal_interleaved is called");
-            return all_gather_async_minimal_interleaved(
-                input_tensors[0],
-                target_device,
-                forward_device,
-                backward_device,
-                output_tensors[0],
-                this->dim,
-                this->num_links,
-                target_ring_size,
-                device_index,
-                this->topology,
-                this->semaphore,
-                this->sub_device_id,
-                this->chunks_per_sync,
-                this->num_workers_per_link,
-                this->num_buffers_per_channel);
-        }
         case AllGatherAsyncVersion::LLAMA_MINIMAL_SHARDED:
             log_trace(tt::LogOp, "Detected all gather specialized shape. all_gather_async_llama_sharded is called");
             return all_gather_async_llama_sharded(
@@ -329,7 +309,10 @@ tt::tt_metal::operation::ProgramWithCallbacks AllGatherAsync::create_program_at(
                 device_index,
                 this->topology,
                 this->semaphore,
-                this->sub_device_id);
+                this->sub_device_id,
+                this->chunks_per_sync,
+                this->num_workers_per_link,
+                this->num_buffers_per_channel);
 
         case AllGatherAsyncVersion::GENERIC:
         default:
@@ -428,7 +411,7 @@ Tensor all_gather_async_impl(
                    multi_device_global_semaphore,
                    sub_device_id,
                    /*cluster_axis=*/std::nullopt,
-                   use_optimal_ccl_for_llama,
+                   false,
                    std::nullopt,
                    std::nullopt,
                    std::nullopt),
@@ -546,7 +529,7 @@ Tensor all_gather_async_impl(
                    multi_device_global_semaphore,
                    sub_device_id,
                    cluster_axis,
-                   use_optimal_ccl_for_llama,
+                   false,
                    std::nullopt,
                    std::nullopt,
                    std::nullopt},

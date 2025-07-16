@@ -77,7 +77,7 @@ void kernel_main() {
     int32_t start_tiles_read = get_arg_val<uint32_t>(arg_idx++);
     uint32_t start_tiles_to_read = get_arg_val<uint32_t>(arg_idx++);
 
-    constexpr uint32_t ct_idx = 15;
+    constexpr uint32_t ct_idx = 30;
 
 #ifdef INTERMEDIATE_IS_SHARDED
     constexpr uint32_t ct_offset = 7;
@@ -134,8 +134,6 @@ void kernel_main() {
         .data_format = get_dataformat(cb_compute_output_id)};
 #endif
 
-    size_t arg_for_fab = arg_idx;
-    auto fabric_connection = FabricConnectionManager::build_from_args(arg_for_fab);
     bool mux_connection_valid = get_arg_val<uint32_t>(arg_idx++) == 1;
     uint32_t termination_sync_address = get_semaphore(get_arg_val<uint32_t>(arg_idx++));
     uint32_t local_fabric_mux_status_address = get_semaphore(get_arg_val<uint32_t>(arg_idx++));
@@ -179,13 +177,6 @@ void kernel_main() {
 
     volatile PACKET_HEADER_TYPE* pkt_hdr_seminc =
         reinterpret_cast<volatile PACKET_HEADER_TYPE*>(packet_header_buffer_seminc);
-
-    if (fabric_connection.is_logically_connected()) {
-        fabric_connection.open();
-    }
-
-    auto* fabric_direction_connection =
-        direction ? &fabric_connection.get_forward_connection() : &fabric_connection.get_backward_connection();
 
     tt::tt_fabric::fabric_client_connect(mux_connection_handle);
 

@@ -21,6 +21,7 @@
 #include <tt-metalium/hal_types.hpp>
 #include <tt-metalium/tt_metal.hpp>
 #include <tt-metalium/distributed.hpp>
+#include <tt-metalium/system_mesh.hpp>
 #include "tt_metal/test_utils/env_vars.hpp"
 
 #include "tt_metal/fabric/fabric_context.hpp"
@@ -39,6 +40,8 @@ using ReplicatedBufferConfig = tt::tt_metal::distributed::ReplicatedBufferConfig
 using MeshBuffer = tt::tt_metal::distributed::MeshBuffer;
 using BufferDistributionSpec = tt::tt_metal::BufferDistributionSpec;
 using Shape = tt::tt_metal::Shape;
+using SystemMesh = tt::tt_metal::distributed::SystemMesh;
+using MeshDeviceConfig = tt::tt_metal::distributed::MeshDeviceConfig;
 
 using Topology = tt::tt_fabric::Topology;
 
@@ -68,27 +71,8 @@ class TestFixture : public IDeviceInfoProvider, public IRouteManager {
 
 public:
     void init() {
-        control_plane_ptr_ = &tt::tt_metal::MetalContext::instance().get_control_plane();
-        const auto user_meshes = control_plane_ptr_->get_user_physical_mesh_ids();
-        TT_FATAL(
-            user_meshes.size() == 1,
-            "Only expected a single user mesh for a single host, but got: {}",
-            user_meshes.size());
-
-        // TODO: for now we are just dealing with user mesh 0 here
-        available_mesh_ids_.insert(user_meshes[0]);
-        mesh_shape_ = control_plane_ptr_->get_physical_mesh_shape(user_meshes[0]);
-        const auto coordinates = MeshCoordinateRange(mesh_shape_);
-        for (const auto& coord : coordinates) {
-            available_device_coordinates_.push_back(coord);
-        }
-
-        // TODO: available node ids should be able to capture the node ids for other meshes as well
-        const auto mesh_id = user_meshes[0];
-        for (auto i = 0; i < available_device_coordinates_.size(); i++) {
-            available_node_ids_.emplace_back(FabricNodeId(mesh_id, i));
-        }
-
+        // NOTE: We defer all control plane access until open_devices_internal
+        // to ensure fabric config is set first, which affects mesh graph descriptor selection
         current_fabric_config_ = tt::tt_fabric::FabricConfig::DISABLED;
     }
 
@@ -603,7 +587,7 @@ public:
         return std::make_pair(dst_node_forward, dst_node_backward);
     }
 
-    uint32_t get_num_sync_devices() const override {
+    uint32_t get_num_sync_devices(bool wrap_around_mesh = true) const override {
         uint32_t num_devices;
         switch (topology_) {
             case tt::tt_fabric::Topology::Linear: {
@@ -611,8 +595,12 @@ public:
                 return num_devices;
             }
             case tt::tt_fabric::Topology::Ring: {
-                // sync using full ring mcast, ie, mcast on both forward/backward path.
-                num_devices = 2 * (mesh_shape_[NS_DIM] - 1 + mesh_shape_[EW_DIM] - 1);
+                if (wrap_around_mesh) {
+                    // sync using full ring mcast, ie, mcast on both forward/backward path.
+                    num_devices = 2 * (mesh_shape_[NS_DIM] - 1 + mesh_shape_[EW_DIM] - 1);
+                } else {
+                    num_devices = mesh_shape_[NS_DIM] + mesh_shape_[EW_DIM] - 1;
+                }
                 return num_devices;
             }
             case tt::tt_fabric::Topology::Mesh: {
@@ -703,6 +691,8 @@ public:
 
         hops[direction_forward] = num_forward_hops;
         hops[direction_backward] = num_backward_hops;
+
+        log_info(tt::LogTest, "hopss: {}, ", hops);
 
         return hops;
     }
@@ -868,8 +858,6 @@ public:
         uint32_t global_sync_val = 0;
         bool wrap_around_mesh = control_plane_ptr_->get_fabric_context().is_wrap_around_mesh(src_device.mesh_id);
 
-        log_info(tt::LogTest, "wrap_around_mesh: {}, ", wrap_around_mesh);
-
         switch (topology_) {
             case tt::tt_fabric::Topology::Ring: {
                 if (wrap_around_mesh) {
@@ -888,10 +876,6 @@ public:
                     multi_directional_hops = this->get_wrap_around_mesh_full_or_half_ring_mcast_hops(
                         src_device, dst_node_forward, dst_node_backward, HighLevelTrafficPattern::FullRingMulticast);
 
-                    // minus 2 because full ring pattern traverse each node twice.
-                    auto num_sync_devices = this->get_num_sync_devices();
-                    global_sync_val = 2 * num_sync_devices -
-                                      2;  // minus 2 because in a full ring pattern we dont mcast to self (twice).
                 } else {
                     // if not wrap around mesh, then need to get the neighbours on all directions.
                     auto ns_hops = this->get_full_or_half_ring_mcast_hops(
@@ -899,12 +883,20 @@ public:
                     auto ew_hops = this->get_full_or_half_ring_mcast_hops(
                         src_device, HighLevelTrafficPattern::FullRingMulticast, EW_DIM);
                     for (const auto& [direction, hops] : ns_hops) {
-                        multi_directional_hops[direction] = hops;
+                        if (hops != 0) {
+                            multi_directional_hops[direction] = hops;
+                        }
                     }
                     for (const auto& [direction, hops] : ew_hops) {
-                        multi_directional_hops[direction] = hops;
+                        if (hops != 0) {
+                            multi_directional_hops[direction] = hops;
+                        }
                     }
                 }
+                // minus 2 because full ring pattern traverse each node twice.
+                auto num_sync_devices = this->get_num_sync_devices(wrap_around_mesh);
+                global_sync_val =
+                    2 * num_sync_devices - 2;  // minus 2 because in a full ring pattern we dont mcast to self (twice).
                 break;
             }
             case tt::tt_fabric::Topology::Linear: {
@@ -1164,8 +1156,34 @@ private:
     bool are_devices_open_ = false;
 
     void open_devices_internal(tt::tt_fabric::FabricConfig fabric_config) {
+        // Set fabric config FIRST, before any control plane access
         tt::tt_fabric::SetFabricConfig(fabric_config);
-        mesh_device_ = MeshDevice::create(mesh_shape_);
+
+        // Now it's safe to initialize control plane (will use correct mesh graph descriptor)
+        control_plane_ptr_ = &tt::tt_metal::MetalContext::instance().get_control_plane();
+
+        // Initialize mesh and device info that was deferred from init()
+        const auto user_meshes = control_plane_ptr_->get_user_physical_mesh_ids();
+        TT_FATAL(
+            user_meshes.size() == 1,
+            "Only expected a single user mesh for a single host, but got: {}",
+            user_meshes.size());
+
+        // TODO: for now we are just dealing with user mesh 0 here
+        available_mesh_ids_.insert(user_meshes[0]);
+        mesh_shape_ = control_plane_ptr_->get_physical_mesh_shape(user_meshes[0]);
+        const auto coordinates = MeshCoordinateRange(mesh_shape_);
+        for (const auto& coord : coordinates) {
+            available_device_coordinates_.push_back(coord);
+        }
+
+        // TODO: available node ids should be able to capture the node ids for other meshes as well
+        const auto mesh_id = user_meshes[0];
+        for (auto i = 0; i < available_device_coordinates_.size(); i++) {
+            available_node_ids_.emplace_back(FabricNodeId(mesh_id, i));
+        }
+
+        mesh_device_ = MeshDevice::create(MeshDeviceConfig(mesh_shape_));
 
         TT_FATAL(mesh_device_ != nullptr, "Failed to create MeshDevice with shape {}", mesh_shape_);
 

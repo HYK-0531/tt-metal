@@ -1467,7 +1467,6 @@ void build_tt_fabric_program(
     }
 
     const bool wrap_around_mesh = fabric_context.is_wrap_around_mesh(fabric_node_id.mesh_id);
-    log_info(tt::LogTest, "wrap_around_mesh: {}, ", wrap_around_mesh);
 
     for (const auto& [direction, remote_fabric_node_id] : chip_neighbors) {
         const auto& [fabric_edm_type, fabric_edm_axis] = get_fabric_edm_type(

@@ -26,22 +26,22 @@ void MAIN {
     constexpr uint32_t window_size_hw = get_compile_time_arg_val(1);
 
     constexpr uint32_t split_reader = get_compile_time_arg_val(2);
+    constexpr uint32_t multi_buffering_factor = get_compile_time_arg_val(3);
 
-    constexpr uint32_t nsticks_per_core_by_nblocks = get_compile_time_arg_val(3);
-    constexpr uint32_t in_c = get_compile_time_arg_val(4);
-    constexpr uint32_t in_nblocks_c = get_compile_time_arg_val(5);
-    constexpr uint32_t max_rows_for_reduction = get_compile_time_arg_val(6);
+    constexpr uint32_t nsticks_per_core_by_nblocks = get_compile_time_arg_val(4);
+    constexpr uint32_t in_c = get_compile_time_arg_val(5);
+    constexpr uint32_t in_nblocks_c = get_compile_time_arg_val(6);
+    constexpr uint32_t max_rows_for_reduction = get_compile_time_arg_val(7);
 
-    constexpr uint32_t in_cb_id_0 = get_compile_time_arg_val(7);
-    constexpr uint32_t in_cb_id_1 = get_compile_time_arg_val(8);  // for split reader
-    constexpr uint32_t ones_cb_id = get_compile_time_arg_val(9);  // cb with all ones for avg pool
-    constexpr uint32_t in_scalar_cb_id_0 = get_compile_time_arg_val(10);
-    constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(11);
-    constexpr uint32_t out_cb_id = get_compile_time_arg_val(12);
-    constexpr bool one_scalar_per_core = get_compile_time_arg_val(13);
-    constexpr uint32_t bf32_scalar = get_compile_time_arg_val(14);
-
-    DPRINT << "bf32_scalar: " << bf32_scalar << ENDL();
+    constexpr uint32_t in_cb_id_0 = get_compile_time_arg_val(8);
+    constexpr uint32_t in_cb_id_1 = get_compile_time_arg_val(9);   // for split reader
+    constexpr uint32_t ones_cb_id = get_compile_time_arg_val(10);  // cb with all ones for avg pool
+    constexpr uint32_t in_scalar_cb_id_0 = get_compile_time_arg_val(11);
+    constexpr uint32_t in_scalar_cb_id_1 = get_compile_time_arg_val(12);
+    constexpr uint32_t out_cb_id = get_compile_time_arg_val(13);
+    constexpr bool one_scalar_per_core = get_compile_time_arg_val(14);
+    constexpr uint32_t bf32_scalar = get_compile_time_arg_val(15);
+    constexpr uint32_t sync_cb_id = get_compile_time_arg_val(16);
 
     constexpr bool is_partial_tile = in_c < 32;
     static_assert((!is_partial_tile || (in_c == 16)), "Partial tile must have c_dim 16");
@@ -74,14 +74,43 @@ void MAIN {
 
     // wait for initialization to complete
     cb_wait_front(ones_cb_id, 1);
+    uint32_t multi_buffer_offset_0 = 0;
+    uint32_t multi_buffer_offset_1 = 0;
 
     for (uint32_t n = 0; n < nsticks_per_core_by_nblocks; ++n) {
         const bool reader0 = !(split_reader && (n & 0x1));
         const uint32_t curr_scalar_cb_id = (!reader0 && !one_scalar_per_core) ? in_scalar_cb_id_1 : in_scalar_cb_id_0;
         const uint32_t curr_in_cb_id = !reader0 ? in_cb_id_1 : in_cb_id_0;
+        uint32_t bf32_scalar_var = 0;
         if constexpr (!one_scalar_per_core) {
             cb_wait_front(curr_scalar_cb_id, 1);
+
+            cb_reserve_back(sync_cb_id, 1);
+            cb_push_back(sync_cb_id, 1);
+            cb_wait_front(sync_cb_id, 1);
+            cb_pop_front(sync_cb_id, 1);
+
+            volatile uint32_t* bf32_scalar_ptr;
+            cb_get_tile(curr_scalar_cb_id, 0, &bf32_scalar_ptr);
+            bf32_scalar_ptr += reader0 ? multi_buffer_offset_0 : multi_buffer_offset_1;
+            uint32_t pointer_cast = (uint32_t)bf32_scalar_ptr;
+            bf32_scalar_var = bf32_scalar_ptr[4];  // value from get tile is offset by 4 elements
+            // DPRINT << "GET TILE value: " << bf32_scalar_var << " from: " << pointer_cast + 16 << ENDL();
+            cb_release_tile(curr_scalar_cb_id);
+
+            if (reader0) {
+                multi_buffer_offset_0 += 1;
+                if (multi_buffer_offset_0 == multi_buffering_factor) {
+                    multi_buffer_offset_0 = 0;
+                }
+            } else {
+                multi_buffer_offset_1 += 1;
+                if (multi_buffer_offset_1 == multi_buffering_factor) {
+                    multi_buffer_offset_1 = 0;
+                }
+            }
         }
+
         for (uint32_t c_i = 0; c_i < in_nblocks_c; c_i++) {
             bool last_c_block = c_i == in_nblocks_c - 1;
             uint32_t tiles_to_reduce = last_c_block ? partial_iter_output_tiles : max_tiles_per_iter;
@@ -103,23 +132,7 @@ void MAIN {
                         if constexpr (one_scalar_per_core) {
                             mul_unary_tile(math_tile_idx, bf32_scalar);
                         } else {
-                            // uint64_t scalar_address = 0;
-                            // UNPACK(scalar_address = get_local_cb_interface(curr_scalar_cb_id).fifo_rd_ptr);
-                            // constexpr uint32_t COMPUTE_ADDR_FACTOR = 16;
-                            // UNPACK(
-                            //     volatile tt_l1_ptr uint32_t* scalar_ptr =
-                            //         reinterpret_cast<volatile tt_l1_ptr uint32_t*>(
-                            //             COMPUTE_ADDR_FACTOR * scalar_address));
-                            // UNPACK(
-                            //     DPRINT << "scalar_address: " << scalar_address << " scalar value: " << *scalar_ptr
-                            //            << ENDL());
-                            volatile uint32_t* bf32_scalar_ptr;
-                            cb_get_tile(curr_scalar_cb_id, 0, &bf32_scalar_ptr);
-                            uint32_t bf32_scalar_var =
-                                bf32_scalar_ptr[4];  // value from get tile is offset by 4 elements
-                            MATH(DPRINT << "GET TILE value: " << bf32_scalar_var << ENDL());
                             mul_unary_tile(math_tile_idx, bf32_scalar_var);
-                            cb_release_tile(curr_scalar_cb_id);
                         }
                     }
                 }

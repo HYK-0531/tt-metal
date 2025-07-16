@@ -188,7 +188,7 @@ uint32_t calculate_L1_usage(
     bool split_reader = true;
 
     // scalar CB as coefficient of reduce
-    uint32_t in_scalar_cb_pagesize = 1;
+    uint32_t in_scalar_cb_pagesize = 4;
     uint32_t in_scalar_cb_npages = 1 * multi_buffering_factor;
     uint32_t in_scalar_cb_size_0 = in_scalar_cb_npages * in_scalar_cb_pagesize;
     uint32_t in_scalar_cb_size_1 = 0;
@@ -239,8 +239,10 @@ uint32_t calculate_L1_usage(
         return factor * alignment_bytes;
     };
 
+    uint32_t sync_cb_size = 4;
+
     return in_scalar_cb_size_0 + in_scalar_cb_size_1 + clear_value_cb_size + in_cb_config_0_size + in_cb_config_1_size +
-           ones_cb_size + align(out_cb_config_size) /* global, involved */;
+           ones_cb_size + align(out_cb_config_size) + sync_cb_size /* global, involved */;
 }
 
 std::optional<ParallelConfig> determine_pool_config_for_auto_shard(

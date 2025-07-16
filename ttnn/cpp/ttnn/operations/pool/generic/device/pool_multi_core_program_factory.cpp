@@ -103,9 +103,7 @@ std::vector<ScalarInfo> get_bf16_avg_pool_config_scalars(
             if (!scalars.empty()) {
                 scalars.back().end = i;
             }
-            printf("value: %f\n", value);
             uint32_t int_value = *(reinterpret_cast<uint32_t*>(&value));
-            printf("int_value: %u\n", int_value);
             scalars.push_back({i, int_value, i});
             first_scalar = false;
         }
@@ -312,7 +310,7 @@ Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_
 
     uint32_t next_cb_index = tt::CBIndex::c_0;
     const uint32_t in_scalar_cb_id_0 = next_cb_index++;
-    const uint32_t in_scalar_cb_pagesize = 1;
+    const uint32_t in_scalar_cb_pagesize = 4;
     const uint32_t in_scalar_cb_npages = 1 * multi_buffering_factor;
     TT_FATAL(in_scalar_cb_npages <= 2, "Kernel logic relys on scalar cb page number being <= 2");
     tt::tt_metal::create_cb(
@@ -415,6 +413,9 @@ Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_
 
     TT_FATAL(output.memory_config().is_sharded(), "Output memory config needs to be sharded");
 
+    uint32_t sync_cb_id = next_cb_index++;
+    tt::tt_metal::create_cb(sync_cb_id, program, all_cores, 4, 1, tt::DataFormat::UInt32);
+
     /**
      * Reader Kernel: input rows -> input cb
      */
@@ -516,6 +517,7 @@ Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_
         in_ntiles_c,
         kernel_size_hw,
         split_reader,
+        multi_buffering_factor,
         out_nhw_per_core,
         input_shape[3] / num_shards_c,
         in_nblocks_c,
@@ -527,7 +529,8 @@ Pool2D::MultiCore::cached_program_t pool2d_multi_core_sharded_with_halo_v2_impl_
         in_scalar_cb_id_1,
         out_cb_id,
         one_scalar_per_core,
-        bf16_scalar};
+        bf16_scalar,
+        sync_cb_id};
 
     auto compute_config = tt::tt_metal::ComputeConfig{
         .math_fidelity = MathFidelity::HiFi4,

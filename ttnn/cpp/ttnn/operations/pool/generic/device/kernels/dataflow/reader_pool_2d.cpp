@@ -154,7 +154,7 @@ FORCE_INLINE void fill_scalar(
                                  (split_reader && (counter == scalar_start + 2 || counter == scalar_start + 3)))) {
         uint64_t scalar_address = get_write_ptr(in_scalar_cb_id);
         volatile tt_l1_ptr uint32_t* scalar_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(scalar_address);
-        DPRINT << "filling value: " << scalar_value << " at address: " << scalar_address << ENDL();
+        // DPRINT << "filling value: " << scalar_value << " at address: " << scalar_address << ENDL();
         *scalar_ptr = scalar_value;
     }
     cb_push_back(in_scalar_cb_id, 1);
@@ -260,9 +260,6 @@ void kernel_main() {
         scalar_value = config_ptr[3 * scalar_index + 1];
         scalar_end = config_ptr[3 * scalar_index + 2];
         scalar_index++;
-
-        DPRINT << "scalar_start: " << scalar_start << " scalar_value: " << scalar_value << " scalar_end: " << scalar_end
-               << " reader_nindices: " << reader_nindices << ENDL();
     }
 
     uint16_t num_segments = reader_indices_ptr[0] & 0xffff;

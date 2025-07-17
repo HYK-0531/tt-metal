@@ -1019,6 +1019,8 @@ private:
                         for (const auto& value : values) {
                             next_level_configs.emplace_back(current_config);
                             auto& next_config = next_level_configs.back();
+                            // Explicitly preserve benchmark_mode
+                            next_config.benchmark_mode = current_config.benchmark_mode;
                             // Use optimized string concatenation utility
                             detail::append_with_separator(next_config.name, "_", param_name, value);
 
@@ -1038,6 +1040,8 @@ private:
                         for (const auto& value : values) {
                             next_level_configs.emplace_back(current_config);
                             auto& next_config = next_level_configs.back();
+                            // Explicitly preserve benchmark_mode
+                            next_config.benchmark_mode = current_config.benchmark_mode;
 
                             if (param_name == "num_links") {
                                 // num_links is part of fabric_setup, not traffic pattern defaults

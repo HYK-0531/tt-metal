@@ -57,11 +57,6 @@ public:
         if (it == available_payload_chunks_.end()) {
             TT_THROW("Attempting to reserve a payload chunk that is not available or already allocated.");
         }
-        log_info(
-            tt::LogMetal,
-            "Successfully reserved address 0x{:x}. Remaining chunks: {}",
-            addr,
-            available_payload_chunks_.size() - 1);
         available_payload_chunks_.erase(it);
     }
 
@@ -568,15 +563,6 @@ inline void GlobalAllocator::allocate_multicast_patterns_uniform(
 
     uint32_t chunk_size = policies_.default_payload_chunk_size.value_or(detail::DEFAULT_PAYLOAD_CHUNK_SIZE_BYTES);
 
-    // DEBUG: Log the packet sizes being allocated
-    log_info(tt::LogMetal, "=== MULTICAST ALLOCATION DEBUG (Link {}) ===", link_id);
-    log_info(tt::LogMetal, "Chunk size: {}", chunk_size);
-    log_info(tt::LogMetal, "Destination devices: {}", dst_node_ids);
-    for (auto& [sender_ptr, pattern_ptr, dest_ptr] : multicast_patterns) {
-        auto& pattern = *pattern_ptr;
-        log_info(tt::LogMetal, "Pattern size: {} bytes", pattern.size.value());
-    }
-
     // Validate payload sizes for this group
     for (auto& [sender_ptr, pattern_ptr, dest_ptr] : multicast_patterns) {
         auto& pattern = *pattern_ptr;
@@ -601,28 +587,15 @@ inline void GlobalAllocator::allocate_multicast_patterns_uniform(
         }
 
         const auto available_cores = receiver_pool.get_available_cores(device_resources.core_workload_);
-        log_info(tt::LogMetal, "Device {}: {} available cores", device_id, available_cores.size());
 
         for (const auto& core : available_cores) {
             core_counts[core]++;
             auto& core_resources = device_resources.get_or_create_core_resources(core, CoreType::RECEIVER);
             if (core_resources.has_available_payload_chunk()) {
                 const auto& available_chunks = core_resources.get_available_payload_chunks();
-                log_info(
-                    tt::LogMetal,
-                    "Device {}, Core [{},{}]: {} available chunks",
-                    device_id,
-                    core.x,
-                    core.y,
-                    available_chunks.size());
                 for (auto addr : available_chunks) {
                     memory_histograms[core][addr]++;
-                    if (available_chunks.size() <= 5) {  // Only log first few addresses to avoid spam
-                        log_info(tt::LogMetal, "  Address: 0x{:x}", addr);
-                    }
                 }
-            } else {
-                log_info(tt::LogMetal, "Device {}, Core [{},{}]: NO available chunks", device_id, core.x, core.y);
             }
         }
     }
@@ -660,37 +633,12 @@ inline void GlobalAllocator::allocate_multicast_patterns_uniform(
         }
     }
 
-    log_info(tt::LogMetal, "Core histogram analysis:");
-    for (const auto& [core, count] : core_counts) {
-        log_info(
-            tt::LogMetal,
-            "  Core [{},{}]: available on {} devices, has_uniform_addr: {}",
-            core.x,
-            core.y,
-            count,
-            has_uniform_address(core));
-    }
-
-    if (best_core.has_value()) {
-        log_info(
-            tt::LogMetal,
-            "Selected best core: [{},{}] (available on {} devices)",
-            best_core->x,
-            best_core->y,
-            max_count);
-    } else {
-        log_info(tt::LogMetal, "No suitable core found!");
-    }
-
     std::optional<std::pair<CoreCoord, uint32_t>> uniform_receiver = std::nullopt;
     if (best_core.has_value()) {
         const auto& address_histogram = memory_histograms[best_core.value()];
-        log_info(tt::LogMetal, "Address histogram for core [{},{}]:", best_core->x, best_core->y);
         for (const auto& [addr, count] : address_histogram) {
-            log_info(tt::LogMetal, "  Address 0x{:x}: available on {} devices", addr, count);
             if (count == dst_node_ids.size()) {
                 uniform_receiver = std::make_pair(best_core.value(), addr);
-                log_info(tt::LogMetal, "  ^^ SELECTED as uniform address");
                 break;
             }
         }
@@ -699,13 +647,6 @@ inline void GlobalAllocator::allocate_multicast_patterns_uniform(
     if (!uniform_receiver.has_value()) {
         TT_THROW("Could not find a uniform core and memory address for multicast patterns in link group {}.", link_id);
     }
-
-    log_info(
-        tt::LogMetal,
-        "FINAL ALLOCATION: Core [{},{}], Address 0x{:x}",
-        uniform_receiver->first.x,
-        uniform_receiver->first.y,
-        uniform_receiver->second);
 
     // Apply the uniform allocation to all multicast patterns in this link group
     for (auto& [sender_ptr, pattern_ptr, dest_ptr] : multicast_patterns) {
@@ -721,15 +662,7 @@ inline void GlobalAllocator::allocate_multicast_patterns_uniform(
     }
 
     // Reserve resources on all destination devices for this link group
-    log_info(tt::LogMetal, "Reserving resources on {} devices:", dst_node_ids.size());
     for (const auto& node_id : dst_node_ids) {
-        log_info(
-            tt::LogMetal,
-            "  Reserving on device {}: core [{},{}], address 0x{:x}",
-            node_id,
-            uniform_receiver->first.x,
-            uniform_receiver->first.y,
-            uniform_receiver->second);
         auto& device_resources = get_or_create_device_resources(node_id);
         device_resources.reserve_receiver_core(uniform_receiver->first);
         auto& core_resources =
@@ -742,7 +675,6 @@ inline void GlobalAllocator::allocate_multicast_patterns_uniform(
             core_resources.reserve_payload_chunk(uniform_receiver->second);
         }
     }
-    log_info(tt::LogMetal, "=== END MULTICAST ALLOCATION DEBUG ===");
 }
 
 inline void GlobalAllocator::allocate_unicast_patterns(

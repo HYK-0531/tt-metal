@@ -117,8 +117,10 @@ public:
             // patterns.
             this->set_global_sync(config.global_sync);
             this->set_global_sync_val(config.global_sync_val);
+            this->set_benchmark_mode(config.benchmark_mode);
 
             log_info(tt::LogTest, "Enabled sync, global sync value: {}, ", global_sync_val_);
+            log_info(tt::LogTest, "Ubenchmark mode: {}, ", benchmark_mode_);
 
             for (const auto& sync_sender : config.global_sync_configs) {
                 CoreCoord sync_core = sync_sender.core.value();

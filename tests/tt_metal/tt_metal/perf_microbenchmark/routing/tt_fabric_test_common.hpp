@@ -355,20 +355,33 @@ public:
         }
 
         std::vector<FabricNodeId> dst_nodes;
-        const MeshCoordinate& src_coord = get_device_coord(src_node);
-
         bool use_displacement_for_dst_nodes =
             chip_send_type == ChipSendType::CHIP_UNICAST || this->topology_ == Topology::Linear;
+
         if (use_displacement_for_dst_nodes) {
+            const MeshCoordinate& src_coord = get_device_coord(src_node);
             auto displacements = convert_hops_to_displacement(hops);
             for (const auto& displacement : displacements) {
                 // Ignore zero-length displacements that can occur for some directions in the hops map
                 if (displacement == MeshCoordinate::zero_coordinate(displacement.dims())) {
                     continue;
                 }
+
                 const auto dst_coord = get_coord_from_displacement(src_coord, displacement);
-                // For unicast, we only care about the final destination of each displacement vector.
-                dst_nodes.push_back(get_fabric_node_id(dst_coord));
+
+                if (chip_send_type == ChipSendType::CHIP_UNICAST) {
+                    // For unicast, we only care about the final destination of each displacement vector.
+                    dst_nodes.push_back(get_fabric_node_id(dst_coord));
+                } else if (chip_send_type == ChipSendType::CHIP_MULTICAST) {
+                    // For multicast, we care about all nodes along the path.
+                    const auto coords_in_path = get_coords_from_range(src_coord, dst_coord);
+                    for (const auto& coord : coords_in_path) {
+                        if (coord == src_coord) {
+                            continue;  // Don't include the source itself
+                        }
+                        dst_nodes.push_back(get_fabric_node_id(coord));
+                    }
+                }
             }
         } else if (chip_send_type == ChipSendType::CHIP_MULTICAST) {
             dst_nodes = get_mesh_topology_dst_node_ids(src_node, hops);

@@ -366,6 +366,8 @@ enum PacketLocalForwardType : uint8_t {
     PACKET_FORWARD_LOCAL_AND_REMOTE = 0x3
 };
 
+enum class VCType : uint8_t { VC0, VC1 };
+
 // tracks if the main loop made any progress. If many loop iterations were completed without
 // did_something=true (i.e. no progress was made), then we allow for context switch in case
 // the link is down
@@ -2114,6 +2116,101 @@ void kernel_main() {
         has_downstream_edm_vc0_buffer_connection, local_sender_channel_free_slots_stream_ids_ordered);
     constexpr auto worker_sender_channel_id = my_direction;
     size_t next_available_sender_channel_free_slots_stream_index = 1;
+
+    auto init_downstream_edm_noc_interfaces = [&](VCType vc_type, uint32_t edm_index) {
+        // Receiver channels local semaphore for managing flow control with the downstream EDM.
+        // The downstream EDM should be sending semaphore updates to this address any time it can
+        // accept a new message
+        const auto local_sem_address_for_acks =
+            is_2d_fabric
+                ? local_sem_for_acks_from_downstream_edm[edm_index]
+                : get_semaphore<ProgrammableCoreType::ACTIVE_ETH>(local_sem_for_acks_from_downstream_edm[edm_index]);
+        const auto teardown_sem_address = is_2d_fabric ? local_sem_for_teardown_from_downstream_edm[edm_index]
+                                                       : get_semaphore<ProgrammableCoreType::ACTIVE_ETH>(
+                                                             local_sem_for_teardown_from_downstream_edm[edm_index]);
+
+        if constexpr (is_2d_fabric) {
+            // reset the handshake addresses to 0 (this is for router -> router handshake for connections over noc)
+            *reinterpret_cast<volatile uint32_t* const>(local_sem_address_for_acks) = 0;
+            *reinterpret_cast<volatile uint32_t* const>(teardown_sem_address) = 0;
+        }
+
+        size_t buffer_index_id;
+        if (vc_type == VCType::VC0) {
+            buffer_index_id = is_2d_fabric ? local_sender_channel_connection_buffer_index_id[edm_index]
+                                           : local_sender_channel_1_connection_buffer_index_id;
+        } else {
+            buffer_index_id = is_2d_fabric ? local_sender_channel_connection_buffer_index_id[edm_index]
+                                           : local_sender_channel_2_connection_buffer_index_id;
+        }
+
+        auto downstream_direction = edm_index;
+
+        StreamId receiver_channel_free_slots_stream_id;
+        if (vc_type == VCType::VC0) {
+            receiver_channel_free_slots_stream_id =
+                is_2d_fabric ? StreamId{receiver_channel_free_slots_stream_ids[downstream_direction]}
+                             : StreamId{receiver_channel_free_slots_stream_ids[0]};
+        } else {
+            receiver_channel_free_slots_stream_id = StreamId{receiver_channel_1_free_slots_from_downstream_stream_id};
+        }
+
+        uint32_t downstream_sender_channel_credit_stream_id;
+        if (vc_type == VCType::VC0) {
+            downstream_sender_channel_credit_stream_id =
+                is_2d_fabric
+                    ? get_vc0_downstream_sender_channel_free_slots_stream_id()  // local_sender_channel_free_slots_stream_ids_ordered[my_direction]//edm_index]
+                    : local_sender_channel_free_slots_stream_ids_ordered[1];
+        } else {
+            downstream_sender_channel_credit_stream_id =
+                is_2d_fabric ? StreamId{vc1_sender_channel_free_slots_stream_id}
+                             : StreamId{local_sender_channel_free_slots_stream_ids_ordered[2]};
+        }
+
+        new (&downstream_edm_noc_interfaces[edm_index]) tt::tt_fabric::EdmToEdmSender<DOWNSTREAM_SENDER_NUM_BUFFERS>(
+            // persistent_mode -> hardcode to false for 1D because for 1D, EDM -> EDM
+            // connections we must always use semaphore lookup
+            // For 2D, downstream_edm_vc0_semaphore_id is an address.
+            is_2d_fabric,
+            0,  // Unused in routers. Used by workers to get edm direction for 2D.
+            vc_type == VCType::VC0 ? (downstream_edm_vc0_noc_x >> (edm_index * 8)) & 0xFF : downstream_edm_vc1_noc_x,
+            vc_type == VCType::VC0 ? (downstream_edm_vc0_noc_y >> (edm_index * 8)) & 0xFF : downstream_edm_vc1_noc_y,
+            vc_type == VCType::VC0 ? downstream_edm_vc0_buffer_base_address : downstream_edm_vc1_buffer_base_address,
+            DOWNSTREAM_SENDER_NUM_BUFFERS,
+            vc_type == VCType::VC0 ? downstream_edm_vc0_semaphore_id : downstream_edm_vc1_semaphore_id,
+            vc_type == VCType::VC0 ? downstream_edm_vc0_worker_registration_id
+                                   : downstream_edm_vc1_worker_registration_id,
+            vc_type == VCType::VC0 ? downstream_edm_vc0_worker_location_info_address
+                                   : downstream_edm_vc1_worker_location_info_address,
+            channel_buffer_size,
+            buffer_index_id,
+            reinterpret_cast<volatile uint32_t* const>(local_sem_address_for_acks),
+            reinterpret_cast<volatile uint32_t* const>(teardown_sem_address),
+            vc_type == VCType::VC0
+                ? downstream_vc0_noc_interface_buffer_index_local_addr
+                : downstream_vc1_noc_interface_buffer_index_local_addr,  // keep common, since its a scratch noc read
+            // Since we are the same direction, we're always going to send to the same stream
+            // reg for each downstream router because we are allocating sender channels by
+            // producer direction.
+            //
+            // We add 1 because sender_channel[0] is for (non-forwarded) traffic from our local chip's NoC's, so
+            // we skip that first one. The first forwarded direction is the next one so we start there.
+            downstream_sender_channel_credit_stream_id,
+
+            // This is our local stream register for the copy of the downstream router's
+            // free slots
+            receiver_channel_free_slots_stream_id,
+            vc_type == VCType::VC0 ? receiver_channel_forwarding_data_cmd_buf_ids[0]
+                                   : receiver_channel_forwarding_data_cmd_buf_ids[1],
+            vc_type == VCType::VC0 ? receiver_channel_forwarding_sync_cmd_buf_ids[0]
+                                   : receiver_channel_forwarding_sync_cmd_buf_ids[1]);
+
+        downstream_edm_noc_interfaces[edm_index]
+            .template setup_edm_noc_cmd_buf<
+                tt::tt_fabric::edm_to_downstream_noc,
+                tt::tt_fabric::forward_and_local_write_noc_vc>();
+    };
+
     if (has_downstream_edm_vc0_buffer_connection) {
         // Only bit 0 is set for 1D
         // upto 3 bits set for 2D. 0, 1, 2, 3 for East, West, North, South downstream connections.
@@ -2121,69 +2218,7 @@ void kernel_main() {
         uint32_t edm_index = 0;
         while (has_downstream_edm) {
             if (has_downstream_edm & 0x1) {
-                // Receiver channels local semaphore for managing flow control with the downstream EDM.
-                // The downstream EDM should be sending semaphore updates to this address any time it can
-                // accept a new message
-                const auto local_sem_address_for_acks = is_2d_fabric
-                                                            ? local_sem_for_acks_from_downstream_edm[edm_index]
-                                                            : get_semaphore<ProgrammableCoreType::ACTIVE_ETH>(
-                                                                  local_sem_for_acks_from_downstream_edm[edm_index]);
-                const auto teardown_sem_address = is_2d_fabric
-                                                      ? local_sem_for_teardown_from_downstream_edm[edm_index]
-                                                      : get_semaphore<ProgrammableCoreType::ACTIVE_ETH>(
-                                                            local_sem_for_teardown_from_downstream_edm[edm_index]);
-                if constexpr (is_2d_fabric) {
-                    // reset the handshake addresses to 0 (this is for router -> router handshake for connections over noc)
-                    *reinterpret_cast<volatile uint32_t* const>(local_sem_address_for_acks) = 0;
-                    *reinterpret_cast<volatile uint32_t* const>(teardown_sem_address) = 0;
-                }
-                auto downstream_direction = edm_index;
-                auto receiver_channel_free_slots_stream_id =
-                    is_2d_fabric ? StreamId{receiver_channel_free_slots_stream_ids[downstream_direction]}
-                                 : StreamId{receiver_channel_free_slots_stream_ids[0]};
-                new (&downstream_edm_noc_interfaces[edm_index]) tt::tt_fabric::EdmToEdmSender<
-                    DOWNSTREAM_SENDER_NUM_BUFFERS>(
-                    // persistent_mode -> hardcode to false for 1D because for 1D, EDM -> EDM
-                    // connections we must always use semaphore lookup
-                    // For 2D, downstream_edm_vc0_semaphore_id is an address.
-                    is_2d_fabric,
-                    0,  // Unused in routers. Used by workers to get edm direction for 2D.
-                    (downstream_edm_vc0_noc_x >> (edm_index * 8)) & 0xFF,
-                    (downstream_edm_vc0_noc_y >> (edm_index * 8)) & 0xFF,
-                    downstream_edm_vc0_buffer_base_address,
-                    DOWNSTREAM_SENDER_NUM_BUFFERS,
-                    downstream_edm_vc0_semaphore_id,
-                    downstream_edm_vc0_worker_registration_id,
-                    downstream_edm_vc0_worker_location_info_address,
-                    channel_buffer_size,
-#ifdef FABRIC_2D
-                    local_sender_channel_connection_buffer_index_id[edm_index],
-#else
-                    local_sender_channel_1_connection_buffer_index_id,
-#endif
-                    reinterpret_cast<volatile uint32_t* const>(local_sem_address_for_acks),
-                    reinterpret_cast<volatile uint32_t* const>(teardown_sem_address),
-                    downstream_vc0_noc_interface_buffer_index_local_addr,  // keep common, since its a scratch noc read
-                                                                           // dest.
-                    // Since we are the same direction, we're always going to send to the same stream
-                    // reg for each downstream router because we are allocating sender channels by
-                    // producer direction.
-                    //
-                    // We add 1 because sender_channel[0] is for (non-forwarded) traffic from our local chip's NoC, so
-                    // we skip that first one. The first forwarded direction is the next one so we start there.
-                    is_2d_fabric
-                        ? get_vc0_downstream_sender_channel_free_slots_stream_id()  // local_sender_channel_free_slots_stream_ids_ordered[my_direction]//edm_index]
-                        : local_sender_channel_free_slots_stream_ids_ordered[1],
-
-                    // This is our local stream register for the copy of the downstream router's
-                    // free slots
-                    receiver_channel_free_slots_stream_id,
-                    receiver_channel_forwarding_data_cmd_buf_ids[0],
-                    receiver_channel_forwarding_sync_cmd_buf_ids[0]);
-                downstream_edm_noc_interfaces[edm_index]
-                    .template setup_edm_noc_cmd_buf<
-                        tt::tt_fabric::edm_to_downstream_noc,
-                        tt::tt_fabric::forward_and_local_write_noc_vc>();
+                init_downstream_edm_noc_interfaces(VCType::VC0, edm_index);
             }
             edm_index++;
             has_downstream_edm >>= 1;
@@ -2193,57 +2228,7 @@ void kernel_main() {
     static_assert(!enable_ring_support || !is_2d_fabric, "2D mode does not yet support ring/torus");
     if constexpr (enable_ring_support) {
         if (has_downstream_edm_vc1_buffer_connection) {
-            const auto local_sem_address_for_acks =
-                is_2d_fabric ? local_sem_for_acks_from_downstream_edm[NUM_USED_RECEIVER_CHANNELS - 1]
-                             : get_semaphore<ProgrammableCoreType::ACTIVE_ETH>(
-                                   local_sem_for_acks_from_downstream_edm[NUM_USED_RECEIVER_CHANNELS - 1]);
-            const auto teardown_sem_address =
-                is_2d_fabric ? local_sem_for_teardown_from_downstream_edm[NUM_USED_RECEIVER_CHANNELS - 1]
-                             : get_semaphore<ProgrammableCoreType::ACTIVE_ETH>(
-                                   local_sem_for_teardown_from_downstream_edm[NUM_USED_RECEIVER_CHANNELS - 1]);
-            if constexpr (is_2d_fabric) {
-                // reset the handshake addresses to 0
-                *reinterpret_cast<volatile uint32_t* const>(local_sem_address_for_acks) = 0;
-                *reinterpret_cast<volatile uint32_t* const>(teardown_sem_address) = 0;
-            }
-
-            auto downstream_sender_channel_credit_stream_id =
-                is_2d_fabric ? StreamId{vc1_sender_channel_free_slots_stream_id}
-                             : StreamId{local_sender_channel_free_slots_stream_ids_ordered[2]};
-            new (&downstream_edm_noc_interfaces[NUM_USED_RECEIVER_CHANNELS - 1])
-                tt::tt_fabric::EdmToEdmSender<DOWNSTREAM_SENDER_NUM_BUFFERS>(
-                    // persistent_mode -> hardcode to false because for EDM -> EDM
-                    //  connections we must always use semaphore lookup
-                    is_2d_fabric,
-                    0,  // Unused in routers. Used by workers to get edm direction for 2D.
-                    downstream_edm_vc1_noc_x,
-                    downstream_edm_vc1_noc_y,
-                    downstream_edm_vc1_buffer_base_address,
-                    DOWNSTREAM_SENDER_NUM_BUFFERS,
-                    downstream_edm_vc1_semaphore_id,
-                    downstream_edm_vc1_worker_registration_id,
-                    downstream_edm_vc1_worker_location_info_address,
-                    channel_buffer_size,
-#ifdef FABRIC_2D
-                    local_sender_channel_connection_buffer_index_id[NUM_USED_RECEIVER_CHANNELS - 1],
-#else
-                    local_sender_channel_2_connection_buffer_index_id,
-#endif
-                    reinterpret_cast<volatile uint32_t* const>(local_sem_address_for_acks),
-                    reinterpret_cast<volatile uint32_t* const>(teardown_sem_address),
-                    downstream_vc1_noc_interface_buffer_index_local_addr,
-
-                    // remote (downstream) sender channel credits stream ID
-                    downstream_sender_channel_credit_stream_id,
-                    // This is our local stream register for the copy of the downstream router's
-                    // free slots
-                    StreamId{receiver_channel_1_free_slots_from_downstream_stream_id},
-                    receiver_channel_forwarding_data_cmd_buf_ids[1],
-                    receiver_channel_forwarding_sync_cmd_buf_ids[1]);
-            downstream_edm_noc_interfaces[NUM_USED_RECEIVER_CHANNELS - 1]
-                .template setup_edm_noc_cmd_buf<
-                    tt::tt_fabric::edm_to_downstream_noc,
-                    tt::tt_fabric::forward_and_local_write_noc_vc>();
+            init_downstream_edm_noc_interfaces(VCType::VC1, NUM_USED_RECEIVER_CHANNELS - 1);
         }
     }
 

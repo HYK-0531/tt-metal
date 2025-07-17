@@ -258,6 +258,8 @@ protected:
 
 class UnitMeshCQSingleCardProgramFixture : virtual public UnitMeshCQSingleCardFixture {};
 
+class UnitMeshCQSingleCardBufferFixture : virtual public UnitMeshCQSingleCardFixture {};
+
 class CommandQueueSingleCardBufferFixture : public CommandQueueSingleCardFixture {};
 
 class CommandQueueSingleCardTraceFixture : virtual public CommandQueueSingleCardFixture {

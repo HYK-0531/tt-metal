@@ -23,6 +23,7 @@ ttnn::Tensor ExecuteScaledDotProductAttention::invoke(
     const std::optional<ttnn::Tensor>& attn_mask,
     bool is_causal,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     const std::optional<MemoryConfig>& memory_config,
     std::optional<SDPAProgramConfig> program_config,
     std::optional<DeviceComputeKernelConfig> compute_kernel_config) {
@@ -35,6 +36,7 @@ ttnn::Tensor ExecuteScaledDotProductAttention::invoke(
     return tt::tt_metal::operation::run(
                ScaledDotProductAttention{
                    .scale = scale,
+                   .attn_logit_softcapping = attn_logit_softcapping,
                    .output_mem_config = memory_config.value_or(tt::tt_metal::operation::DEFAULT_OUTPUT_MEMORY_CONFIG),
                    .program_config = std::move(program_config),
                    .is_causal = is_causal,
@@ -55,6 +57,7 @@ ttnn::Tensor ExecuteScaledDotProductAttention::invoke(
     const std::optional<ttnn::Tensor>& attn_mask,
     bool is_causal,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     const std::optional<MemoryConfig>& memory_config,
     std::optional<SDPAProgramConfig> program_config,
     std::optional<DeviceComputeKernelConfig> compute_kernel_config) {
@@ -66,6 +69,7 @@ ttnn::Tensor ExecuteScaledDotProductAttention::invoke(
         std::move(attn_mask),
         is_causal,
         scale,
+        attn_logit_softcapping,
         memory_config,
         std::move(program_config),
         compute_kernel_config);

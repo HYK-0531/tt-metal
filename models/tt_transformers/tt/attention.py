@@ -318,6 +318,8 @@ class Attention(LightweightModule):
         else:
             self.scale = self.head_dim**-0.5
 
+        self.attn_logit_softcapping = configuration.attn_logit_softcapping
+
     def init_kv_cache(self, configuration, weight_cache_path):
         """
         Generates empty KV cache and pushed to device memory
@@ -792,6 +794,7 @@ class Attention(LightweightModule):
                 v_heads_1VSD_8b,
                 is_causal=True,
                 scale=self.scale,
+                attn_logit_softcapping=self.attn_logit_softcapping,
                 compute_kernel_config=self.sdpa_prefill_compute_kernel_cfg,
                 program_config=self.model_config["SDPA_PROGCFG"](seq_len),
             )

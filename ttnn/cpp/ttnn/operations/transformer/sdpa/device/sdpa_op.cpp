@@ -329,6 +329,7 @@ operation::ProgramWithCallbacks ScaledDotProductAttention::create_program(
         page_table,
         this->chunk_start_idx,
         scale,
+        this->attn_logit_softcapping,
         this->is_causal,
         q_chunk_size,
         k_chunk_size,
@@ -431,6 +432,7 @@ operation::Hash ScaledDotProductAttention::compute_program_hash(
     return operation::hash_operation<ScaledDotProductAttention>(
         this->head_dim_v,
         this->scale,
+        this->attn_logit_softcapping,
         this->output_mem_config,
         this->program_config,
         this->is_causal,

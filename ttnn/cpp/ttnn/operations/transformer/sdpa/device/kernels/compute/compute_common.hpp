@@ -9,6 +9,7 @@
 
 #include "compute_kernel_api.h"
 #include "compute_kernel_api/eltwise_binary.h"
+#include "compute_kernel_api/eltwise_unary/binop_with_scalar.h"
 #include "compute_kernel_api/eltwise_unary/exp.h"
 #include "compute_kernel_api/eltwise_unary/recip.h"
 #include "compute_kernel_api/eltwise_unary/softplus.h"
@@ -549,4 +550,45 @@ void matmul_reduce(uint32_t in1_cb, const uint32_t& out_cb) {
         tile_regs_release();
         cb_push_back(out_cb, subblock_h);
     }
+}
+
+template <uint32_t softcapping_fp32>
+void softcap_inplace(uint32_t in_cb, uint32_t num_tiles) {
+    // Precondition: in_cb has num_tiles produced
+    // Postcondition: in_cb has num_tiles produced
+
+    constexpr float softcapping = __builtin_bit_cast(float, softcapping_fp32);
+    constexpr uint32_t softcapping_recip_fp32 = __builtin_bit_cast(uint32_t, 1.0f / softcapping);
+
+    copy_tile_init(in_cb);
+    reconfig_data_format_srca(in_cb);
+    pack_reconfig_data_format(in_cb);
+    cb_wait_front(in_cb, num_tiles);
+
+    for (uint32_t i = 0; i < num_tiles; i++) {
+        tile_regs_acquire();
+        copy_tile(in_cb, i, 0);
+
+        // in / softcapping_fp32
+        binop_with_scalar_tile_init();
+        mul_unary_tile(0, softcapping_recip_fp32);
+
+        // tanh(in / softcapping_fp32)
+        tanh_tile_init();
+        tanh_tile(0);
+
+        // softcapping_fp32 * tanh(in / softcapping_fp32)
+        binop_with_scalar_tile_init();
+        mul_unary_tile(0, softcapping_fp32);
+
+        tile_regs_commit();
+
+        tile_regs_wait();
+        pack_tile(0, in_cb);
+        tile_regs_release();
+    }
+
+    cb_pop_front(in_cb, num_tiles);
+    cb_reserve_back(in_cb, num_tiles);
+    cb_push_back(in_cb, num_tiles);
 }

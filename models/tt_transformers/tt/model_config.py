@@ -1469,6 +1469,8 @@ class ModelArgs:
 
         self.state_dict_text_prefix = self._get_text_prefix()
 
+        self.attn_logit_softcapping = text_config.get("attn_logit_softcapping", None)
+
         self._set_model_specific_params()
 
     @property
@@ -2095,7 +2097,7 @@ class ModelArgs:
         else:
             model = self.reference_transformer(wrap=False)
             layer = model.model.layers[0].self_attn
-            use_position_embeddings = layer.__class__.__name__ == "Qwen3Attention"
+            use_position_embeddings = layer.__class__.__name__ in ["Qwen3Attention", "Gemma3Attention"]
             wrapper = HfAttentionWrapper(
                 layer, self.head_dim, model.model.rotary_emb if use_position_embeddings else None
             )

@@ -56,7 +56,14 @@ TILE_SIZE = 32
 )
 @pytest.mark.parametrize(
     "device_params",
-    [{"fabric_config": ttnn.FabricConfig.FABRIC_1D, "l1_small_size": 8192, "trace_region_size": 15157248}],
+    [
+        {
+            "fabric_config": ttnn.FabricConfig.FABRIC_1D,
+            "l1_small_size": 8192,
+            "trace_region_size": 15157248,
+            "worker_l1_size": 1344544,
+        }
+    ],
     indirect=True,
 )
 def test_transformer(
@@ -189,17 +196,19 @@ def test_transformer(
         dtype=ttnn.float32,
     )
 
-    tt_output = sd_transformer(
-        spatial=tt_spatial,
-        prompt=tt_prompt,
-        pooled_projection=tt_pooled_projection,
-        timestep=tt_timestep,
-        parameters=parameters,
-        parallel_manager=parallel_manager,
-        num_heads=num_heads,
-        N=spatial_sequence_length,
-        L=prompt_sequence_length,
-        cfg_index=0,
-    )
+    for i in range(100_000):
+        print(f"{i} / 10_000")
+        tt_output = sd_transformer(
+            spatial=tt_spatial,
+            prompt=tt_prompt,
+            pooled_projection=tt_pooled_projection,
+            timestep=tt_timestep,
+            parameters=parameters,
+            parallel_manager=parallel_manager,
+            num_heads=num_heads,
+            N=spatial_sequence_length,
+            L=prompt_sequence_length,
+            cfg_index=0,
+        )
 
-    assert_quality(torch_output, tt_output, pcc=0.997, mse=0.06, shard_dim=0, num_devices=submesh.get_num_devices())
+        assert_quality(torch_output, tt_output, pcc=0.997, mse=0.06, shard_dim=0, num_devices=submesh.get_num_devices())

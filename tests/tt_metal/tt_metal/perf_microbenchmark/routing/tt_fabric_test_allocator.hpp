@@ -526,12 +526,34 @@ inline void GlobalAllocator::allocate_resources(TestConfig& test_config) {
                     }
                 }
 
+                // Find the best core that has uniform memory addresses available
                 std::optional<CoreCoord> best_core = std::nullopt;
                 uint32_t max_count = 0;
                 for (const auto& [core, count] : core_counts) {
                     if (count > max_count) {
-                        max_count = count;
-                        best_core = core;
+                        // Check if this core has any uniform memory addresses
+                        bool has_uniform_address = false;
+                        const auto& address_histogram = memory_histograms[core];
+                        for (const auto& [addr, addr_count] : address_histogram) {
+                            if (addr_count == dst_node_ids.size()) {
+                                has_uniform_address = true;
+                                break;
+                            }
+                        }
+
+                        if (has_uniform_address) {
+                            max_count = count;
+                            best_core = core;
+                        }
+                    } else if (count == max_count && !best_core.has_value()) {
+                        // If same count as current best, check if this core has uniform addresses
+                        const auto& address_histogram = memory_histograms[core];
+                        for (const auto& [addr, addr_count] : address_histogram) {
+                            if (addr_count == dst_node_ids.size()) {
+                                best_core = core;
+                                break;
+                            }
+                        }
                     }
                 }
 

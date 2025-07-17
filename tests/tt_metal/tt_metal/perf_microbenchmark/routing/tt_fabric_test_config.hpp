@@ -1286,6 +1286,8 @@ private:
         TT_FATAL(!devices.empty(), "Cannot expand full_or_half_ring_multicast because no devices were found.");
 
         bool wrap_around_mesh = this->route_manager_.wrap_around_mesh(devices.front());
+        log_info(LogTest, "wrap_around_mesh {}", wrap_around_mesh);
+
         std::unordered_map<RoutingDirection, uint32_t> hops;
         for (const auto& src_node : devices) {
             if (wrap_around_mesh) {

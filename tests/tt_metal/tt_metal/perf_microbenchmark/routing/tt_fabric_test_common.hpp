@@ -120,8 +120,15 @@ public:
         mesh_device_->close();
         tt::tt_fabric::SetFabricConfig(tt::tt_fabric::FabricConfig::DISABLED);
 
+        // Clear all class members
+        control_plane_ptr_ = nullptr;
         mesh_coordinate_to_node_id_.clear();
         node_id_to_mesh_coordinate_.clear();
+        available_device_coordinates_.clear();
+        available_node_ids_.clear();
+        available_mesh_ids_.clear();
+        mesh_device_.reset();
+        mesh_workload_.reset();
         current_fabric_config_ = tt::tt_fabric::FabricConfig::DISABLED;
         are_devices_open_ = false;
     }
@@ -1241,7 +1248,7 @@ private:
     bool are_devices_open_ = false;
 
     void open_devices_internal(tt::tt_fabric::FabricConfig fabric_config) {
-        // Set fabric config FIRST, before any control plane access
+        // Set fabric config FIRST, before any control plane access, this will reset control plane in metal context
         tt::tt_fabric::SetFabricConfig(fabric_config);
 
         // Now it's safe to initialize control plane (will use correct mesh graph descriptor)
@@ -1269,6 +1276,10 @@ private:
         }
 
         mesh_device_ = MeshDevice::create(MeshDeviceConfig(mesh_shape_));
+
+        // Now fabric context should be initialized, safe to query wrap_around_mesh
+        bool wrap_around_mesh = control_plane_ptr_->get_fabric_context().is_wrap_around_mesh(user_meshes[0]);
+        log_info(LogTest, "wrap_around_mesh {}", wrap_around_mesh);
 
         TT_FATAL(mesh_device_ != nullptr, "Failed to create MeshDevice with shape {}", mesh_shape_);
 

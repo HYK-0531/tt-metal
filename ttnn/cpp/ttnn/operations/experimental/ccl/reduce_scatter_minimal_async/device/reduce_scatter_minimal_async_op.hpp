@@ -76,6 +76,10 @@ struct ReduceScatterMinimalAsync {
         attrs.emplace_back("output_mem_config", output_mem_config);
         attrs.emplace_back("topology", topology);
         attrs.emplace_back("semaphore", semaphore);
+        attrs.emplace_back("cluster_axis", cluster_axis);
+        attrs.emplace_back("chunks_per_sync", chunks_per_sync);
+        attrs.emplace_back("num_worker_per_link", num_workers_per_link);
+        attrs.emplace_back("num_buffers_per_channel", num_buffers_per_channel);
         return attrs;
     }
 

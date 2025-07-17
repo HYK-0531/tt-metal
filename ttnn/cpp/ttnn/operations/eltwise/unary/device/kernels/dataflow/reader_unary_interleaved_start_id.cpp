@@ -7,8 +7,8 @@
 
 void kernel_main() {
     uint32_t src_addr = get_arg_val<uint32_t>(0);
-    uint32_t num_tiles = get_arg_val<uint32_t>(1);
-    uint32_t start_id = get_arg_val<uint32_t>(2);
+    uint32_t num_tiles = get_arg_val<uint32_t>(3);
+    uint32_t start_id = get_arg_val<uint32_t>(4);
 
     constexpr bool src_is_dram = get_compile_time_arg_val(0) == 1;
 

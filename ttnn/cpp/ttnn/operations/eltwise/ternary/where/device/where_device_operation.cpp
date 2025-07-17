@@ -11,21 +11,26 @@ namespace ttnn::operations::ternary {
 
 WhereDeviceOperation::program_factory_t WhereDeviceOperation::select_program_factory(
     const operation_attributes_t& args, const tensor_args_t& tensor_args) {
+    std::cout << "ternary LLK where op for TSS 1.5" << std::endl;
     if (tensor_args.predicate.is_sharded()) {
         TT_FATAL(false, "Where sharded program factory is not implemented yet");  // Not implemented yet
         // return program::WhereShardedProgramFactory{};
     } else {
+        std::cout << "ternary LLK where op for TSS 1.5.1" << std::endl;
         return WhereProgramFactory{};
     }
+    std::cout << "ternary LLK where op for TSS 1.5.2" << std::endl;
 }
 
 void WhereDeviceOperation::validate_on_program_cache_hit(
     const operation_attributes_t& args, const tensor_args_t& tensor_args) {
+    std::cout << "ternary LLK where op for TSS 1.6" << std::endl;
     validate_on_program_cache_miss(args, tensor_args);
 }
 
 void WhereDeviceOperation::validate_on_program_cache_miss(
     const operation_attributes_t& args, const tensor_args_t& tensor_args) {
+    std::cout << "ternary LLK where op for TSS 1.7" << std::endl;
     const auto& predicate_tensor = tensor_args.predicate;
     const auto& optional_output_tensor = tensor_args.optional_output_tensor;
 
@@ -83,6 +88,7 @@ void WhereDeviceOperation::validate_on_program_cache_miss(
 
 TensorSpec WhereDeviceOperation::compute_output_specs(
     const operation_attributes_t& args, const tensor_args_t& tensor_args) {
+    std::cout << "ternary LLK where op for TSS 1.8" << std::endl;
     if (tensor_args.optional_output_tensor.has_value()) {
         return tensor_args.optional_output_tensor->tensor_spec();
     }
@@ -98,6 +104,7 @@ TensorSpec WhereDeviceOperation::compute_output_specs(
 
 Tensor WhereDeviceOperation::create_output_tensors(
     const operation_attributes_t& args, const tensor_args_t& tensor_args) {
+    std::cout << "ternary LLK where op for TSS 1.9" << std::endl;
     if (tensor_args.optional_output_tensor.has_value()) {
         return *tensor_args.optional_output_tensor;
     }
@@ -106,6 +113,7 @@ Tensor WhereDeviceOperation::create_output_tensors(
 
 tt::stl::hash::hash_t WhereDeviceOperation::compute_program_hash(
     const operation_attributes_t& args, const tensor_args_t& tensor_args) {
+    std::cout << "ternary LLK where op for TSS 1.9.1" << std::endl;
     const auto& predicate_tensor = tensor_args.predicate;
     const auto& value_true = tensor_args.value_true;
     const auto& value_false = tensor_args.value_false;
@@ -117,12 +125,12 @@ tt::stl::hash::hash_t WhereDeviceOperation::compute_program_hash(
         program_factory.index(),
         predicate_tensor.dtype(),
         predicate_tensor.memory_config(),
-        value_true.dtype(),
-        value_true.memory_config(),
-        value_true.dtype(),
-        value_true.memory_config(),
-        value_false.dtype(),
-        value_false.memory_config(),
+        value_true->dtype(),
+        value_true->memory_config(),
+        value_true->dtype(),
+        value_true->memory_config(),
+        value_false->dtype(),
+        value_false->memory_config(),
         predicate_shape.volume());
 
     return hash;
@@ -157,6 +165,36 @@ WhereDeviceOperation::invoke(
         .value_true = value_true,
         .value_false = value_false,
         .optional_output_tensor = optional_output_tensor};
+
+    return {attributes, args};
+}
+
+std::tuple<WhereDeviceOperation::operation_attributes_t, WhereDeviceOperation::tensor_args_t>
+WhereDeviceOperation::invoke(
+    const Tensor& predicate,
+    const float value_true,
+    const float value_false,
+    const std::optional<const DataType>& output_dtype,
+    const std::optional<MemoryConfig>& memory_config,
+    const std::optional<Tensor>& optional_output_tensor) {
+    std::cout << "ternary LLK where op for TSS 2" << std::endl;
+    operation_attributes_t attributes{
+        .memory_config = memory_config.value_or(predicate.memory_config()),
+        .input_dtype = predicate.dtype(),
+        .dtype = output_dtype,
+        .where_variant = WhereVariant::TSS,
+        .compute_kernel_config = std::nullopt,
+        .value_false_scalar = value_false,  // false scalar
+        .value_true_scalar = value_true,    // true scalar
+
+    };
+
+    tensor_args_t args{
+        .predicate = predicate,
+        .value_true = std::nullopt,   // No Tensor for TSS
+        .value_false = std::nullopt,  // No Tensor for TSS
+        .optional_output_tensor = optional_output_tensor};
+    std::cout << "ternary LLK where op for TSS 2.1" << std::endl;
 
     return {attributes, args};
 }

@@ -27,14 +27,15 @@ struct WhereDeviceOperation {
         std::optional<DataType> dtype;
         WhereVariant where_variant;
         std::optional<DeviceComputeKernelConfig> compute_kernel_config;
-
+        std::optional<float> value_false_scalar;
+        std::optional<float> value_true_scalar;
         DataType get_dtype() const;
     };
 
     struct tensor_args_t {
         const Tensor& predicate;
-        const Tensor& value_true;
-        const Tensor& value_false;
+        std::optional<Tensor> value_true;
+        std::optional<Tensor> value_false;
         std::optional<Tensor> optional_output_tensor;
     };
 
@@ -75,6 +76,15 @@ struct WhereDeviceOperation {
         const Tensor& predicate,
         const Tensor& value_true,
         const Tensor& value_false,
+        const std::optional<const DataType>& output_dtype,
+        const std::optional<MemoryConfig>& memory_config,
+        const std::optional<Tensor>& optional_output_tensor);
+
+    // tensor-scalar-scalar invocation
+    static std::tuple<operation_attributes_t, tensor_args_t> invoke(
+        const Tensor& predicate,
+        const float value_true,
+        const float value_false,
         const std::optional<const DataType>& output_dtype,
         const std::optional<MemoryConfig>& memory_config,
         const std::optional<Tensor>& optional_output_tensor);

@@ -107,6 +107,22 @@ Tensor WhereOperation::invoke(
         }
     }
 
+    if (!is_value_true_Tensor && !is_value_false_Tensor && !has_shard_spec) {
+        const auto& t_true = std::get<float>(value_true);
+        const auto& t_false = std::get<float>(value_false);
+        std::cout << "ternary LLK where op for TSS 1" << std::endl;
+        std::optional<DataType> output_dtype =
+            output.has_value() ? std::optional<DataType>(output->dtype()) : std::optional<DataType>(predicate.dtype());
+        return ttnn::prim::where(
+            queue_id,
+            predicate,
+            t_true,
+            t_false,
+            output_dtype,
+            memory_config.value_or(predicate.memory_config()),
+            output);
+    }
+
     std::cout << "Legacy where op" << std::endl;
     return std::visit(
         [&](const auto&... values) {

@@ -62,13 +62,31 @@ void set_or_update_runtime_arguments(
             continue;
         }
 
+        // std::vector<uint32_t> reader_runtime_args;
+
+        // if (operation_attributes.where_variant == WhereVariant::TSS) {
+        //     reader_runtime_args = {
+        //         predicate_tensor.buffer()->address(),
+        //         num_tiles_per_core,
+        //         start_tile_id,
+        //     };
+        // } else {
+        //     reader_runtime_args = {
+        //         predicate_tensor.buffer()->address(),
+        //         value_true_tensor.has_value() ? value_true_tensor->buffer()->address() : 0,
+        //         value_false_tensor.has_value() ? value_false_tensor->buffer()->address() : 0,
+        //         num_tiles_per_core,
+        //         start_tile_id,
+        //     };
+        // }
         std::array reader_runtime_args = {
             predicate_tensor.buffer()->address(),
-            value_true_tensor.buffer()->address(),
-            value_false_tensor.buffer()->address(),
+            value_true_tensor.has_value() ? value_true_tensor->buffer()->address() : 0,
+            value_false_tensor.has_value() ? value_false_tensor->buffer()->address() : 0,
             num_tiles_per_core,
             start_tile_id,
         };
+
         handle_args(program, reader_kernel_id, core, reader_runtime_args);
 
         std::array writer_runtime_args = {
@@ -93,11 +111,12 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
     const operation_attributes_t& operation_attributes,
     const tensor_args_t& tensor_args,
     tensor_return_value_t& output) {
+    std::cout << "ternary LLK where op for TSS 3.0" << std::endl;
     using namespace tt;
     using namespace tt::tt_metal;
 
     const auto& [predicate_tensor, value_true_tensor, value_false_tensor, optional_output_tensor] = tensor_args;
-
+    std::cout << "ternary LLK where op for TSS 3" << std::endl;
     auto program = CreateProgram();
 
     auto* device = predicate_tensor.device();
@@ -110,9 +129,9 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
     auto predicate_data_format = datatype_to_dataformat_converter(
         predicate_tensor.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : predicate_tensor.dtype());
     auto value_true_data_format = datatype_to_dataformat_converter(
-        value_true_tensor.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : value_true_tensor.dtype());
+        value_true_tensor->dtype() == DataType::BFLOAT16 ? DataType::UINT16 : value_true_tensor->dtype());
     auto value_false_data_format = datatype_to_dataformat_converter(
-        value_false_tensor.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : value_false_tensor.dtype());
+        value_false_tensor->dtype() == DataType::BFLOAT16 ? DataType::UINT16 : value_false_tensor->dtype());
     auto output_data_format =
         datatype_to_dataformat_converter(output.dtype() == DataType::BFLOAT16 ? DataType::UINT16 : output.dtype());
 
@@ -130,6 +149,7 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
     uint32_t num_cores_y = compute_with_storage_grid_size.y;
     auto all_device_cores = CoreRange({0, 0}, {num_cores_x - 1, num_cores_y - 1});
 
+    std::cout << "ternary LLK where op for TSS 4" << std::endl;
     // Number of tiles to store per input CB (double buffer)
     constexpr uint32_t num_tiles_per_cb = 2;
 
@@ -165,18 +185,24 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
         num_tiles_per_cb,
         output_data_format);  // output
 
+    std::cout << "ternary LLK where op for TSS 5" << std::endl;
+
     auto predicate_is_dram =
         static_cast<uint32_t>(predicate_tensor.buffer()->buffer_type() == tt_metal::BufferType::DRAM);
-    auto value_true_is_dram =
-        static_cast<uint32_t>(value_true_tensor.buffer()->buffer_type() == tt_metal::BufferType::DRAM);
-    auto value_false_is_dram =
-        static_cast<uint32_t>(value_false_tensor.buffer()->buffer_type() == tt_metal::BufferType::DRAM);
+    auto value_true_is_dram = static_cast<uint32_t>(
+        value_true_tensor.has_value() && value_true_tensor->buffer()->buffer_type() == tt_metal::BufferType::DRAM);
+    auto value_false_is_dram = static_cast<uint32_t>(
+        value_false_tensor.has_value() && value_false_tensor->buffer()->buffer_type() == tt_metal::BufferType::DRAM);
     auto output_is_dram = static_cast<uint32_t>(output.buffer()->buffer_type() == tt_metal::BufferType::DRAM);
-
+    auto reader_path =
+        "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/dataflow/ternary_reader_nobcast_ttt.cpp";
+    reader_path =
+        "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/dataflow/reader_unary_interleaved_start_id.cpp";
+    std::cout << "ternary LLK where op for TSS 6" << std::endl;
     // READER KERNEL
     auto reader_kernel_id = tt_metal::CreateKernel(
         program,
-        "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/dataflow/ternary_reader_nobcast_ttt.cpp",
+        reader_path,
         all_device_cores,
         tt_metal::ReaderDataMovementConfig(
             {predicate_is_dram,
@@ -185,6 +211,8 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
              value_true_tensor_cb,
              value_false_is_dram,
              value_false_tensor_cb}));
+
+    std::cout << "ternary LLK where op for TSS 7" << std::endl;
 
     // WRITER KERNEL
     auto writer_kernel_id = tt_metal::CreateKernel(
@@ -202,10 +230,10 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
     unpack_to_dest_mode[tt::CBIndex::c_0] = (predicate_tensor.dtype() == DataType::FLOAT32)
                                                 ? UnpackToDestMode::UnpackToDestFp32
                                                 : UnpackToDestMode::Default;
-    unpack_to_dest_mode[tt::CBIndex::c_1] = (value_true_tensor.dtype() == DataType::FLOAT32)
+    unpack_to_dest_mode[tt::CBIndex::c_1] = (value_true_tensor->dtype() == DataType::FLOAT32)
                                                 ? UnpackToDestMode::UnpackToDestFp32
                                                 : UnpackToDestMode::Default;
-    unpack_to_dest_mode[tt::CBIndex::c_2] = (value_false_tensor.dtype() == DataType::FLOAT32)
+    unpack_to_dest_mode[tt::CBIndex::c_2] = (value_false_tensor->dtype() == DataType::FLOAT32)
                                                 ? UnpackToDestMode::UnpackToDestFp32
                                                 : UnpackToDestMode::Default;
     unpack_to_dest_mode[tt::CBIndex::c_3] =
@@ -224,10 +252,13 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
     } else if (predicate_tensor.dtype() == DataType::INT32) {
         kernel_defines["WHERE_LLK"] = "where_int32_tile";
     }
-
+    auto compute_path =
+        "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/compute/where_sfpu_no_bcast_ttt.cpp";
+    compute_path = "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/compute/where_kernel.cpp";
+    std::cout << "ternary LLK where op for TSS 8" << std::endl;
     auto compute_kernel_id = tt_metal::CreateKernel(
         program,
-        "ttnn/cpp/ttnn/operations/eltwise/ternary/where/device/kernels/compute/where_sfpu_no_bcast_ttt.cpp",
+        compute_path,
         all_device_cores,
         tt_metal::ComputeConfig{
             .fp32_dest_acc_en = fp32_dest_acc_en,
@@ -235,9 +266,24 @@ WhereDeviceOperation::WhereProgramFactory::cached_program_t WhereDeviceOperation
             .compile_args = compute_kernel_args,
             .defines = kernel_defines});
 
+    const auto packed_scalar_1 = std::bit_cast<uint32_t>(operation_attributes.value_true_scalar.value_or(0.0f));
+    const auto packed_scalar_2 = std::bit_cast<uint32_t>(operation_attributes.value_false_scalar.value_or(0.0f));
+
     auto set_runtime_args = [](Program& program, KernelHandle kernel_id, CoreCoord core, auto&& args) {
         tt_metal::SetRuntimeArgs(program, kernel_id, core, args);
     };
+
+    // if(operation_attributes.where_variant === WhereVariant::TSS)
+    // {
+    //     auto set_runtime_args = [](Program& program, KernelHandle kernel_id, CoreCoord core, auto&& args) {
+    //         tt_metal::SetRuntimeArgs(program, kernel_id, core, args);
+    //     };
+    // }
+    // else {
+    //     auto set_runtime_args = [](Program& program, KernelHandle kernel_id, CoreCoord core, auto&& args) {
+    //         tt_metal::SetRuntimeArgs(program, kernel_id, core, args);
+    //     };
+    // }
 
     CMAKE_UNIQUE_NAMESPACE::set_or_update_runtime_arguments(
         program,

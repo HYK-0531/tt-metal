@@ -73,7 +73,7 @@ def main():
     parser.add_option(
         "--device-trace-profiler",
         dest="device_trace_profiler",
-        action="append",
+        action="store_true",
         help="Profile device side trace durations",
         default=[],
     )

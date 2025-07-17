@@ -47,6 +47,11 @@ constexpr uint32_t DISPATCH_META_DATA_COUNT = 2;
 constexpr uint32_t DISPATCH_META_DATA_UINT32_SIZE = 4;
 constexpr uint32_t DISPATCH_PARENT_ZONE_MARKER_COUNT = 2;
 
+#if (PROFILE_KERNEL & PROFILER_OPT_DO_TRACE_ONLY) && !(defined(COMPILE_FOR_ERISC) || defined(COMPILE_FOR_IDLE_ERISC))
+constexpr bool TRACE_ON_TENSIX = true;
+#else
+constexpr bool TRACE_ON_TENSIX = false;
+#endif
 constexpr uint32_t TRACE_ID_SET_BIT = (1 << 31);
 constexpr uint32_t TRACE_ID_KERNEL_SET_BIT = (1 << 30);
 constexpr uint32_t TRACE_STARTED_BIT = (1 << 29);
@@ -434,50 +439,52 @@ struct profileScopeGuaranteed {
     static_assert(start_index < CUSTOM_MARKERS);
     static_assert(end_index < CUSTOM_MARKERS);
     inline __attribute__((always_inline)) profileScopeGuaranteed() {
-#if (PROFILE_KERNEL & PROFILER_OPT_DO_TRACE_ONLY) && !(defined(COMPILE_FOR_ERISC) || defined(COMPILE_FOR_IDLE_ERISC))
-        if constexpr (index == 0) {
+        if constexpr (TRACE_ON_TENSIX) {
+            if constexpr (index == 0) {
 #if !defined(COMPILE_FOR_TRISC)
-            if (profiler_control_buffer[CURRENT_TRACE_ID] & TRACE_ID_SET_BIT) {
-                mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
-                profiler_control_buffer[CURRENT_TRACE_ID] = TRACE_ID_KERNEL_SET_BIT;
-                profiler_control_buffer[DEVICE_BUFFER_END_INDEX_BR_ER + myRiscID] = CUSTOM_MARKERS;
-            } else if (profiler_control_buffer[CURRENT_TRACE_ID] == 0) {
-                init_profiler();
-                mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
-            }
+                if (profiler_control_buffer[CURRENT_TRACE_ID] & TRACE_ID_SET_BIT) {
+                    mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
+                    profiler_control_buffer[CURRENT_TRACE_ID] = TRACE_ID_KERNEL_SET_BIT;
+                    profiler_control_buffer[DEVICE_BUFFER_END_INDEX_BR_ER + myRiscID] = CUSTOM_MARKERS;
+                } else if (profiler_control_buffer[CURRENT_TRACE_ID] == 0) {
+                    init_profiler();
+                    mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
+                }
 #endif
 
-        } else {
-            if (profiler_control_buffer[CURRENT_TRACE_ID] & TRACE_ID_KERNEL_SET_BIT) {
-                mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
-                profiler_control_buffer[CURRENT_TRACE_ID] = TRACE_STARTED_BIT;
-            } else if (profiler_control_buffer[CURRENT_TRACE_ID] == 0) {
-                mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
+            } else {
+                if (profiler_control_buffer[CURRENT_TRACE_ID] & TRACE_ID_KERNEL_SET_BIT) {
+                    mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
+                    profiler_control_buffer[CURRENT_TRACE_ID] = TRACE_STARTED_BIT;
+                } else if (profiler_control_buffer[CURRENT_TRACE_ID] == 0) {
+                    mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
+                }
             }
+        } else {
+            if constexpr (index == 0) {
+                init_profiler();
+            }
+            mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
         }
-#else
-        if constexpr (index == 0) {
-            init_profiler();
-        }
-        mark_time_at_index_inlined(start_index, get_const_id(timer_id, ZONE_START));
-#endif
     }
     inline __attribute__((always_inline)) ~profileScopeGuaranteed() {
-#if (PROFILE_KERNEL & PROFILER_OPT_DO_TRACE_ONLY) && !(defined(COMPILE_FOR_ERISC) || defined(COMPILE_FOR_IDLE_ERISC))
-        if (profiler_control_buffer[CURRENT_TRACE_ID] & TRACE_STARTED_BIT) {
-            mark_time_at_index_inlined(end_index, get_const_id(timer_id, ZONE_END));
+        if constexpr (TRACE_ON_TENSIX) {
+            if (profiler_control_buffer[CURRENT_TRACE_ID] & TRACE_STARTED_BIT) {
+                mark_time_at_index_inlined(end_index, get_const_id(timer_id, ZONE_END));
+            } else {
+                mark_time_at_index_inlined(end_index, get_const_id(timer_id, ZONE_END));
+                if constexpr (index == 0) {
+                    // finish_profiler();
+                    // risc_finished_profiling();
+                    profiler_control_buffer[DEVICE_BUFFER_END_INDEX_BR_ER + myRiscID] = CUSTOM_MARKERS;
+                }
+            }
         } else {
             mark_time_at_index_inlined(end_index, get_const_id(timer_id, ZONE_END));
             if constexpr (index == 0) {
                 finish_profiler();
             }
         }
-#else
-        mark_time_at_index_inlined(end_index, get_const_id(timer_id, ZONE_END));
-        if constexpr (index == 0) {
-            finish_profiler();
-        }
-#endif
     }
 };
 

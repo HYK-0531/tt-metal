@@ -48,6 +48,7 @@ struct ExecuteChunkedScaledDotProductAttention {
         const ttnn::Tensor& page_table_tensor,
         int64_t chunk_start_idx,
         std::optional<float> scale = std::nullopt,
+        std::optional<float> attn_logit_softcapping = std::nullopt,
         const std::optional<MemoryConfig>& memory_config = std::nullopt,
         std::optional<SDPAProgramConfig> program_config = std::nullopt,
         std::optional<DeviceComputeKernelConfig> compute_kernel_config = std::nullopt);
@@ -59,6 +60,7 @@ struct ExecuteChunkedScaledDotProductAttention {
         const ttnn::Tensor& page_table_tensor,
         int64_t chunk_start_idx,
         std::optional<float> scale = std::nullopt,
+        std::optional<float> attn_logit_softcapping = std::nullopt,
         const std::optional<MemoryConfig>& memory_config = std::nullopt,
         std::optional<SDPAProgramConfig> program_config = std::nullopt,
         std::optional<DeviceComputeKernelConfig> compute_kernel_config = std::nullopt);

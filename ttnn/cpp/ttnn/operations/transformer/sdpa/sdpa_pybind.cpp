@@ -103,6 +103,7 @@ void py_bind_sdpa(py::module& module) {
 
         Keyword args:
             scale (float, optional): Defaults to `None`.
+            attn_logit_softcapping (float, optional): Defaults to `None`.
             memory_config (ttnn.MemoryConfig, optional): Memory configuration for the operation. Defaults to `None`.
             program_config (SDPAProgramConfig, optional): Defaults to `None`.
             compute_kernel_config (ttnn.DeviceComputeKernelConfig, optional): Defaults to `None`.
@@ -126,6 +127,7 @@ void py_bind_sdpa(py::module& module) {
                const ttnn::Tensor& page_table_tensor,
                int64_t chunk_start_idx,
                std::optional<float> scale,
+               std::optional<float> attn_logit_softcapping,
                const std::optional<MemoryConfig>& memory_config,
                std::optional<SDPAProgramConfig> program_config,
                std::optional<DeviceComputeKernelConfig> compute_kernel_config,
@@ -138,6 +140,7 @@ void py_bind_sdpa(py::module& module) {
                     page_table_tensor,
                     chunk_start_idx,
                     scale,
+                    attn_logit_softcapping,
                     memory_config,
                     program_config,
                     compute_kernel_config);
@@ -149,6 +152,7 @@ void py_bind_sdpa(py::module& module) {
             py::arg("chunk_start_idx"),
             py::kw_only(),
             py::arg("scale").noconvert() = std::nullopt,
+            py::arg("attn_logit_softcapping").noconvert() = std::nullopt,
             py::arg("memory_config").noconvert() = std::nullopt,
             py::arg("program_config").noconvert() = std::nullopt,
             py::arg("compute_kernel_config").noconvert() = std::nullopt,

@@ -476,6 +476,7 @@ def run_test_chunked_sdpa(
     q_dtype,
     k_dtype,
     use_high_precision_compute,
+    softcapping=None,
     grid_size=None,
 ):
     program_config = ttnn.SDPAProgramConfig(
@@ -505,7 +506,10 @@ def run_test_chunked_sdpa(
     V = fa_rand(b, nkv, s, d)
     K_repeated = torch.cat([K[:, i : i + 1, :, :].repeat(1, nh // nkv, 1, 1) for i in range(nkv)], dim=1)  # b, nh, d, S
     V_repeated = torch.cat([V[:, i : i + 1, :, :].repeat(1, nh // nkv, 1, 1) for i in range(nkv)], dim=1)  # b, nh, d, S
-    gt = torch.nn.functional.scaled_dot_product_attention(Q, K_repeated, V_repeated, is_causal=True)
+    if not softcapping:
+        gt = torch.nn.functional.scaled_dot_product_attention(Q, K_repeated, V_repeated, is_causal=True)
+    else:
+        gt = torch_sdpa_with_softcapping(Q, K_repeated, V_repeated, attn_logit_softcapping=softcapping, is_causal=True)
 
     # Print shapes of all inputs along with input names
     logger.debug(f"Q: {Q.shape}")
@@ -567,6 +571,7 @@ def run_test_chunked_sdpa(
             tt_paged_V,
             page_table_tt,
             chunk_start_idx,
+            attn_logit_softcapping=softcapping,
             program_config=program_config,
             compute_kernel_config=compute_kernel_config,
         )
@@ -578,6 +583,7 @@ def run_test_chunked_sdpa(
 
 
 @pytest.mark.skipif(is_watcher_enabled(), reason="Kernel OOM with watcher enabled")
+@pytest.mark.parametrize("softcapping", [None, 50.0], ids=["no_cap", "cap50"])
 @pytest.mark.parametrize("q_dtype", [ttnn.bfloat16])
 @pytest.mark.parametrize("k_dtype", [ttnn.bfloat8_b])
 @pytest.mark.parametrize("q_chunk_size", [128, 256], ids=["q128", "q256"])
@@ -603,6 +609,7 @@ def test_sdpa_chunked(
     page_block_size,
     q_dtype,
     k_dtype,
+    softcapping,
     use_high_precision_compute=False,
 ):
     for _ in range(2):
@@ -620,6 +627,7 @@ def test_sdpa_chunked(
             q_dtype,
             k_dtype,
             use_high_precision_compute,
+            softcapping=softcapping,
         )
 
     # Print number of program cache entries
@@ -629,6 +637,7 @@ def test_sdpa_chunked(
 
 
 @pytest.mark.skipif(is_watcher_enabled(), reason="Kernel OOM with watcher enabled")
+@pytest.mark.parametrize("softcapping", [None, 50.0], ids=["no_cap", "cap50"])
 @pytest.mark.parametrize("q_dtype", [ttnn.bfloat16])
 @pytest.mark.parametrize("k_dtype", [ttnn.bfloat8_b])
 @pytest.mark.parametrize("q_chunk_size", [128])
@@ -654,6 +663,7 @@ def test_sdpa_chunked_iterate_batch(
     page_block_size,
     q_dtype,
     k_dtype,
+    softcapping,
     use_high_precision_compute=False,
 ):
     """
@@ -674,6 +684,7 @@ def test_sdpa_chunked_iterate_batch(
             q_dtype,
             k_dtype,
             use_high_precision_compute,
+            softcapping=softcapping,
             grid_size=(1, 1),
         )
 

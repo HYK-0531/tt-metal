@@ -83,6 +83,7 @@ ttnn::Tensor ExecuteChunkedScaledDotProductAttention::invoke(
     const ttnn::Tensor& page_table_tensor,
     int64_t chunk_start_idx,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     const std::optional<MemoryConfig>& memory_config,
     std::optional<SDPAProgramConfig> program_config,
     std::optional<DeviceComputeKernelConfig> compute_kernel_config) {
@@ -95,6 +96,7 @@ ttnn::Tensor ExecuteChunkedScaledDotProductAttention::invoke(
     return tt::tt_metal::operation::run(
                ScaledDotProductAttention{
                    .scale = scale,
+                   .attn_logit_softcapping = attn_logit_softcapping,
                    .output_mem_config = memory_config.value_or(tt::tt_metal::operation::DEFAULT_OUTPUT_MEMORY_CONFIG),
                    .program_config = std::move(program_config),
                    .is_causal = true,  // Always causal for chunked version
@@ -115,6 +117,7 @@ ttnn::Tensor ExecuteChunkedScaledDotProductAttention::invoke(
     const ttnn::Tensor& page_table_tensor,
     int64_t chunk_start_idx,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     const std::optional<MemoryConfig>& memory_config,
     std::optional<SDPAProgramConfig> program_config,
     std::optional<DeviceComputeKernelConfig> compute_kernel_config) {
@@ -126,6 +129,7 @@ ttnn::Tensor ExecuteChunkedScaledDotProductAttention::invoke(
         page_table_tensor,
         chunk_start_idx,
         scale,
+        attn_logit_softcapping,
         memory_config,
         std::move(program_config),
         compute_kernel_config);

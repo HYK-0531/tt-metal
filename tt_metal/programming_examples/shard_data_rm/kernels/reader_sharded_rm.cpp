@@ -21,18 +21,20 @@ void kernel_main() {
     constexpr uint32_t element_per_stick = get_compile_time_arg_val(3);
     static_assert(stick_size == sizeof(uint16_t) * 2, "stick_size must be 8 bytes for two bfloat16 values");
 
-    // Note the use of InterleavedAddrGen as input is not tiled (32x32 grild of values). But in row major
+    // Note the use of InterleavedAddrGen as input is not tiled (32x32 grild of values). But in row major. Making
+    // InterleavedAddrGenFast unusable (which only supports addressing of tiled data).
     const InterleavedAddrGen<src_is_dram> s0 = {.bank_base_address = src_addr, .page_size = stick_size};
     uint32_t stick_id = start_id;
-    const uint32_t n_sticks = shard_size / element_per_stick;
     cb_reserve_back(cb_id_in0, shard_size);
     uint32_t l1_write_addr = get_write_ptr(cb_id_in0);
 
     DPRINT << "Core (0," << current_core << "): ";
+    const uint32_t n_sticks = shard_size / element_per_stick;
     for (uint32_t i = 0; i < n_sticks; i++) {
         uint64_t src_noc_addr = get_noc_addr(stick_id, s0);
+        // Read a tick at a time from the source address and write it to the L1 write address.
         noc_async_read(src_noc_addr, l1_write_addr, stick_size);
-        noc_async_read_barrier();  // wait for noc read to finish
+        noc_async_read_barrier();  // wait for the read to finish
         // We are reading 32 bits at a time, so we can read two bfloat16 values and print
         uint16_t* read_ptr_bf16 = (uint16_t*)l1_write_addr;
         DPRINT << BF16(read_ptr_bf16[0]) << " ";
@@ -42,4 +44,7 @@ void kernel_main() {
     }
     DPRINT << ENDL();
     cb_push_back(cb_id_in0, shard_size);
+
+    // At this point we have read all the sticks into the circular buffer. Computation and proceed knowing
+    // that it has data in circular buffer and in a specific format.
 }

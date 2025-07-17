@@ -18,8 +18,7 @@ constexpr auto kReaderKernelPath =
 
 constexpr auto kComputeKernelPath = "tt-train/sources/ttml/metal/ops/silu_bw/device/kernels/compute/silu_bw_kernel.cpp";
 
-// #define THREE_PACKS true
-#define PRECISE_DATA_FORMAT true
+#define THREE_PACKS true
 
 // Buffer indices
 constexpr uint32_t kInputBufferIdx = 0;

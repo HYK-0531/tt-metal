@@ -1,3 +1,5 @@
+from math import prod
+
 import torch
 import torch.nn as nn
 
@@ -18,6 +20,12 @@ class TT_MoE(nn.Module):
         self.experts_per_device = 8
         self.num_experts = hf_config.n_routed_experts
 
+        mesh_shape = list(mesh_device.shape)
+
+        self.axis = 1
+        self.replicate_dim = mesh_shape[self.axis - 1]
+        self.replicate_group_size = mesh_shape[self.axis]
+
         # Extract only gate-related weights from the full state_dict
         gate_state_dict = {
             key.replace("gate.", ""): value for key, value in state_dict.items() if key.startswith("gate.")
@@ -30,19 +38,19 @@ class TT_MoE(nn.Module):
             if key.startswith("experts.0.")
         }
         self.tt_experts = TT_MLP_Expert(hf_config, expert_state_dict, mesh_device, batch_size)
-
+        devices = prod(list(mesh_device.shape))
         self.all_to_all_dispatch_output_tensors = ttnn.from_torch(
-            torch.zeros([1, self.batch_size * 4, 1, 7168]),
+            torch.zeros([devices, self.batch_size, 1, 7168]),
             device=mesh_device,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
+            mesh_mapper=ttnn.ShardTensorToMesh(mesh_device, dim=0),
             dtype=ttnn.bfloat16,
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
         self.all_to_all_dispatch_metadata_tensors = ttnn.from_torch(
-            torch.zeros([1, self.batch_size * 4, 1, self.experts_per_device], dtype=torch.int32),
+            torch.zeros([devices, self.batch_size, 1, self.experts_per_device], dtype=torch.int32),
             device=mesh_device,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
+            mesh_mapper=ttnn.ShardTensorToMesh(mesh_device, dim=0),
             dtype=ttnn.uint16,
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
             layout=ttnn.ROW_MAJOR_LAYOUT,
@@ -54,18 +62,21 @@ class TT_MoE(nn.Module):
             .unsqueeze(0)
             .unsqueeze(0),
             device=mesh_device,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
+            mesh_mapper=ttnn.ShardTensorToMesh(mesh_device, dim=0),
             dtype=ttnn.uint16,
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
 
+        assert self.expert_mapping_tensors.shape == (devices, 1, experts_per_device * devices, devices)
+
+        shard_dim = (1, None) if self.axis == 0 else (None, 1)
         self.all_to_all_combine_output_tensors = ttnn.from_torch(
             torch.zeros([self.topk_experts, self.batch_size, 1, 7168]),
             device=mesh_device,
-            mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
+            mesh_mapper=ttnn.ShardTensor2dMesh(mesh_device, dims=shard_dim, mesh_shape=tuple(mesh_device.shape)),
             dtype=ttnn.bfloat16,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
             layout=ttnn.ROW_MAJOR_LAYOUT,
         )
 
@@ -95,17 +106,17 @@ class TT_MoE(nn.Module):
             tt_row_major_input,
             tt_row_major_top8_experts_indices,
             self.expert_mapping_tensors,
-            cluster_axis=0,
+            cluster_axis=self.axis,
             num_links=1,
             topology=ttnn.Topology.Linear,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
             global_semaphore=self.all_to_all_semaphore_handles,
             subdevice_id=None,
             output_tensors=[self.all_to_all_dispatch_output_tensors, self.all_to_all_dispatch_metadata_tensors],
         )
 
         post_all_to_all_dispatch_output = ttnn.reshape(
-            self.all_to_all_dispatch_output_tensors, (1, 1, self.batch_size * 4, 7168)
+            self.all_to_all_dispatch_output_tensors, (1, 1, self.batch_size, 7168)
         )
         post_all_to_all_dispatch_output = ttnn.to_layout(post_all_to_all_dispatch_output, ttnn.TILE_LAYOUT)
         post_all_to_all_dispatch_output = ttnn.repeat(
@@ -116,7 +127,7 @@ class TT_MoE(nn.Module):
         experts_output = ttnn.to_layout(experts_output, ttnn.ROW_MAJOR_LAYOUT)
         experts_output = ttnn.permute(experts_output, (1, 2, 0, 3))
         # Combine the experts output Shape([8, 32, 1, 7168])
-        before_combine = ttnn.to_torch(ttnn.get_device_tensors(experts_output)[0])
+        before_combine = torch.concat([ttnn.to_torch(t) for t in ttnn.get_device_tensors(experts_output)])
         if torch.any(before_combine > 10000000):
             print("experts_output has values greater than 10000000")
             print(before_combine[torch.where(before_combine > 10000000)])
@@ -126,12 +137,14 @@ class TT_MoE(nn.Module):
             self.all_to_all_dispatch_metadata_tensors,
             num_links=1,
             topology=ttnn.Topology.Linear,
-            memory_config=ttnn.L1_MEMORY_CONFIG,
+            memory_config=ttnn.DRAM_MEMORY_CONFIG,
             global_semaphore=self.combine_semaphore_handles,
-            axis=0,
+            axis=self.axis,
             optional_output_tensor=self.all_to_all_combine_output_tensors,
         )
-        after_combine = ttnn.to_torch(ttnn.get_device_tensors(self.all_to_all_combine_output_tensors)[0])
+        after_combine = torch.concat(
+            [ttnn.to_torch(t) for t in ttnn.get_device_tensors(self.all_to_all_combine_output_tensors)]
+        )
         if torch.any(after_combine > 10000000):
             print("all_to_all_combine_output_tensors has values greater than 10000000")
             print(after_combine[torch.where(after_combine > 10000000)])

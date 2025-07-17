@@ -28,7 +28,7 @@ def hf_config():
 @pytest.mark.parametrize(
     "mesh_device",
     [
-        {"N150": (1, 1), "N300": (1, 2), "T3K": (1, 8), "TG": (4, 8)}.get(
+        {"N150": (1, 1), "N300": (1, 2), "T3K": (2, 4), "TG": (4, 8)}.get(
             os.environ.get("MESH_DEVICE"), (1, ttnn.get_num_devices())
         )
     ],
@@ -37,9 +37,12 @@ def hf_config():
 def test_moe(hf_config, mesh_device, batch_size=32):
     torch.manual_seed(1000)
     reference_model = DeepseekV3MoE(hf_config)
+    # [ 1, 32, 7168]
     torch_input = torch.randn(1, batch_size, 7168)
-    torch_input = torch_input.repeat(1, 4, 1)
-    torch_output = reference_model(torch_input)
+
+    # [ 1, 32, 7168]
+    torch_input = torch_input.repeat(1, list(mesh_device.shape)[0], 1)
+    # torch_output = reference_model(torch_input)
 
     state_dict = reference_model.state_dict()
 
@@ -48,7 +51,7 @@ def test_moe(hf_config, mesh_device, batch_size=32):
         device=mesh_device,
         mesh_mapper=ttnn.ShardTensor2dMesh(mesh_device, dims=(2, None), mesh_shape=list(mesh_device.shape)),
         dtype=ttnn.bfloat16,
-        memory_config=ttnn.L1_MEMORY_CONFIG,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
         layout=ttnn.TILE_LAYOUT,
     )
     tt_moe = TT_MoE(hf_config, state_dict, mesh_device, batch_size)

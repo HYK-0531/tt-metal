@@ -56,7 +56,9 @@ class Generator:
         self.data_parallel = len(self.model)
 
     # Note: This function is called by vLLM
-    def prefill_forward_text(self, tokens: torch.Tensor, page_table=None, kv_cache=None, prompt_lens=None):
+    def prefill_forward_text(
+        self, tokens: torch.Tensor, page_table=None, kv_cache=None, prompt_lens=None, empty_slots=None
+    ):
         batch_size, batch_seq_len = tokens.shape
         max_batch_size_per_model, batch_size_per_model = self._get_batch_size_per_model(batch_size)
 
@@ -64,35 +66,37 @@ class Generator:
         output_logits = torch.zeros(batch_size, 1, self.model_args[0].vocab_size)
         prompt_lens = prompt_lens if prompt_lens is not None else torch.tensor([batch_seq_len] * batch_size)
 
-        if page_table is not None:
-            assert isinstance(page_table, torch.Tensor), "page_table mush be torch.Tensor"
-            page_table = torch.split(page_table, batch_size_per_model)
+        if empty_slots is None:
+            empty_slots = list(range(batch_size))
+
+        user_id_to_idx = {user_id: idx for idx, user_id in enumerate(empty_slots)}
 
         out_list = []
         for group_user_id in range(max_batch_size_per_model):
             for model_id in range(self.data_parallel):
-                if group_user_id >= batch_size_per_model[model_id]:
+                user_id = group_user_id + model_id * max_batch_size_per_model
+                idx = user_id_to_idx.get(user_id, None)
+                if idx is None:
                     # Skip users that are not in this model's batch size
                     continue
 
-                user_id = group_user_id + model_id * max_batch_size_per_model
                 logger.info(f"Prefilling User {user_id + 1}")
-                seq_len = int(prompt_lens[user_id])
+                seq_len = int(prompt_lens[idx])
                 last_token_idx = seq_len - 1
 
                 prefill_seq_len = get_padded_prefill_len(seq_len)
                 prefill_ids = torch.cat(
-                    [tokens[user_id : user_id + 1, :seq_len], torch.zeros(1, prefill_seq_len - seq_len).long()], dim=-1
+                    [tokens[idx : idx + 1, :seq_len], torch.zeros(1, prefill_seq_len - seq_len).long()], dim=-1
                 )
                 if page_table is not None:
                     page_table_user = self._get_prefill_user_page_table(
-                        page_table[model_id], kv_cache[model_id], seq_len
+                        page_table[idx : idx + 1], kv_cache[model_id], seq_len
                     )
 
                 logits = self.prefill_forward_single_user_text(
                     prefill_ids,
                     page_table=page_table_user if page_table is not None else None,
-                    user_id=group_user_id,
+                    user_id=0,
                     last_token_idx=last_token_idx,
                     kv_cache=kv_cache[model_id] if kv_cache is not None else None,
                     model_id=model_id,
@@ -102,18 +106,19 @@ class Generator:
         # We gather data back to how at the end of prefill
         for group_user_id in range(max_batch_size_per_model):
             for model_id in range(self.data_parallel):
-                if group_user_id >= batch_size_per_model[model_id]:
+                user_id = group_user_id + model_id * max_batch_size_per_model
+                idx = user_id_to_idx.get(user_id, None)
+                if idx is None:
                     # Skip users that are not in this model's batch size
                     continue
 
-                user_id = group_user_id + model_id * max_batch_size_per_model
-                out = out_list[user_id]
+                out = out_list[idx]
 
-                seq_len = int(prompt_lens[user_id])
+                seq_len = int(prompt_lens[idx])
                 last_token_idx = seq_len - 1
 
                 # Since we give unpadded_seq_len, only the tile containing the last token is returned
-                output_logits[user_id] = self.model[model_id].process_output_prefill(
+                output_logits[idx] = self.model[model_id].process_output_prefill(
                     out, last_token_idx=(last_token_idx % 32)
                 )
 

@@ -199,8 +199,6 @@ using input_queue_cb_mode_sequence = tt::packet_queue::CBModeTypeSequence<false,
                                                         false,
                                                         false>;
 
-// Doesn't fit in local ram, which is where bss is stored.
-__attribute__((section(".data")))
 tt::packet_queue::packet_output_queue_state_t output_queues[tt::packet_queue::MAX_TUNNEL_LANES];
 using output_queue_network_sequence = tt::packet_queue::NetworkTypeSequence<remote_receiver_network_type[0],
                                                           remote_receiver_network_type[1],

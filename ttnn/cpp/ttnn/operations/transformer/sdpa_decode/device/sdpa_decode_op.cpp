@@ -282,6 +282,7 @@ operation::ProgramWithCallbacks ScaledDotProductAttentionDecode::create_program(
         this->is_causal,
         this->cur_pos,
         scale,
+        this->attn_logit_softcapping,
         this->compute_kernel_config,
         this->program_config,
         this->k_chunk_size,

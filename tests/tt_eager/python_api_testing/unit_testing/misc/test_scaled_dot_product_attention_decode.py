@@ -167,6 +167,52 @@ def scaled_dot_product_attention_simulated(
     return output_tensor
 
 
+# Taken from https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
+# Added softcapping functionality
+def torch_sdpa_with_softcapping(
+    query,
+    key,
+    value,
+    attn_mask=None,
+    dropout_p=0.0,
+    is_causal=False,
+    scale=None,
+    enable_gqa=False,
+    attn_logit_softcapping=None,
+):
+    L, S = query.size(-2), key.size(-2)
+    scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
+    attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
+    if is_causal:
+        assert attn_mask is None
+        temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
+        attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
+        attn_bias.to(query.dtype)
+
+    if attn_mask is not None:
+        if attn_mask.dtype == torch.bool:
+            attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
+        else:
+            attn_bias = attn_mask + attn_bias
+
+    if enable_gqa:
+        key = key.repeat_interleave(query.size(-3) // key.size(-3), -3)
+        value = value.repeat_interleave(query.size(-3) // value.size(-3), -3)
+
+    attn_weight = query @ key.transpose(-2, -1) * scale_factor
+    ### Softcapping BEGIN
+    attn_weight = (
+        attn_logit_softcapping * (torch.tanh(attn_weight / attn_logit_softcapping))
+        if attn_logit_softcapping
+        else attn_weight
+    )
+    ### Softcapping END
+    attn_weight += attn_bias
+    attn_weight = torch.softmax(attn_weight, dim=-1)
+    attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
+    return attn_weight @ value
+
+
 def run_test_sdpa_decode_multi_pos(
     device,
     b,
@@ -619,6 +665,7 @@ def run_test_sdpa_decode_paged_attention(
     q_dtype,
     cur_pos_tensor,
     block_size,
+    softcapping=None,
     sharded_in=True,
     sharded_out=True,
 ):
@@ -766,6 +813,7 @@ def run_test_sdpa_decode_paged_attention(
                 tt_page_table,
                 cur_pos_tensor=start_indices_tt,
                 scale=scale,
+                attn_logit_softcapping=softcapping,
                 program_config=program_config,
                 compute_kernel_config=compute_kernel_config,
                 memory_config=height_sharded_memcfg if sharded_out else dram_memcfg,
@@ -786,6 +834,7 @@ def run_test_sdpa_decode_paged_attention(
                 is_causal=False,
                 attn_mask=tt_mask,
                 scale=scale,
+                attn_logit_softcapping=softcapping,
                 program_config=program_config,
                 compute_kernel_config=compute_kernel_config,
                 memory_config=height_sharded_memcfg if sharded_out else dram_memcfg,
@@ -806,9 +855,20 @@ def run_test_sdpa_decode_paged_attention(
         )  # b, nh, S, d
         attn_mask_slice = attn_mask[:, :nh, :, :]  # b, nh, 1, S
 
-        expect = torch.nn.functional.scaled_dot_product_attention(
-            Q_slice, K_slice, V_slice, attn_mask_slice, scale=scale, is_causal=False
-        )  # b, nh, 1, d
+        if not softcapping:
+            expect = torch.nn.functional.scaled_dot_product_attention(
+                Q_slice, K_slice, V_slice, attn_mask_slice, scale=scale, is_causal=False
+            )  # b, nh, 1, d
+        else:
+            expect = torch_sdpa_with_softcapping(
+                Q_slice,
+                K_slice,
+                V_slice,
+                attn_mask_slice,
+                scale=scale,
+                attn_logit_softcapping=softcapping,
+                is_causal=False,
+            )
         expect = expect.squeeze(2).unsqueeze(0)
 
         out_pass, out_pcc = comp_pcc(expect, tt_back, min_pcc)
@@ -841,6 +901,7 @@ def run_test_sdpa_decode_paged_attention_single_iter(
     block_size,
     q_chunk_size,
     k_chunk_size,
+    softcapping=None,
     sharded_in=True,
     sharded_out=True,
     start_core=ttnn.CoreCoord(0, 0),
@@ -975,6 +1036,7 @@ def run_test_sdpa_decode_paged_attention_single_iter(
         tt_page_table,
         cur_pos_tensor=start_indices_tt,
         scale=scale,
+        attn_logit_softcapping=softcapping,
         program_config=program_config,
         compute_kernel_config=compute_kernel_config,
         memory_config=height_sharded_memcfg if sharded_out else dram_memcfg,
@@ -1006,9 +1068,14 @@ def run_test_sdpa_decode_paged_attention_single_iter(
 
     attn_mask_slice = attn_mask[:, :nh, :, :]  # b, nh, 1, S
 
-    expect = torch.nn.functional.scaled_dot_product_attention(
-        Q_slice, K_slice, V_slice, attn_mask_slice, scale=scale, is_causal=False
-    )  # b, nh, 1, d
+    if not softcapping:
+        expect = torch.nn.functional.scaled_dot_product_attention(
+            Q_slice, K_slice, V_slice, attn_mask_slice, scale=scale, is_causal=False
+        )  # b, nh, 1, d
+    else:
+        expect = torch_sdpa_with_softcapping(
+            Q_slice, K_slice, V_slice, attn_mask_slice, scale=scale, attn_logit_softcapping=softcapping, is_causal=False
+        )
     expect = expect.squeeze(2).unsqueeze(0)
 
     out_pass, out_pcc = comp_pcc(expect, tt_back, min_pcc)
@@ -1019,6 +1086,7 @@ def run_test_sdpa_decode_paged_attention_single_iter(
 
 
 @skip_for_grayskull("Unsupported in GS since L1 runs OOM with most configs")
+@pytest.mark.parametrize("softcapping", [None, 50.0], ids=["no_cap", "cap50"])
 @pytest.mark.parametrize(
     "kv_dtype, q_dtype",
     [
@@ -1054,7 +1122,7 @@ def run_test_sdpa_decode_paged_attention_single_iter(
 )
 @pytest.mark.parametrize("block_size", (32, 64, 128), ids=["paged_32", "paged_64", "paged_128"])
 def test_sdpa_decode_paged_attention(
-    device, b, nh, nkv, s, d, kv_dtype, grid_size, q_dtype, cur_pos_tensor, block_size
+    device, b, nh, nkv, s, d, kv_dtype, grid_size, q_dtype, cur_pos_tensor, block_size, softcapping
 ):
     if s == 128 * 1024 and block_size != 64:
         # 128k sequence, block_size 64 tests the sizing of the page table CB
@@ -1072,6 +1140,7 @@ def test_sdpa_decode_paged_attention(
         q_dtype,
         cur_pos_tensor,
         block_size=block_size,
+        softcapping=softcapping,
         sharded_in=True,
         sharded_out=False,
     )

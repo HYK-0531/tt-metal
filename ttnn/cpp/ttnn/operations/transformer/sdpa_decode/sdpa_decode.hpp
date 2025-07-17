@@ -22,6 +22,7 @@ struct ExecuteScaledDotProductAttentionDecode {
         const std::vector<uint32_t>& cur_pos = std::vector<uint32_t>(),
         const std::optional<const Tensor>& cur_pos_tensor = std::nullopt,
         std::optional<float> scale = std::nullopt,
+        std::optional<float> attn_logit_softcapping = std::nullopt,
         const std::optional<MemoryConfig>& memory_config = std::nullopt,
         std::optional<SDPAProgramConfig> program_config = std::nullopt,
         std::optional<DeviceComputeKernelConfig> compute_kernel_config = std::nullopt);
@@ -35,6 +36,7 @@ struct ExecuteScaledDotProductAttentionDecode {
         const std::vector<uint32_t>& cur_pos = std::vector<uint32_t>(),
         const std::optional<const Tensor>& cur_pos_tensor = std::nullopt,
         std::optional<float> scale = std::nullopt,
+        std::optional<float> attn_logit_softcapping = std::nullopt,
         const std::optional<MemoryConfig>& memory_config = std::nullopt,
         std::optional<SDPAProgramConfig> program_config = std::nullopt,
         std::optional<DeviceComputeKernelConfig> compute_kernel_config = std::nullopt);
@@ -51,6 +53,7 @@ struct ExecutePagedScaledDotProductAttentionDecode {
         const std::optional<const Tensor>& attn_mask = std::nullopt,
         const std::optional<const Tensor>& cur_pos_tensor = std::nullopt,
         std::optional<float> scale = std::nullopt,
+        std::optional<float> attn_logit_softcapping = std::nullopt,
         const std::optional<MemoryConfig>& memory_config = std::nullopt,
         std::optional<SDPAProgramConfig> program_config = std::nullopt,
         std::optional<DeviceComputeKernelConfig> compute_kernel_config = std::nullopt);
@@ -64,6 +67,7 @@ struct ExecutePagedScaledDotProductAttentionDecode {
         const std::optional<const Tensor>& attn_mask = std::nullopt,
         const std::optional<const Tensor>& cur_pos_tensor = std::nullopt,
         std::optional<float> scale = std::nullopt,
+        std::optional<float> attn_logit_softcapping = std::nullopt,
         const std::optional<MemoryConfig>& memory_config = std::nullopt,
         std::optional<SDPAProgramConfig> program_config = std::nullopt,
         std::optional<DeviceComputeKernelConfig> compute_kernel_config = std::nullopt);

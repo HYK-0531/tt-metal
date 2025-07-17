@@ -42,6 +42,7 @@ ttnn::Tensor ExecuteScaledDotProductAttentionDecode::invoke(
     const std::vector<uint32_t>& cur_pos,
     const std::optional<const Tensor>& cur_pos_tensor,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     const std::optional<MemoryConfig>& memory_config,
     std::optional<SDPAProgramConfig> program_config,
     std::optional<DeviceComputeKernelConfig> compute_kernel_config) {
@@ -74,6 +75,7 @@ ttnn::Tensor ExecuteScaledDotProductAttentionDecode::invoke(
                    .is_causal = is_causal,
                    .cur_pos = cur_pos,
                    .scale = scale,
+                   .attn_logit_softcapping = attn_logit_softcapping,
                    .output_mem_config = memory_config.value_or(operation::DEFAULT_OUTPUT_MEMORY_CONFIG),
                    .program_config = program_config,
                    .compute_kernel_config = kernel_config_val,
@@ -95,6 +97,7 @@ ttnn::Tensor ExecuteScaledDotProductAttentionDecode::invoke(
     const std::vector<uint32_t>& cur_pos,
     const std::optional<const Tensor>& cur_pos_tensor,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     const std::optional<MemoryConfig>& memory_config,
     std::optional<SDPAProgramConfig> program_config,
     std::optional<DeviceComputeKernelConfig> compute_kernel_config) {
@@ -108,6 +111,7 @@ ttnn::Tensor ExecuteScaledDotProductAttentionDecode::invoke(
         cur_pos,
         cur_pos_tensor,
         scale,
+        attn_logit_softcapping,
         memory_config,
         std::move(program_config),
         compute_kernel_config);
@@ -123,6 +127,7 @@ ttnn::Tensor ExecutePagedScaledDotProductAttentionDecode::invoke(
     const std::optional<const Tensor>& attn_mask,
     const std::optional<const Tensor>& cur_pos_tensor,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     const std::optional<MemoryConfig>& memory_config,
     std::optional<SDPAProgramConfig> program_config,
     std::optional<DeviceComputeKernelConfig> compute_kernel_config) {
@@ -153,6 +158,7 @@ ttnn::Tensor ExecutePagedScaledDotProductAttentionDecode::invoke(
                    .is_causal = is_causal,
                    .cur_pos = std::vector<uint32_t>(),
                    .scale = scale,
+                   .attn_logit_softcapping = attn_logit_softcapping,
                    .output_mem_config = memory_config.value_or(operation::DEFAULT_OUTPUT_MEMORY_CONFIG),
                    .program_config = program_config,
                    .compute_kernel_config = kernel_config_val,
@@ -174,6 +180,7 @@ ttnn::Tensor ExecutePagedScaledDotProductAttentionDecode::invoke(
     const std::optional<const Tensor>& attn_mask,
     const std::optional<const Tensor>& cur_pos_tensor,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     const std::optional<MemoryConfig>& memory_config,
     std::optional<SDPAProgramConfig> program_config,
     std::optional<DeviceComputeKernelConfig> compute_kernel_config) {
@@ -187,6 +194,7 @@ ttnn::Tensor ExecutePagedScaledDotProductAttentionDecode::invoke(
         attn_mask,
         cur_pos_tensor,
         scale,
+        attn_logit_softcapping,
         memory_config,
         std::move(program_config),
         compute_kernel_config);

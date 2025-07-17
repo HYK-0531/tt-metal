@@ -33,6 +33,7 @@ operation::ProgramWithCallbacks sdpa_decode_multi_core(
     bool is_causal,
     const std::vector<uint32_t>& cur_pos_ids,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     DeviceComputeKernelConfig compute_kernel_config,
     std::optional<SDPAProgramConfig> program_config,
     const uint32_t k_chunk_size,
@@ -575,11 +576,13 @@ operation::ProgramWithCallbacks sdpa_decode_multi_core(
     class bfloat16 bfloat_identity_scalar(1.0f);
     uint32_t packed_identity_scalar = pack_two_bfloat16_into_uint32({bfloat_identity_scalar, bfloat_identity_scalar});
 
-    union {
+    union FloatUint32 {
         float f;
         uint32_t u;
-    } scale_union;
-    scale_union.f = scale.value_or(1.0f);
+    };
+    FloatUint32 scale_union = {.f = scale.value_or(1.0f)};
+    // To make sure to not use softcapping if it is not defined, 0.0f as default will fail drastically.
+    FloatUint32 softcapping_union = {.f = attn_logit_softcapping.value_or(0.0f)};
 
     // Create core groups for reduce cores
     std::vector<uint32_t> reduce_core_physical_xs;
@@ -715,6 +718,7 @@ operation::ProgramWithCallbacks sdpa_decode_multi_core(
         num_heads_per_core,
         is_causal,
         use_attention_mask,
+        softcapping_union.u,
         max_dynamic_chunk_size,
         tilize_q,
         q_heads_parallel_factor,
@@ -745,6 +749,15 @@ operation::ProgramWithCallbacks sdpa_decode_multi_core(
         compute_defines["DYNAMIC_CHUNK_SIZE"] = "1";
     }
     compute_defines["EXP_APPROX_MODE"] = std::to_string(exp_approx_mode);
+
+    // If attn_logit_softcapping is provided and it's larger than zero
+    if (attn_logit_softcapping.has_value() &&
+        (attn_logit_softcapping.value() > std::numeric_limits<float>::epsilon())) {
+        compute_defines["ATTN_LOGIT_SOFTCAPPING_ENABLED"] = "1";
+        log_debug(tt::LogOp, "attn_logit_softcapping: {}", attn_logit_softcapping.value());
+    } else {
+        compute_defines["ATTN_LOGIT_SOFTCAPPING_ENABLED"] = "0";
+    }
 
     // Compute
     auto compute_kernels_id = CreateKernel(

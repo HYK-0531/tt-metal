@@ -9,6 +9,7 @@
 
 #include "compute_kernel_api.h"
 #include "compute_kernel_api/eltwise_binary.h"
+#include "compute_kernel_api/eltwise_unary/binop_with_scalar.h"
 #include "compute_kernel_api/eltwise_unary/exp.h"
 #include "compute_kernel_api/eltwise_unary/recip.h"
 #include "compute_kernel_api/bcast.h"
@@ -384,6 +385,47 @@ ALWI void cb_matmul_blocks(
     cb_pop_front(in1_cb, K * N);
 }
 
+template <uint32_t softcapping_fp32>
+void softcap_inplace(uint32_t in_cb, uint32_t num_tiles) {
+    // Precondition: in_cb has num_tiles produced
+    // Postcondition: in_cb has num_tiles produced
+
+    constexpr float softcapping = __builtin_bit_cast(float, softcapping_fp32);
+    constexpr uint32_t softcapping_recip_fp32 = __builtin_bit_cast(uint32_t, 1.0f / softcapping);
+
+    copy_tile_init(in_cb);
+    reconfig_data_format_srca(in_cb);
+    pack_reconfig_data_format(in_cb);
+    cb_wait_front(in_cb, num_tiles);
+
+    for (uint32_t i = 0; i < num_tiles; i++) {
+        tile_regs_acquire();
+        copy_tile(in_cb, i, 0);
+
+        // in / softcapping_fp32
+        binop_with_scalar_tile_init();
+        mul_unary_tile(0, softcapping_recip_fp32);
+
+        // tanh(in / softcapping_fp32)
+        tanh_tile_init();
+        tanh_tile(0);
+
+        // softcapping_fp32 * tanh(in / softcapping_fp32)
+        binop_with_scalar_tile_init();
+        mul_unary_tile(0, softcapping_fp32);
+
+        tile_regs_commit();
+
+        tile_regs_wait();
+        pack_tile(0, in_cb);
+        tile_regs_release();
+    }
+
+    cb_pop_front(in_cb, num_tiles);
+    cb_reserve_back(in_cb, num_tiles);
+    cb_push_back(in_cb, num_tiles);
+}
+
 /******************************************************************************
  *                   Flash Decode Functions                                    *
  ******************************************************************************/
@@ -456,6 +498,8 @@ template <
     // Attention parameters
     bool is_causal,
     bool use_attention_mask,
+    // Softcapping
+    uint32_t softcapping_fp32,
     // Circular buffer indices
     uint32_t cb_q_in,
     uint32_t cb_k_in,
@@ -509,6 +553,9 @@ void flash_attention_loop(
             qk_subblock_w,
             true /*transpose*/);
 
+#if ATTN_LOGIT_SOFTCAPPING_ENABLED
+        softcap_inplace<softcapping_fp32>(cb_qk_im, qk_chunk_tiles);
+#endif
         /* QK *= SCALE */
         mul_block_bcast_scalar_inplace(cb_qk_im, cb_scale_in, qk_chunk_tiles);
 

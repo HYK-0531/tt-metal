@@ -48,9 +48,10 @@ void MAIN {
     constexpr uint32_t num_heads_per_core = get_compile_time_arg_val(20);
     constexpr bool is_causal = get_compile_time_arg_val(21) == 1;
     constexpr bool use_attention_mask = get_compile_time_arg_val(22) == 1;
-    constexpr uint32_t max_dynamic_chunk_size = get_compile_time_arg_val(23);
-    constexpr bool tilize_q = get_compile_time_arg_val(24) == 1;
-    constexpr uint32_t q_heads_parallel_factor = get_compile_time_arg_val(25);
+    constexpr uint32_t softcapping_fp32 = get_compile_time_arg_val(23);
+    constexpr uint32_t max_dynamic_chunk_size = get_compile_time_arg_val(24);
+    constexpr bool tilize_q = get_compile_time_arg_val(25) == 1;
+    constexpr uint32_t q_heads_parallel_factor = get_compile_time_arg_val(26);
 
     constexpr uint32_t q_chunk_tiles = Sq_chunk_t * DHt;
     constexpr uint32_t out_chunk_tiles = Sq_chunk_t * vDHt;
@@ -193,6 +194,8 @@ void MAIN {
             // Attention parameters
             is_causal,
             use_attention_mask,
+            // Softcapping
+            softcapping_fp32,
             // Circular buffer indices
             cb_q_in,
             cb_k_in,

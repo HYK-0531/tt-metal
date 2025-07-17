@@ -21,6 +21,7 @@ tt::tt_metal::operation::ProgramWithCallbacks sdpa_decode_multi_core(
     bool is_causal,
     const std::vector<uint32_t>& cur_pos_ids,
     std::optional<float> scale,
+    std::optional<float> attn_logit_softcapping,
     DeviceComputeKernelConfig compute_kernel_config,
     std::optional<SDPAProgramConfig> program_config,
     uint32_t k_chunk_size,

@@ -36,6 +36,7 @@ void py_bind_sdpa_decode(py::module& module) {
             queue_id (int, optional): command queue id. Defaults to `0`.
             cur_pos_tensor (ttnn.Tensor, optional): [b] tensor of integers of length b. Defaults to `None`.
             scale (float, optional): Defaults to `None`.
+            attn_logit_softcapping (float, optional): Defaults to `None`.
             program_config (SDPAProgramConfig, optional): Defaults to `None`.
             compute_kernel_config (ttnn.DeviceComputeKernelConfig, optional): Defaults to `None`.
 
@@ -63,6 +64,7 @@ void py_bind_sdpa_decode(py::module& module) {
                const std::vector<uint32_t>& cur_pos,
                const std::optional<const Tensor>& cur_pos_tensor,
                std::optional<float> scale,
+               std::optional<float> attn_logit_softcapping,
                const std::optional<MemoryConfig>& memory_config,
                std::optional<SDPAProgramConfig> program_config,
                std::optional<DeviceComputeKernelConfig> compute_kernel_config,
@@ -77,6 +79,7 @@ void py_bind_sdpa_decode(py::module& module) {
                     cur_pos,
                     cur_pos_tensor,
                     scale,
+                    attn_logit_softcapping,
                     memory_config,
                     program_config,
                     compute_kernel_config);
@@ -90,6 +93,7 @@ void py_bind_sdpa_decode(py::module& module) {
             py::arg("cur_pos").noconvert() = std::vector<uint32_t>(),
             py::arg("cur_pos_tensor").noconvert() = std::nullopt,
             py::arg("scale").noconvert() = std::nullopt,
+            py::arg("attn_logit_softcapping").noconvert() = std::nullopt,
             py::arg("memory_config").noconvert() = std::nullopt,
             py::arg("program_config").noconvert() = std::nullopt,
             py::arg("compute_kernel_config").noconvert() = std::nullopt,
@@ -111,6 +115,7 @@ void py_bind_sdpa_decode(py::module& module) {
                const std::optional<const Tensor>& attn_mask,
                const std::optional<const Tensor>& cur_pos_tensor,
                std::optional<float> scale,
+               std::optional<float> attn_logit_softcapping,
                const std::optional<MemoryConfig>& memory_config,
                std::optional<SDPAProgramConfig> program_config,
                std::optional<DeviceComputeKernelConfig> compute_kernel_config,
@@ -125,6 +130,7 @@ void py_bind_sdpa_decode(py::module& module) {
                     attn_mask,
                     cur_pos_tensor,
                     scale,
+                    attn_logit_softcapping,
                     memory_config,
                     program_config,
                     compute_kernel_config);
@@ -138,6 +144,7 @@ void py_bind_sdpa_decode(py::module& module) {
             py::arg("attn_mask").noconvert() = std::nullopt,
             py::arg("cur_pos_tensor").noconvert() = std::nullopt,
             py::arg("scale").noconvert() = std::nullopt,
+            py::arg("attn_logit_softcapping").noconvert() = std::nullopt,
             py::arg("memory_config").noconvert() = std::nullopt,
             py::arg("program_config").noconvert() = std::nullopt,
             py::arg("compute_kernel_config").noconvert() = std::nullopt,

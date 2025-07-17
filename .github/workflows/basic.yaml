@@ -51,7 +51,7 @@ jobs:
 
       - name: Run a test
         id: test
-        timeout-minutes: 30
+        timeout-minutes: 300
         env:
           GTEST_COLOR: yes
           GTEST_OUTPUT: xml:/work/test-reports/
@@ -60,7 +60,12 @@ jobs:
           TT_METAL_WATCHER_TEST_MODE: 1
           LSAN_OPTIONS: suppressions=/usr/share/tt-metalium/lsan.supp
         run: |
-          /usr/bin/${{ inputs.product }}-validation-basic
+          set -e
+          for i in {1..100}; do
+            echo "::group::Test iteration $i/100"
+            /usr/bin/${{ inputs.product }}-validation-basic
+            echo "::endgroup::"
+          done
 
       - name: workaround
         run: |

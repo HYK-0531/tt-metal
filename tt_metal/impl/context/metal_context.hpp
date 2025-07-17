@@ -6,6 +6,7 @@
 
 #include <tt_stl/indestructible.hpp>
 #include <tt-metalium/dispatch_core_common.hpp>
+#include <tt-metalium/distributed_context.hpp>
 #include <tt-metalium/core_descriptor.hpp>
 #include <tt-metalium/hal_types.hpp>
 #include "dev_msgs.h"
@@ -16,6 +17,8 @@
 #include <impl/dispatch/dispatch_core_manager.hpp>
 #include <impl/dispatch/dispatch_mem_map.hpp>
 #include <impl/dispatch/dispatch_query_manager.hpp>
+#include <impl/debug/dprint_server.hpp>
+#include <impl/debug/watcher_server.hpp>
 
 #include <array>
 #include <unordered_set>
@@ -56,14 +59,15 @@ public:
     inspector::Data* get_inspector_data() const {
         return inspector_data_.get();
     }
+    std::unique_ptr<DPrintServer>& dprint_server() { return dprint_server_; }
+    std::unique_ptr<WatcherServer>& watcher_server() { return watcher_server_; }
 
     void initialize(
         const DispatchCoreConfig& dispatch_core_config,
         uint8_t num_hw_cqs,
         const BankMapping& l1_bank_remap,
         size_t worker_l1_size,
-        bool minimal = false,
-        bool force_reinit = false);
+        bool minimal = false);
     void reinitialize();
     void teardown();
 
@@ -74,12 +78,14 @@ public:
         const std::map<tt_fabric::FabricNodeId, chip_id_t>& logical_mesh_chip_id_to_physical_chip_id_mapping);
     void set_default_control_plane_mesh_graph();
     void set_fabric_config(
-        tt_metal::FabricConfig fabric_config,
-        tt_metal::FabricReliabilityMode reliability_mode =
-            tt_metal::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE,
+        tt_fabric::FabricConfig fabric_config,
+        tt_fabric::FabricReliabilityMode reliability_mode =
+            tt_fabric::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE,
         std::optional<uint8_t> num_routing_planes = std::nullopt);
     void initialize_fabric_config();
-    tt_metal::FabricConfig get_fabric_config() const;
+    tt_fabric::FabricConfig get_fabric_config() const;
+
+    distributed::multihost::DistributedContext& get_distributed_context();
 
 private:
     friend class tt::stl::Indestructible<MetalContext>;
@@ -110,6 +116,7 @@ private:
 
     bool initialized_ = false;
     bool teardown_registered_ = false;
+    bool force_reinit_ = false;
 
     uint8_t num_hw_cqs_ = 0;
     BankMapping l1_bank_remap_;
@@ -133,15 +140,18 @@ private:
     std::unique_ptr<dispatch_core_manager> dispatch_core_manager_;
     std::unique_ptr<DispatchQueryManager> dispatch_query_manager_;
     std::unique_ptr<inspector::Data> inspector_data_;
+    std::unique_ptr<DPrintServer> dprint_server_;
+    std::unique_ptr<WatcherServer> watcher_server_;
     std::array<std::unique_ptr<DispatchMemMap>, static_cast<size_t>(CoreType::COUNT)> dispatch_mem_map_;
     std::unique_ptr<tt::tt_fabric::GlobalControlPlane> global_control_plane_;
-    tt_metal::FabricConfig fabric_config_ = tt_metal::FabricConfig::DISABLED;
+    tt_fabric::FabricConfig fabric_config_ = tt_fabric::FabricConfig::DISABLED;
+    std::shared_ptr<distributed::multihost::DistributedContext> distributed_context_;
 
     // Strict system health mode requires (expects) all links/devices to be live. When enabled, it
     // is expected that any downed devices/links will result in some sort of error condition being
     // reported. When set to false, the control plane is free to instantiate fewer routing planes
     // according to which links are available.
-    tt_metal::FabricReliabilityMode fabric_reliability_mode_ = tt_metal::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE;
+    tt_fabric::FabricReliabilityMode fabric_reliability_mode_ = tt_fabric::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE;
     uint8_t num_fabric_active_routing_planes_ = 0;
 };
 

@@ -3,8 +3,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#include <math.h>
 #include <optional>
+#include <string>
 
 #include <tt-logger/tt-logger.hpp>
 #include <tt-metalium/buffer.hpp>
@@ -26,13 +26,8 @@ namespace ttnn::operations::normalization {
 
 namespace {
 namespace CMAKE_UNIQUE_NAMESPACE {
-inline bool is_dram(const Tensor& input_tensor) {
-    return input_tensor.memory_config().buffer_type() == tt::tt_metal::BufferType::DRAM;
-}
-inline bool is_dram(const std::optional<const Tensor>& input_tensor) {
-    return input_tensor.has_value() ? is_dram(input_tensor.value()) : true;
-}
-inline bool is_dram(const tt::tt_metal::Buffer* b) { return b->buffer_type() == tt::tt_metal::BufferType::DRAM; }
+
+
 }  // namespace CMAKE_UNIQUE_NAMESPACE
 }  // namespace
 // implementation of softmax with optional scale/mask (see the header for input_tensor more detailed description)
@@ -196,7 +191,7 @@ tt::tt_metal::operation::ProgramWithCallbacks scale_mask_softmax_multi_core(
     std::vector<uint32_t> writer_compile_time_args = {// interleaved accessor args
                                                       out0_is_dram,
                                                       num_datum_padded};
-    std::map<string, string> softmax_defines, writer_defines;
+    std::map<std::string, std::string> softmax_defines, writer_defines;
     if (mask.has_value()) {
         softmax_defines["FUSED_SCALE_MASK"] = "1";
     }
@@ -726,7 +721,7 @@ tt::tt_metal::operation::ProgramWithCallbacks scale_mask_softmax_sharded_multi_c
         is_dram_mask = mask->buffer()->buffer_type() == tt::tt_metal::BufferType::DRAM;
     }
     std::vector<uint32_t> reader_compile_time_args = {(std::uint32_t)block_wt, (std::uint32_t)is_dram_mask};
-    std::map<string, string> softmax_defines;
+    std::map<std::string, std::string> softmax_defines;
     // hw_dims_only_causal_mask does not support RM Layout atm
     bool use_row_major_kernel = (mask.has_value() and mask->layout() == tt::tt_metal::Layout::ROW_MAJOR);
     if (use_row_major_kernel) {

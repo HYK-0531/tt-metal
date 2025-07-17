@@ -50,7 +50,6 @@ inline bool is_dram(const Tensor& input_tensor) {
 inline bool is_dram(const std::optional<const Tensor>& input_tensor) {
     return input_tensor.has_value() ? is_dram(input_tensor.value()) : true;
 }
-inline bool is_dram(const Buffer* b) { return b->buffer_type() == BufferType::DRAM; }
 
 }  // namespace CMAKE_UNIQUE_NAMESPACE
 }  // namespace
@@ -144,7 +143,7 @@ operation::ProgramWithCallbacks frmsnorm_multi_core_sharded(
     uint32_t num_pages_per_packet = packet_size_bytes / l1_scratch_cb_page_size_bytes;
 
     static constexpr auto num_packet_headers_storable = 8;
-    static constexpr auto packet_header_size_bytes = sizeof(tt::tt_fabric::PacketHeader);
+    auto packet_header_size_bytes = tt::tt_fabric::get_tt_fabric_packet_header_size_bytes();
 
     auto [math_fidelity, math_approx_mode, fp32_dest_acc_en, packer_l1_acc, dst_full_sync_en] =
         get_compute_kernel_config_args(mesh_device->arch(), compute_kernel_config);
@@ -401,8 +400,8 @@ operation::ProgramWithCallbacks frmsnorm_multi_core_sharded(
     auto stats_filled_semaphore = tt::tt_metal::CreateSemaphore(program, all_cores, INVALID);
 
     // reader defines
-    std::map<string, string> reader_mcast_sender_defines;
-    std::map<string, string> reader_mcast_receiver_defines;
+    std::map<std::string, std::string> reader_mcast_sender_defines;
+    std::map<std::string, std::string> reader_mcast_receiver_defines;
     if (gamma.has_value()) {
         reader_mcast_sender_defines["FUSE_GAMMA"] = "1";
         reader_mcast_receiver_defines["FUSE_GAMMA"] = "1";
@@ -410,7 +409,7 @@ operation::ProgramWithCallbacks frmsnorm_multi_core_sharded(
 
     // compute defines
     // reader defines
-    std::map<string, string> compute_defines;
+    std::map<std::string, std::string> compute_defines;
     if (b.has_value()) {
         compute_defines["FUSE_PRE_ADD"] = "1";
     }
@@ -755,7 +754,7 @@ operation::ProgramWithCallbacks frmsnorm_multi_core_sharded(
     std::string reciever_reader_kernel_file =
         "ttnn/cpp/ttnn/operations/experimental/ccl/rms_allgather/device/kernels/dataflow/rms_receiver_reader.cpp";
 
-    std::map<string, string> writer_defines;
+    std::map<std::string, std::string> writer_defines;
     if (skip_write_back) {
         writer_defines["SKIP_WRITE_BACK"] = "1";
     }
@@ -1050,14 +1049,22 @@ operation::ProgramWithCallbacks frmsnorm_multi_core_sharded(
 
             all_gather_rts.push_back(forward_device.has_value());
             if (forward_device.has_value()) {
+                const auto target_device_fabric_node_id =
+                    tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(target_device->id());
+                const auto forward_device_fabric_node_id =
+                    tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(forward_device.value()->id());
                 tt::tt_fabric::append_fabric_connection_rt_args(
-                    target_device->id(), forward_device.value()->id(), i, program, {core}, all_gather_rts);
+                    target_device_fabric_node_id, forward_device_fabric_node_id, i, program, {core}, all_gather_rts);
             }
 
             all_gather_rts.push_back(backward_device.has_value());
             if (backward_device.has_value()) {
+                const auto target_device_fabric_node_id =
+                    tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(target_device->id());
+                const auto backward_device_fabric_node_id =
+                    tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(backward_device.value()->id());
                 tt::tt_fabric::append_fabric_connection_rt_args(
-                    target_device->id(), backward_device.value()->id(), i, program, {core}, all_gather_rts);
+                    target_device_fabric_node_id, backward_device_fabric_node_id, i, program, {core}, all_gather_rts);
             }
         }
         // Set writer runtime args

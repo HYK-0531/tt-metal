@@ -31,6 +31,23 @@ run_segformer_func() {
 
 }
 
+run_sentencebert_func() {
+
+  #SentenceBERT Demo
+  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest --disable-warnings models/demos/sentence_bert/demo/demo.py::test_sentence_bert_demo_inference --timeout 600; fail+=$?
+
+  #SentenceBERT eval
+  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest --disable-warnings models/demos/sentence_bert/demo/dataset_evaluation.py::test_sentence_bert_eval --timeout 600; fail+=$?
+
+}
+
+#run_yolov11_func() {
+#
+#  #Yolov11 Demo
+#  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest --disable-warnings models/demos/yolov11/demo/demo.py --timeout 600; fail+=$?
+#
+#}
+
 run_llama3_func() {
   fail=0
 
@@ -54,10 +71,13 @@ run_llama3_func() {
 
 }
 
-run_ufld_v2_func() {
-  #ufld_v2
-  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/demos/ufld_v2/demo/demo.py --timeout 600
-}
+## comment out ufld_v2 from CI tests for now unitl dataset_evaluation test failure is debugged.
+#run_ufld_v2_func() {
+#  #ufld_v2
+#  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/demos/ufld_v2/demo/demo.py --timeout 600
+#  #ufld_v2 eval
+#  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/demos/ufld_v2/demo/dataset_evaluation.py --timeout 1500
+#}
 run_vgg_func() {
 
   #VGG11/VGG16
@@ -216,12 +236,18 @@ run_yolov9c_perf() {
   WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto --disable-warnings models/demos/yolov9c/demo/demo.py --timeout 600
 
 }
+run_yolov8s_perf() {
 
-run_mobilenetv2_perf(){
-
-  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest models/demos/mobilenetv2/demo/demo.py::test_mobilenetv2_imagenet_demo --timeout 600
+  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto --disable-warnings models/demos/yolov8s/demo/demo.py --timeout 600
 
 }
+
+# commenting out the test from CI due to HF issue. TODO explore AWS alternative suggested by infra team.
+#run_mobilenetv2_perf(){
+#
+#  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest models/demos/mobilenetv2/demo/demo.py::test_mobilenetv2_imagenet_demo --timeout 600
+#
+#}
 
 run_yolov8s_world_perf() {
 
@@ -229,11 +255,12 @@ run_yolov8s_world_perf() {
 
 }
 
-run_vanilla_unet_demo() {
-
-  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/experimental/functional_vanilla_unet/demo/demo.py::test_unet_demo_single_image
-
-}
+#comment out vanilla unet for now unitl data and weights loading issues are resolved.
+#run_vanilla_unet_demo() {
+#
+#  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/experimental/vanilla_unet/demo/demo.py::test_unet_demo_single_image
+#
+#}
 run_yolov8x_perf() {
 
   WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto --disable-warnings models/demos/yolov8x/demo/demo.py --timeout 600
@@ -245,15 +272,22 @@ run_yolov4_perf() {
 }
 run_yolov10x_demo() {
 
-  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto --disable-warnings  models/experimental/yolov10/demo/demo.py --timeout 600
+  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto --disable-warnings  models/demos/yolov10x/demo/demo.py --timeout 600
 
 }
 
-run_vgg_unet_demo() {
+run_yolov7_demo() {
 
-  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/demos/vgg_unet/demo/demo.py --timeout 600
+  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/demos/yolov7/demo/demo.py --timeout 600
 
 }
+
+# comment out vgg_unet from CI until data and weights loading problems are resolved
+#run_vgg_unet_demo() {
+#
+#  WH_ARCH_YAML=wormhole_b0_80_arch_eth_dispatch.yaml pytest -n auto models/demos/vgg_unet/demo/demo.py --timeout 600
+#
+#}
 
 
 

@@ -18,12 +18,14 @@
 #include <tt-metalium/hal.hpp>
 #include <tt-metalium/tt_metal.hpp>
 #include <tt-metalium/control_plane.hpp>
+#include <tt-metalium/distributed_context.hpp>
 #include "tt_metal/fabric/fabric_host_utils.hpp"
 #include <filesystem>
 #include <tt-metalium/device_pool.hpp>
 
 namespace tt::tt_metal {
 
+namespace {
 // Helper function to validate worker_l1_size, also updates it if it's 0.
 void validate_worker_l1_size(size_t& worker_l1_size, Hal& hal) {
     if (worker_l1_size == 0) {
@@ -39,8 +41,17 @@ void validate_worker_l1_size(size_t& worker_l1_size, Hal& hal) {
         max_worker_l1_size);
 }
 
+// Check for environment variable override for custom mesh graph descriptor path
+const char* get_custom_mesh_graph_desc_path() {
+    const char* custom_mesh_graph_desc_path = std::getenv("TT_MESH_GRAPH_DESC_PATH");
+    return custom_mesh_graph_desc_path;
+}
+
+}  // namespace
+
 void MetalContext::reinitialize() {
-    initialize(dispatch_core_config_, num_hw_cqs_, l1_bank_remap_, worker_l1_size_, false, true);
+    force_reinit_ = true;
+    initialize(dispatch_core_config_, num_hw_cqs_, l1_bank_remap_, worker_l1_size_, false);
 }
 
 void MetalContext::initialize(
@@ -48,8 +59,11 @@ void MetalContext::initialize(
     uint8_t num_hw_cqs,
     const BankMapping& l1_bank_remap,
     size_t worker_l1_size,
-    bool minimal,
-    bool force_reinit) {
+    bool minimal) {
+    // Workaround for galaxy and BH, need to always re-init
+    if (rtoptions_.get_force_context_reinit() or cluster_->is_galaxy_cluster() or cluster_->arch() == ARCH::BLACKHOLE) {
+        force_reinit_ = true;
+    }
     // Settings that affect FW build can also trigger a re-initialization
     auto fw_compile_hash = std::hash<std::string>{}(rtoptions_.get_compile_hash_string());
     validate_worker_l1_size(worker_l1_size, *hal_);
@@ -61,7 +75,8 @@ void MetalContext::initialize(
             teardown();
         } else {
             // Re-init request with the same parameters, do nothing unless force re-init requested.
-            if (force_reinit) {
+            if (force_reinit_) {
+                force_reinit_ = false;
                 log_warning(
                     tt::LogAlways,
                     "Closing and re-initializing MetalContext with same parameters due to force_reinit flag.");
@@ -96,13 +111,21 @@ void MetalContext::initialize(
         std::make_unique<DispatchMemMap>(CoreType::WORKER, num_hw_cqs);
     dispatch_mem_map_[magic_enum::enum_integer(CoreType::ETH)] =
         std::make_unique<DispatchMemMap>(CoreType::ETH, num_hw_cqs);
+    // Initialize debug servers. Attaching individual devices done below
+    if (rtoptions_.get_feature_enabled(tt::llrt::RunTimeDebugFeatureDprint)) {
+        TT_FATAL(!rtoptions_.get_profiler_enabled(), "Both DPRINT and Profiler cannot be enabled at the same time.");
+        rtoptions_.set_disable_dma_ops(true);  // DMA is not thread-safe
+        dprint_server_ = std::make_unique<DPrintServer>(rtoptions_);
+    }
+    watcher_server_ =
+        std::make_unique<WatcherServer>();  // Watcher server always created, since we use it to register kernels
 
     // Minimal setup, don't initialize FW/Dispatch/etc.
     if (minimal) {
         return;
     }
 
-    // TODO: Move FW, fabric, dispatch init here
+    // Clear state, build FW
     auto all_devices = cluster_->all_chip_ids();
     for (chip_id_t device_id : all_devices) {
         // Clear L1/DRAM if requested
@@ -113,7 +136,7 @@ void MetalContext::initialize(
             clear_dram_state(device_id);
         }
         int ai_clk = cluster_->get_device_aiclk(device_id);
-        log_info(tt::LogMetal, "AI CLK for device {} is:   {} MHz", device_id, ai_clk);
+        log_debug(tt::LogMetal, "AI CLK for device {} is:   {} MHz", device_id, ai_clk);
         generate_device_bank_to_noc_tables(device_id);
 
         // Create build env for this device, and build FW if it's not built already
@@ -140,14 +163,15 @@ void MetalContext::initialize(
     }
 
     // Set internal routing for active ethernet cores, this is required for our FW to run
-    tt::tt_metal::MetalContext::instance().get_cluster().set_internal_routing_info_for_ethernet_cores(true);
+    cluster_->set_internal_routing_info_for_ethernet_cores(true);
 
     // Initialize debug tools, reset cores, init FW
+    if (dprint_server_) {
+        dprint_server_->attach_devices();
+    }
+    watcher_server_->init_devices();
     for (chip_id_t device_id : all_devices) {
-        // Init debug tools
         ClearNocData(device_id);
-        DprintServerAttach(device_id);
-        watcher_init(device_id);
 
         // TODO: as optimization, investigate removing all this call for already initialized devivces
         if (!rtoptions_.get_skip_reset_cores_on_init()) {
@@ -155,11 +179,10 @@ void MetalContext::initialize(
         }
 
         initialize_and_launch_firmware(device_id);
-
-        // Watcher needs to init before FW since FW needs watcher mailboxes to be set up, and needs to attach after FW
-        // starts since it also writes to watcher mailboxes.
-        watcher_attach(device_id);
     }
+    // Watcher needs to init before FW since FW needs watcher mailboxes to be set up, and needs to attach after FW
+    // starts since it also writes to watcher mailboxes.
+    watcher_server_->attach_devices();
 
     // Register teardown function, but only once.
     if (not teardown_registered_) {
@@ -170,15 +193,24 @@ void MetalContext::initialize(
 }
 
 void MetalContext::teardown() {
+    if (!initialized_) {
+        return;
+    }
     initialized_ = false;
 
     // Set internal routing to false to exit active ethernet FW & go back to base FW
-    tt::tt_metal::MetalContext::instance().get_cluster().set_internal_routing_info_for_ethernet_cores(false);
+    cluster_->set_internal_routing_info_for_ethernet_cores(false);
+
+    if (dprint_server_) {
+        dprint_server_->detach_devices();
+        dprint_server_.reset();
+        rtoptions_.set_disable_dma_ops(false);
+    }
 
     auto all_devices = cluster_->all_chip_ids();
+    watcher_server_->detach_devices();
+    watcher_server_.reset();
     for (chip_id_t device_id : all_devices) {
-        DprintServerDetach(device_id);
-        watcher_detach(device_id);
         assert_cores(device_id);
 
         cluster_->l1_barrier(device_id);
@@ -191,6 +223,7 @@ void MetalContext::teardown() {
     }
     dispatch_query_manager_.reset();
     dispatch_core_manager_.reset();
+    tt::tt_metal::reset_topology_state();
 }
 
 MetalContext& MetalContext::instance() {
@@ -203,6 +236,12 @@ MetalContext::MetalContext() {
         Cluster::is_base_routing_fw_enabled(Cluster::get_cluster_type_from_cluster_desc(rtoptions_));
     hal_ = std::make_unique<Hal>(get_platform_architecture(rtoptions_), is_base_routing_fw_enabled);
     cluster_ = std::make_unique<Cluster>(rtoptions_, *hal_);
+    distributed_context_ = distributed::multihost::DistributedContext::get_current_world();
+}
+
+distributed::multihost::DistributedContext& MetalContext::get_distributed_context() {
+    TT_FATAL(distributed_context_, "Distributed context not initialized.");
+    return *distributed_context_;
 }
 
 MetalContext::~MetalContext() {
@@ -339,7 +378,7 @@ void MetalContext::set_custom_control_plane_mesh_graph(
 
     global_control_plane_ = std::make_unique<tt::tt_fabric::GlobalControlPlane>(
         mesh_graph_desc_file, logical_mesh_chip_id_to_physical_chip_id_mapping);
-    this->set_fabric_config(fabric_config_, tt::tt_metal::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE);
+    this->set_fabric_config(fabric_config_, tt::tt_fabric::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE);
 }
 
 void MetalContext::set_default_control_plane_mesh_graph() {
@@ -347,19 +386,26 @@ void MetalContext::set_default_control_plane_mesh_graph() {
         !DevicePool::is_initialized() || DevicePool::instance().get_all_active_devices().size() == 0,
         "Modifying control plane requires no devices to be active");
     global_control_plane_.reset();
-    this->set_fabric_config(fabric_config_, tt::tt_metal::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE);
+    this->set_fabric_config(fabric_config_, tt::tt_fabric::FabricReliabilityMode::STRICT_SYSTEM_HEALTH_SETUP_MODE);
 }
 
 void MetalContext::teardown_fabric_config() {
-    this->cluster_->configure_ethernet_cores_for_fabric_routers(tt_metal::FabricConfig::DISABLED);
+    this->fabric_config_ = tt_fabric::FabricConfig::DISABLED;
+    this->cluster_->configure_ethernet_cores_for_fabric_routers(this->fabric_config_);
+    this->num_fabric_active_routing_planes_ = 0;
+    // if (!rtoptions_.get_erisc_iram_env_var_enabled()) {
+    //     rtoptions_.set_erisc_iram_enabled(false);
+    // }
     this->get_control_plane().clear_fabric_context();
 }
 
 void MetalContext::set_fabric_config(
-    const tt_metal::FabricConfig fabric_config,
-    tt_metal::FabricReliabilityMode reliability_mode,
+    const tt_fabric::FabricConfig fabric_config,
+    tt_fabric::FabricReliabilityMode reliability_mode,
     std::optional<uint8_t> num_routing_planes) {
-    if (this->fabric_config_ == tt_metal::FabricConfig::DISABLED || fabric_config == tt_metal::FabricConfig::DISABLED) {
+    // Changes to fabric force a re-init. TODO: We should supply the fabric config in the same way as the dispatch config, not through this function exposed in the detail API.
+    force_reinit_ = true;
+    if (this->fabric_config_ == tt_fabric::FabricConfig::DISABLED || fabric_config == tt_fabric::FabricConfig::DISABLED) {
         this->fabric_config_ = fabric_config;
         this->fabric_reliability_mode_ = reliability_mode;
     } else {
@@ -370,7 +416,7 @@ void MetalContext::set_fabric_config(
             fabric_config);
     }
 
-    if (this->fabric_config_ == tt_metal::FabricConfig::DISABLED) {
+    if (this->fabric_config_ == tt_fabric::FabricConfig::DISABLED) {
         if (num_routing_planes.has_value()) {
             log_warning(
                 tt::LogMetal,
@@ -380,6 +426,10 @@ void MetalContext::set_fabric_config(
         this->teardown_fabric_config();
         return;
     }
+
+    bool enable_erisc_iram =
+        !rtoptions_.get_erisc_iram_env_var_enabled() || !rtoptions_.get_erisc_iram_env_var_disabled();
+    rtoptions_.set_erisc_iram_enabled(enable_erisc_iram);
 
     if (num_routing_planes.has_value() && num_routing_planes.value() < this->num_fabric_active_routing_planes_) {
         log_warning(
@@ -405,7 +455,7 @@ void MetalContext::set_fabric_config(
 }
 
 void MetalContext::initialize_fabric_config() {
-    if (this->fabric_config_ == tt_metal::FabricConfig::DISABLED) {
+    if (this->fabric_config_ == tt_fabric::FabricConfig::DISABLED) {
         return;
     }
 
@@ -413,16 +463,30 @@ void MetalContext::initialize_fabric_config() {
         this->fabric_config_, this->num_fabric_active_routing_planes_);
     auto& control_plane = this->get_control_plane();
     if (tt::tt_fabric::is_tt_fabric_config(this->fabric_config_)) {
-        control_plane.initialize_fabric_context(this->fabric_config_, this->fabric_reliability_mode_);
+        control_plane.initialize_fabric_context(this->fabric_config_);
     }
-    control_plane.configure_routing_tables_for_fabric_ethernet_channels(this->fabric_reliability_mode_);
+    control_plane.configure_routing_tables_for_fabric_ethernet_channels(
+        this->fabric_config_, this->fabric_reliability_mode_);
 }
 
-tt_metal::FabricConfig MetalContext::get_fabric_config() const {
+tt_fabric::FabricConfig MetalContext::get_fabric_config() const {
     return fabric_config_;
 }
 
 void MetalContext::initialize_control_plane() {
+    if (auto* custom_mesh_graph_desc_path = get_custom_mesh_graph_desc_path(); custom_mesh_graph_desc_path != nullptr) {
+        std::filesystem::path mesh_graph_desc_path = std::filesystem::path(custom_mesh_graph_desc_path);
+        TT_FATAL(
+            std::filesystem::exists(mesh_graph_desc_path),
+            "Custom mesh graph descriptor file not found: {}",
+            mesh_graph_desc_path.string());
+
+        log_info(tt::LogDistributed, "Using custom mesh graph descriptor: {}", mesh_graph_desc_path.string());
+        global_control_plane_ = std::make_unique<tt::tt_fabric::GlobalControlPlane>(
+            mesh_graph_desc_path.string());
+        return;
+    }
+
     // Default mode, auto select mesh graph descriptor. In future, we can add a way for user to specify custom
     // descriptors
     std::string mesh_graph_descriptor;
@@ -433,8 +497,8 @@ void MetalContext::initialize_control_plane() {
         case tt::ClusterType::T3K: mesh_graph_descriptor = "t3k_mesh_graph_descriptor.yaml"; break;
         case tt::ClusterType::GALAXY:
             if (tt::tt_fabric::get_fabric_type(this->fabric_config_, cluster_type) ==
-                tt::tt_fabric::FabricType::TORUS_2D) {
-                mesh_graph_descriptor = "single_galaxy_torus_2d_graph_descriptor.yaml";
+                tt::tt_fabric::FabricType::TORUS_XY) {
+                mesh_graph_descriptor = "single_galaxy_torus_xy_graph_descriptor.yaml";
             } else {
                 mesh_graph_descriptor = "single_galaxy_mesh_graph_descriptor.yaml";
             }
@@ -446,6 +510,7 @@ void MetalContext::initialize_control_plane() {
         case tt::ClusterType::P150_X4: mesh_graph_descriptor = "p150_x4_mesh_graph_descriptor.yaml"; break;
         case tt::ClusterType::SIMULATOR_WORMHOLE_B0: mesh_graph_descriptor = "n150_mesh_graph_descriptor.yaml"; break;
         case tt::ClusterType::SIMULATOR_BLACKHOLE: mesh_graph_descriptor = "p150_mesh_graph_descriptor.yaml"; break;
+        case tt::ClusterType::N300_2x2: mesh_graph_descriptor = "n300_2x2_mesh_graph_descriptor.yaml"; break;
         case tt::ClusterType::INVALID: TT_THROW("Unknown cluster type");
     }
     const std::filesystem::path mesh_graph_desc_path = std::filesystem::path(rtoptions_.get_root_dir()) /
@@ -512,7 +577,6 @@ void MetalContext::reset_cores(chip_id_t device_id) {
         }
     };
 
-    auto mmio_device_id = cluster_->get_associated_mmio_device(device_id);
     // Assert worker cores + dispatch cores, in case they were in a bad state from before.
     std::unordered_map<chip_id_t, std::unordered_set<CoreCoord>> device_to_early_exit_cores;
 
@@ -633,12 +697,9 @@ void MetalContext::generate_device_bank_to_noc_tables(chip_id_t device_id) {
     const auto allocator = L1BankingAllocator(config);
     const auto& soc_d = cluster_->get_soc_desc(device_id);
     const size_t num_dram_banks = allocator.get_num_banks(BufferType::DRAM);
-    std::vector<CoreCoord> dram_noc_coord_per_bank(num_dram_banks);
     dram_bank_offset_map_[device_id].clear();
     dram_bank_offset_map_[device_id].resize(num_dram_banks);
     for (unsigned bank_id = 0; bank_id < num_dram_banks; bank_id++) {
-        dram_noc_coord_per_bank[bank_id] =
-            soc_d.get_preferred_worker_core_for_dram_view(allocator.get_dram_channel_from_bank_id(bank_id));
         dram_bank_offset_map_[device_id][bank_id] = allocator.get_bank_offset(BufferType::DRAM, bank_id);
     }
     const size_t num_l1_banks = allocator.get_num_banks(BufferType::L1);
@@ -652,18 +713,20 @@ void MetalContext::generate_device_bank_to_noc_tables(chip_id_t device_id) {
     }
 
     dram_bank_to_noc_xy_[device_id].clear();
-    dram_bank_to_noc_xy_[device_id].reserve(hal_->get_num_nocs() * dram_noc_coord_per_bank.size());
+    dram_bank_to_noc_xy_[device_id].reserve(hal_->get_num_nocs() * num_dram_banks);
     bool dram_is_virtualized =
         hal_->get_virtualized_core_types().find(AddressableCoreType::DRAM) != hal_->get_virtualized_core_types().end();
     for (unsigned int noc = 0; noc < hal_->get_num_nocs(); noc++) {
-        for (unsigned int bank_id = 0; bank_id < dram_noc_coord_per_bank.size(); bank_id++) {
+        for (unsigned int bank_id = 0; bank_id < num_dram_banks; bank_id++) {
             uint16_t noc_x, noc_y;
+            CoreCoord dram_noc_coord =
+                soc_d.get_preferred_worker_core_for_dram_view(allocator.get_dram_channel_from_bank_id(bank_id), noc);
             if (dram_is_virtualized) {
-                noc_x = dram_noc_coord_per_bank[bank_id].x;
-                noc_y = dram_noc_coord_per_bank[bank_id].y;
+                noc_x = dram_noc_coord.x;
+                noc_y = dram_noc_coord.y;
             } else {
-                noc_x = hal_->noc_coordinate(noc, soc_d.grid_size.x, dram_noc_coord_per_bank[bank_id].x);
-                noc_y = hal_->noc_coordinate(noc, soc_d.grid_size.y, dram_noc_coord_per_bank[bank_id].y);
+                noc_x = hal_->noc_coordinate(noc, soc_d.grid_size.x, dram_noc_coord.x);
+                noc_y = hal_->noc_coordinate(noc, soc_d.grid_size.y, dram_noc_coord.y);
             }
             uint16_t xy = ((noc_y << hal_->get_noc_addr_node_id_bits()) | noc_x) << hal_->get_noc_coord_reg_offset();
             dram_bank_to_noc_xy_[device_id].push_back(xy);
@@ -884,14 +947,16 @@ void MetalContext::initialize_and_launch_firmware(chip_id_t device_id) {
     std::unordered_set<tt::umd::CoreCoord> dram_cores;
     auto num_dram_channels = cluster_->get_soc_desc(device_id).get_num_dram_views();
     for (uint32_t dram_channel = 0; dram_channel < num_dram_channels; dram_channel++) {
-        auto worker_dram_ep = soc_d.get_preferred_worker_core_for_dram_view(dram_channel);
-        auto eth_dram_ep = soc_d.get_preferred_eth_core_for_dram_view(dram_channel);
-        auto physical_worker_dram_ep =
-            soc_d.translate_coord_to(worker_dram_ep, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
-        auto physical_eth_dram_ep =
-            soc_d.translate_coord_to(eth_dram_ep, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
-        dram_cores.insert(physical_worker_dram_ep);
-        dram_cores.insert(physical_eth_dram_ep);
+        for (uint32_t noc = 0; noc < hal_->get_num_nocs(); noc++) {
+            auto worker_dram_ep = soc_d.get_preferred_worker_core_for_dram_view(dram_channel, noc);
+            auto eth_dram_ep = soc_d.get_preferred_eth_core_for_dram_view(dram_channel, noc);
+            auto physical_worker_dram_ep =
+                soc_d.translate_coord_to(worker_dram_ep, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
+            auto physical_eth_dram_ep =
+                soc_d.translate_coord_to(eth_dram_ep, CoordSystem::TRANSLATED, CoordSystem::PHYSICAL);
+            dram_cores.insert(physical_worker_dram_ep);
+            dram_cores.insert(physical_eth_dram_ep);
+        }
     }
 
     const std::vector<tt::umd::CoreCoord>& eth_cores =

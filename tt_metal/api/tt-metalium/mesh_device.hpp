@@ -130,6 +130,8 @@ private:
 
     std::shared_ptr<MeshTraceBuffer>& create_mesh_trace(const MeshTraceId& trace_id);
 
+    std::lock_guard<std::mutex> lock_api() { return std::lock_guard<std::mutex>(api_mutex_); }
+
 public:
     MeshDevice(
         std::shared_ptr<ScopedDevices> scoped_devices,
@@ -275,8 +277,6 @@ public:
     IDevice* get_device(size_t row_idx, size_t col_idx) const;
 
     const MeshShape& shape() const;
-
-    std::unique_lock<std::mutex> lock_api() { return std::unique_lock<std::mutex>(api_mutex_); }
 
     // Reshapes the logical mesh and re-maps the physical devices to the new logical coordinates.
     // Reshaping Rules:

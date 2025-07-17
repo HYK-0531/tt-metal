@@ -2279,17 +2279,6 @@ void kernel_main() {
         NUM_TRANSACTION_IDS>
         receiver_channel_1_trid_tracker;
 
-    if constexpr (!is_2d_fabric) {
-        const size_t start = !has_downstream_edm_vc0_buffer_connection;
-        const size_t end = has_downstream_edm_vc1_buffer_connection + 1;
-        for (size_t i = start; i < end; i++) {
-            downstream_edm_noc_interfaces[i].template open<true, tt::tt_fabric::worker_handshake_noc>();
-            ASSERT(
-                get_ptr_val(downstream_edm_noc_interfaces[i].worker_credits_stream_id) ==
-                DOWNSTREAM_SENDER_NUM_BUFFERS);
-        }
-    }
-
     if constexpr (enable_ethernet_handshake) {
         if constexpr (is_handshake_sender) {
             erisc::datamover::handshake::sender_side_handshake(
@@ -2363,7 +2352,17 @@ void kernel_main() {
                 *downstream_edm_noc_interfaces[NUM_USED_RECEIVER_CHANNELS - 1].from_remote_buffer_free_slots_ptr = 0;
             }
         }
+    } else {
+        const size_t start = !has_downstream_edm_vc0_buffer_connection;
+        const size_t end = has_downstream_edm_vc1_buffer_connection + 1;
+        for (size_t i = start; i < end; i++) {
+            downstream_edm_noc_interfaces[i].template open<true, tt::tt_fabric::worker_handshake_noc>();
+            ASSERT(
+                get_ptr_val(downstream_edm_noc_interfaces[i].worker_credits_stream_id) ==
+                DOWNSTREAM_SENDER_NUM_BUFFERS);
+        }
     }
+
     std::array<uint8_t, num_eth_ports> port_direction_table;
 #if defined(FABRIC_2D) && defined(DYNAMIC_ROUTING_ENABLED)
     tt_l1_ptr fabric_router_l1_config_t* routing_table =

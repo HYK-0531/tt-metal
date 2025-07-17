@@ -144,7 +144,7 @@ jobs:
       fail-fast: false
       matrix:
         test-info: [
-          {name: "P150 test model", arch: blackhole, timeout: 30, command: echo "test model" },
+          {name: "P150 test model", arch: blackhole, model-name: test-model, timeout: 30, command: echo "test model" },
         ]
     name: "${{ matrix.test-info.name }} device perf"
     runs-on: tt-beta-ubuntu-2204-p150b-large-stable
@@ -180,7 +180,7 @@ jobs:
           TRACY_NO_INVARIANT_CHECK: 1
         run: |
           ${{ matrix.test-info.command }}
-          export DEVICE_PERF_REPORT_FILENAME=Models_Device_Perf_${{ matrix.test-info.test-type }}_$(date +%Y_%m_%d).csv
+          export DEVICE_PERF_REPORT_FILENAME=Models_Device_Perf_$(date +%Y_%m_%d).csv
           python3 models/perf/merge_device_perf_results.py $DEVICE_PERF_REPORT_FILENAME
           echo "device_perf_report_filename=$DEVICE_PERF_REPORT_FILENAME" >> "$GITHUB_OUTPUT"
 
@@ -195,7 +195,7 @@ jobs:
         if: ${{ !cancelled() && steps.check-device-perf-report.conclusion == 'success' }}
         uses: actions/upload-artifact@v4
         with:
-          name: device-perf-report-csv-${{ matrix.test-info.test-type }}-${{ matrix.test-info.arch }}-${{ matrix.test-info.machine-type }}
+          name: device-perf-report-csv-${{ matrix.test-info.arch }}-${{ matrix.test-info.model-name }}
           path: /work/${{ steps.generate-device-perf-report.outputs.device_perf_report_filename }}
 
       - uses: tenstorrent/tt-metal/.github/actions/upload-artifact-with-job-uuid@main

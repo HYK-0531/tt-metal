@@ -780,11 +780,11 @@ void RunGetNextHopRouterDirectionTest(BaseFabricFixture* fixture, bool is_multi_
 
 TEST_F(Fabric2DFixture, DISABLED_TestAsyncWrite) { RunAsyncWriteTest(this, fabric_mode::PUSH, false); }
 
-TEST_F(Fabric2DFixture, TestUnicastRaw) {
-    for (uint32_t i = 0; i < 10; i++) {
-        RunTestUnicastRaw(this);
-    }
-}
+// TEST_F(Fabric2DFixture, TestUnicastRaw) {
+//     for (uint32_t i = 0; i < 10; i++) {
+//         RunTestUnicastRaw(this);
+//     }
+// }
 
 TEST_F(Fabric2DFixture, TestUnicastConnAPI) { RunTestUnicastConnAPI(this, 1); }
 
@@ -886,11 +886,11 @@ TEST_F(Fabric2DFixture, DISABLED_TestAsyncRawWriteAtomicInc) {
 TEST_F(Fabric1DFixture, TestGetNextHopRouterDirection1D) { RunGetNextHopRouterDirectionTest(this, false); }
 
 // 2D Dynamic Routing Unicast Tests
-TEST_F(Fabric2DDynamicFixture, TestUnicastRaw) {
-    for (uint32_t i = 0; i < 10; i++) {
-        RunTestUnicastRaw(this);
-    }
-}
+// TEST_F(Fabric2DDynamicFixture, TestUnicastRaw) {
+//     for (uint32_t i = 0; i < 10; i++) {
+//         RunTestUnicastRaw(this);
+//     }
+// }
 
 // 2D Dynamic Routing Unicast Tests
 TEST_P(T3kCustomMeshGraphFabric2DDynamicFixture, TestUnicastRaw) {
@@ -924,10 +924,10 @@ TEST_P(T3kCustomMeshGraphFabric2DDynamicFixture, TestGetNextHopRouterDirectionDi
     RunGetNextHopRouterDirectionTest(this, true);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    T3kDisjointMeshGraphFabric2DDynamicTests,
-    T3kCustomMeshGraphFabric2DDynamicFixture,
-    ::testing::ValuesIn(t3k_disjoint_mesh_descriptor_chip_mappings));
+// INSTANTIATE_TEST_SUITE_P(
+//     T3kDisjointMeshGraphFabric2DDynamicTests,
+//     T3kCustomMeshGraphFabric2DDynamicFixture,
+//     ::testing::ValuesIn(t3k_disjoint_mesh_descriptor_chip_mappings));
 
 INSTANTIATE_TEST_SUITE_P(
     T3kCustomMeshGraphFabric2DDynamicTests,

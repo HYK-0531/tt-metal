@@ -1280,7 +1280,9 @@ std::vector<chan_id_t> ControlPlane::get_forwarding_eth_chans_to_chip(
     if (!forwarding_direction.has_value()) {
         return {};
     }
-
+    const auto& mesh_graph = this->routing_table_generator_->mesh_graph;
+    std::cout << "Get Route from: " << src_fabric_node_id << " to: " << dst_fabric_node_id << std::endl;
+    std::cout << "Mesh Coords: " << mesh_graph->chip_to_coordinate(src_fabric_node_id.mesh_id, src_fabric_node_id.chip_id) << " " << mesh_graph->chip_to_coordinate(dst_fabric_node_id.mesh_id, dst_fabric_node_id.chip_id) << std::endl;
     return this->get_forwarding_eth_chans_to_chip(src_fabric_node_id, dst_fabric_node_id, *forwarding_direction);
 }
 

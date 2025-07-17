@@ -231,82 +231,317 @@ sfpi_inline sfpi::vFloat test_conditional_bug0(sfpi::vFloat base, sfpi::vFloat p
     return independent;
 }
 
-sfpi_inline sfpi::vFloat test_conditional_bug1(sfpi::vFloat base, sfpi::vFloat pow) {
+sfpi_inline sfpi::vFloat test_conditional_bug(sfpi::vFloat base, sfpi::vFloat pow) {
     // POW = 2.0, karma should be 2.f as well
-    sfpi::vFloat independent = pow;
-    v_if(pow < 2.f) { independent = 100.f; }
+    // TTI_SFPCONFIG(0, 11, 1); // loading -1 to LREG11 where sfpi expects it
+
+    sfpi::vInt independent = reinterpret<sfpi::vInt>(pow);
+    v_if(pow < 2.f) { independent = sfpi::vInt(0xDEADBEEF); }
     v_endif;
 
-    sfpi::vFloat result = 100.f;
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // sfpi::vInt result = 100;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // #pragma GCC unroll 100
+    // for (int i = 0; i < 100; i++) {
+    //     v_if(result < 0) { result = 0; }
+    //     v_endif;
+    // }
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
+    __builtin_rvtt_sfpnop();
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.0f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    v_if(result < 0.f) { result = 0.f; }
-    v_endif;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
 
-    return independent;
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
+
+    // v_if(result < 0) { result = 0; }
+    // v_endif;
+
+    return reinterpret<sfpi::vFloat>(independent);
 }
 
 sfpi_inline sfpi::vFloat process_alt0(sfpi::vFloat in) { return 0.5f * (3.0f * (in * 0.333333f) + 5.f * (in * 0.2f)); }
 
 sfpi_inline sfpi::vFloat test_conditional_bug2(sfpi::vFloat base, sfpi::vFloat pow) {
     // POW = 2.0, karma should be 2.f as well
-    sfpi::vFloat independent = pow;
-    v_if(pow < 2.f) { independent = 200.f; }
+    sfpi::vInt independent = reinterpret<sfpi::vInt>(pow);
+    v_if(pow < 2.f) { independent = sfpi::vInt(0xDEADBEEF); }
     v_endif;
 
     sfpi::vFloat result = 100.f;
@@ -321,10 +556,10 @@ sfpi_inline sfpi::vFloat test_conditional_bug2(sfpi::vFloat base, sfpi::vFloat p
     result = process_alt0(100.f);
     result = process_alt0(100.f);
 
-    return independent;
+    return reinterpret<sfpi::vFloat>(independent);
 }
 
-sfpi_inline sfpi::vFloat test_conditional_bug(sfpi::vFloat base, sfpi::vFloat pow) {
+sfpi_inline sfpi::vFloat test_conditional_bug3(sfpi::vFloat base, sfpi::vFloat pow) {
     // POW = 2.0, karma should be 2.f as well
     sfpi::vFloat independent = pow;
     v_if(pow < 2.f) { independent = 200.f; }
@@ -571,7 +806,8 @@ inline void sfpu_binary_init() {
     if constexpr (BINOP == BinaryOp::POW) {
         sfpi::vConstFloatPrgm0 = 2.f;
         sfpi::vConstFloatPrgm1 = 1.442695f;
-        sfpi::vConstFloatPrgm2 = -127.0f;
+        // sfpi::vConstFloatPrgm2 = -127.0f;
+
     } else {
         _sfpu_binary_init_<APPROXIMATION_MODE, BINOP>();
     }

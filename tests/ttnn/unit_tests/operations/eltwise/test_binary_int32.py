@@ -420,7 +420,6 @@ def test_logical_right_shift(device, ttnn_function, ttnn_dtype, use_legacy):
         (-500, 500, -750, 750),
         (-1e3, 1e3, -1e5, 1e5),
         (-450, 450, -1e6, 1e6),
-        # large outputs
         (0, 46340, 0, 46340),
         (0, -46340, 0, 46340),
         # large inputs
@@ -439,7 +438,7 @@ def test_binary_mul_int32(input_shapes, low_a, high_a, low_b, high_b, device):
     else:
         torch_input_tensor_a = torch.linspace(low_a, high_a, num_elements, dtype=torch.int32)
 
-    if high_b in (32, 4, 2, 1):
+    if high_b in (3, 2, 1):
         values_b = torch.arange(low_b, high_b + 1, dtype=torch.int32)
         indices_b = torch.randint(0, len(values_b), (num_elements,))
         torch_input_tensor_b = values_b[indices_b]

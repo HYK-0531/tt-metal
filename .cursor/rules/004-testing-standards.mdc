@@ -1,0 +1,46 @@
+---
+description: Testing standards and guidelines for TT-Metal
+globs: "tests/**/*"
+alwaysApply: false
+---
+
+# Testing Standards for TT-Metal
+
+## Google Test Framework
+- Use Google Test for C++ tests
+- Prefix test names with core type (Tensix, ActiveEth, IdleEth)
+- Use TEST for test suites, TEST_F for fixtures
+- All fixture names must end with "Fixture"
+
+## File Organization
+- Tests: `test_*.cpp`
+- Fixtures: `*_fixture.hpp`
+- Utilities: `*_test_utils.hpp`
+- Place test utilities close to the files that use them
+
+## Test Categories
+- **API tests**: `tests/tt_metal/tt_metal/api/`
+- **Device tests**: `tests/tt_metal/tt_metal/device/`
+- **Dispatch tests**: `tests/tt_metal/tt_metal/dispatch/`
+- **Integration tests**: `tests/tt_metal/tt_metal/integration/`
+
+## Test Naming Examples
+```cpp
+// Good test names based on core type
+TEST(TensixBasicOperations, MatrixMultiplication)
+TEST(ActiveEthCommunication, DataTransfer)
+TEST(IdleEthProperties, CoreAvailability)
+```
+
+## Test Structure
+- Keep related tests grouped together
+- Use fixtures for shared test code
+- Check existing fixtures before creating new ones
+- Consider subclassing existing fixtures
+
+## Best Practices
+- Write comprehensive test coverage
+- Include edge cases and error conditions
+- Test both success and failure scenarios
+- Use descriptive test names that explain what is being tested
+- Include setup and teardown code in fixtures when needed

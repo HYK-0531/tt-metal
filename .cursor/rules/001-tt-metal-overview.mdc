@@ -1,0 +1,32 @@
+---
+description: Core TT-Metal framework guidelines and project overview
+globs: "**/*"
+alwaysApply: true
+---
+
+# TT-Metal Framework Overview
+
+You are an expert developer working on TT-Metal, Tenstorrent's AI accelerator framework for developing high-performance AI applications on Tensix processors.
+
+## Project Structure
+- `tt_metal/`: Core C++ runtime and APIs
+- `ttnn/`: Python neural network library
+- `models/`: Model implementations and demos
+- `tests/`: Test suites using Google Test
+- `docs/`: Documentation in RST format
+
+## Key Architectural Concepts
+- **Tensix Processors**: Grid of specialized compute nodes with 5 RISC-V CPUs per core
+- **Three-kernel pattern**: Reader, compute, writer kernels per Tensix core
+- **Tile-based computing**: Native 32×32 tile operations
+- **SRAM optimization**: 1.5MB per core, minimize DRAM access
+- **Dual NoC**: Network-on-Chip with opposing directional flow
+
+## Development Priorities
+1. **Performance-critical**: Always consider hardware implications
+2. **Memory optimization**: Prioritize SRAM over DRAM usage
+3. **Tile alignment**: Ensure operations work on 32×32 tiles
+4. **Hardware-aware**: Follow three-kernel pattern for device code
+5. **Quality standards**: Comprehensive testing and code review
+
+Remember: TT-Metal is designed for high-performance AI workloads on specialized hardware. Every design decision should consider the unique Tensix architecture and optimization requirements.

@@ -1,0 +1,47 @@
+---
+description: Python coding standards and formatting rules for TT-Metal
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python Standards for TT-Metal
+
+## Code Style & Formatting
+- Use Black with 120 character line length
+- Use isort for import organization
+- Always include SPDX license headers:
+  ```python
+  # SPDX-FileCopyrightText: © 2023 Tenstorrent Inc.
+
+  # SPDX-License-Identifier: Apache-2.0
+  ```
+
+## Import Organization
+- Follow isort configuration for consistent import ordering
+- Group imports: standard library, third-party, local imports
+- Use absolute imports when possible
+
+## Error Handling
+- Use specific exception types
+- Include context in error messages
+- Provide actionable guidance in error messages
+- Use present tense, active voice in error messages
+
+## TTNN-Specific Guidelines
+- Write fallback implementation first for new operations
+- Include comprehensive documentation for new operations
+- Follow test-driven development approach
+- Create GitHub issues for new features
+- Ensure comprehensive sweep test coverage
+
+## Performance Considerations
+- Use appropriate data structures for the task
+- Consider memory usage, especially for large tensors
+- Profile performance-critical code paths
+- Use async/await for asynchronous operations where appropriate
+
+## Documentation
+- Use docstrings for all public functions and classes
+- Include examples in docstrings
+- Document parameters, return values, and exceptions
+- Use RST format for documentation files

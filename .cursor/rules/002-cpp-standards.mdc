@@ -1,0 +1,64 @@
+---
+description: C++ coding standards and formatting rules for TT-Metal
+globs: "**/*.cpp,**/*.hpp,**/*.h"
+alwaysApply: false
+---
+
+# C++ Standards for TT-Metal
+
+## Code Style & Formatting
+- Use `.clang-format` configuration (Google-based, 120 char limit)
+- Use snake_case for variables/functions, PascalCase for classes
+- Always include SPDX license headers:
+  ```cpp
+  // SPDX-FileCopyrightText: © 2023 Tenstorrent Inc.
+  //
+  // SPDX-License-Identifier: Apache-2.0
+  ```
+
+## API Design Principles
+- **Pass complex types by const reference**:
+  ```cpp
+  // Wrong
+  void func(std::vector<int> data);
+
+  // Correct
+  void func(const std::vector<int>& data);
+  ```
+
+- **Avoid bool parameters - use enum classes**:
+  ```cpp
+  // Wrong
+  func(tensor, true);
+
+  // Correct
+  enum class ThreadingOption { SingleCore, MultiCore };
+  func(tensor, ThreadingOption::MultiCore);
+  ```
+
+- **Initialize primitive types on declaration**:
+  ```cpp
+  // Wrong
+  struct Data { size_t count; };
+
+  // Correct
+  struct Data { size_t count = 0; };
+  ```
+
+## Error Handling
+- Use TT_ASSERT/TT_FATAL instead of .at() or STL exceptions
+- Include actual values and context in error messages
+- Provide actionable guidance:
+  ```cpp
+  TT_FATAL(input_shape.rank() == 3,
+           "Invalid input tensor: expected 3 dimensions, but found {}. "
+           "Please ensure input tensor has exactly 3 dimensions.",
+           input_shape.rank());
+  ```
+
+## Best Practices
+- Use early returns for contract checks
+- Use const correctness
+- Never use `using namespace` in headers
+- Prefer tt::stl alternatives where available
+- Avoid dynamic allocation in hot paths

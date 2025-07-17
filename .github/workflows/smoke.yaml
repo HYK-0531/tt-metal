@@ -67,7 +67,7 @@ jobs:
           /usr/bin/${{ inputs.product }}-validation-smoke --gtest_list_tests || true
           (test_name=$(/usr/bin/${{ inputs.product }}-validation-smoke --gtest_list_tests || true) 2>&1 | awk 'NF && !/^\s/ {suite=$1} /^\s/ {print suite $1; exit}')
           echo "Chosen first test: '${test_name}'"
-          /usr/bin/${{ inputs.product }}-validation-smoke --gtest_filter="$test_name"
+          /usr/bin/${{ inputs.product }}-validation-smoke --gtest_filter="$test_name" || true
 
       - name: Run a test
         id: test

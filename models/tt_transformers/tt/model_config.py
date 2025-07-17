@@ -569,7 +569,9 @@ class ModelArgs:
             max_prefill_chunk_size_div1024 = int(max_prefill_chunk_size_div1024)
         self.max_prefill_chunk_size = max_prefill_chunk_size_div1024 * 1024
 
-        if self.base_model_name in ["Llama-3.1-8B", "Llama-3.2-11B", "Mistral-7B"] and self.device_name == "N150":
+        if (self.base_model_name in ["Llama-3.1-8B", "Llama-3.2-11B", "Mistral-7B"] and self.device_name == "N150") or (
+            self.base_model_name in ["Qwen2.5-7B"] and self.device_name == "N300"
+        ):
             logger.info(f"Reducing prefill_len_cutoff to 512 for {self.model_name} on {self.device_name}")
             self.prefill_len_cutoff = 512
 
@@ -1443,6 +1445,8 @@ class ModelArgs:
         else:
             self.rope_scaling_factor = None
             self.orig_context_len = None
+
+        self.query_pre_attn_scalar = text_config.get("query_pre_attn_scalar", None)
 
         # Vision params (Meta-specific)
         self.vision_chunk_size = config.get("vision_chunk_size", -1)

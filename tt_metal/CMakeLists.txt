@@ -133,7 +133,7 @@ target_link_libraries(
     tt_metal
     PUBLIC
         umd::device
-        magic_enum::magic_enum
+        enchantum::enchantum
         fmt::fmt-header-only
         TracyClient
         nlohmann_json::nlohmann_json
@@ -235,7 +235,7 @@ if(TT_INSTALL)
     install(
         TARGETS
             reflect
-            magic_enum
+            enchantum
             TracyClient
             span
             small_vector

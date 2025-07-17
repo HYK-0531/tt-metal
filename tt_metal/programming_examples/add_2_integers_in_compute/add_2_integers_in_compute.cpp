@@ -106,7 +106,7 @@ int main() {
         {src0_dram_buffer->address(), src1_dram_buffer->address(), src0_bank_id, src1_bank_id});
     SetRuntimeArgs(program, eltwise_binary_kernel_id, core, {});
     SetRuntimeArgs(program, unary_writer_kernel_id, core, {dst_dram_buffer->address(), dst_bank_id});
-    
+
     distributed::AddProgramToMeshWorkload(workload, std::move(program), device_range);
     /* Create source data and write to DRAM */
     std::vector<uint32_t> src0_vec;
@@ -114,8 +114,8 @@ int main() {
     src0_vec = create_constant_vector_of_bfloat16(single_tile_size, 14.0f);
     src1_vec = create_constant_vector_of_bfloat16(single_tile_size, 8.0f);
 
-    //We're writing to a shard allocated on Device Coordinate 0, 0, since this is a 1x1 
-    // When the MeshDevice is 2 dimensional, this API can be used to target specific physical devices
+    // We're writing to a shard allocated on Device Coordinate 0, 0, since this is a 1x1
+    //  When the MeshDevice is 2 dimensional, this API can be used to target specific physical devices
     distributed::WriteShard(cq, src0_dram_buffer, src0_vec, device_coord);
     distributed::WriteShard(cq, src1_dram_buffer, src1_vec, device_coord);
 
@@ -126,8 +126,8 @@ int main() {
     /* Read in result into a host vector */
     std::vector<uint32_t> result_vec;
 
-    //We're reading from a shard allocated on Device Coordinate 0, 0, since this is a 1x1 
-    // When the MeshDevice is 2 dimensional, this API can be used to target specific physical devices
+    // We're reading from a shard allocated on Device Coordinate 0, 0, since this is a 1x1
+    //  When the MeshDevice is 2 dimensional, this API can be used to target specific physical devices
     distributed::ReadShard(cq, result_vec, dst_dram_buffer, device_coord);
 
     printf("Result = %d\n", result_vec[0]);  // 22 = 1102070192

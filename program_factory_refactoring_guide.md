@@ -16,25 +16,33 @@ For each Program-creating function, create:
 - `<function_name>_program_factory.hpp` - Header with function declaration
 - `<function_name>_program_factory.cpp` - Implementation file
 
+For shared functionality, create:
+- `<operation>_program_factory_common.hpp` - Common helper function declarations
+- `<operation>_program_factory_common.cpp` - Common helper function implementations
+
 **File naming pattern:**
 - Extract function name (e.g., `topk_single_core_interleaved`)
 - Convert to file name (e.g., `topk_single_core_program_factory`)
+- Common functions: `<operation>_program_factory_common` (e.g., `topk_program_factory_common`)
 
 ### 3. Code Extraction
 - Copy function implementation to new .cpp file
 - Include necessary headers and dependencies
 - Copy any helper functions used exclusively by that function
 - Ensure proper namespace usage
+- **Identify shared helper functions**: Functions used by multiple program factories should be extracted to `<operation>_program_factory_common.hpp/cpp`
 
 ### 4. Header Updates
 - Create function declaration in new .hpp file
 - Update main program_factory.hpp to include new headers
 - Remove original function declarations from main header
+- **If main .hpp becomes empty or only includes**: Remove file entirely and update references
 
 ### 5. Main File Updates
 - Remove extracted functions from main .cpp file
 - Keep shared helper functions if used by multiple functions
 - Update main .cpp to just include the main header
+- **If main .cpp becomes empty or only includes**: Remove file entirely and update references
 
 ### 6. Build System Updates
 - Add new .cpp files to CMakeLists.txt in the target_sources section
@@ -150,7 +158,53 @@ tt::tt_metal::operation::ProgramWithCallbacks <function_name>(
 
 #include "<function1>_program_factory.hpp"
 #include "<function2>_program_factory.hpp"
+#include "<operation>_program_factory_common.hpp"  // If needed
 // etc.
+```
+
+### Common Utilities Header (.hpp)
+```cpp
+// SPDX-FileCopyrightText: © 2024 Tenstorrent AI ULC
+//
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+#include "ttnn/run_operation.hpp"
+// other system includes
+
+namespace ttnn::operations::<namespace>::detail {
+
+// Shared helper function declarations
+ReturnType shared_helper_function(const Tensor& input, ...);
+void common_validation_function(const Tensor& input, ...);
+
+}  // namespace ttnn::operations::<namespace>::detail
+```
+
+### Common Utilities Implementation (.cpp)
+```cpp
+// SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
+//
+// SPDX-License-Identifier: Apache-2.0
+
+#include "<operation>_program_factory_common.hpp"
+#include <tt-metalium/host_api.hpp>
+// other necessary includes
+
+using namespace tt::tt_metal;
+namespace ttnn::operations::<namespace>::detail {
+
+// Shared helper function implementations
+ReturnType shared_helper_function(const Tensor& input, ...) {
+    // implementation
+}
+
+void common_validation_function(const Tensor& input, ...) {
+    // implementation
+}
+
+}  // namespace ttnn::operations::<namespace>::detail
 ```
 
 ## Key Considerations
@@ -160,6 +214,49 @@ tt::tt_metal::operation::ProgramWithCallbacks <function_name>(
 3. **Namespace Consistency**: Maintain original namespace structure
 4. **Build Dependencies**: Ensure all necessary dependencies are included
 5. **Function Declarations**: Avoid duplication - declare only once per function
+
+## Include Tree Design Principles
+
+### Core Architecture Rules
+1. **Program factories are leaves**: Individual program factory files should NOT include each other
+2. **No cross-dependencies**: Program factories should not know about each other's existence
+3. **Common dependencies only**: Program factories can only include:
+   - `<operation>_program_factory_common.hpp` for shared helpers
+   - Standard system headers and tt-metal core headers
+   - External dependencies (not other program factories)
+
+### Proper Include Hierarchy
+```
+<operation>_op.hpp
+├── <function1>_program_factory.hpp (leaf)
+├── <function2>_program_factory.hpp (leaf)
+├── <function3>_program_factory.hpp (leaf)
+└── <operation>_program_factory_common.hpp (shared utilities)
+```
+
+### What Program Factories Should Include
+✅ **Allowed**:
+- System headers: `<tt-metalium/host_api.hpp>`, `<tt-metalium/constants.hpp>`
+- Core operation headers: `ttnn/operation.hpp`, `ttnn/run_operation.hpp`
+- Common utilities: `<operation>_program_factory_common.hpp`
+- External dependencies that don't create circular references
+
+❌ **Not Allowed**:
+- Other program factory headers: `<other_function>_program_factory.hpp`
+- Main operation headers that might include this factory (creates circular dependency)
+- Unrelated operation headers
+
+### Example Correct Structure
+```cpp
+// topk_single_core_program_factory.hpp
+#include "ttnn/run_operation.hpp"
+#include "topk_program_factory_common.hpp"  // ✅ Shared utilities OK
+
+// topk_multi_core_program_factory.hpp
+#include "ttnn/run_operation.hpp"
+#include "topk_program_factory_common.hpp"  // ✅ Shared utilities OK
+// NOT: #include "topk_single_core_program_factory.hpp"  // ❌ Cross-dependency
+```
 
 ## Common Patterns
 

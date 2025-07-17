@@ -186,7 +186,7 @@ private:
             case MeshDeviceType::N300:
             case MeshDeviceType::P300: return MeshShape(2, 1);
             case MeshDeviceType::N300_2x2: return MeshShape(2, 2);
-            case MeshDeviceType::T3000: return MeshShape(2, 4);
+            case MeshDeviceType::T3000: return MeshShape(1, 8);
             case MeshDeviceType::TG: return MeshShape(4, 8);
             default: TT_FATAL(false, "Querying shape for unspecified Mesh Type.");
         }

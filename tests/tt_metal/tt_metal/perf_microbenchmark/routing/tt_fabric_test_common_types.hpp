@@ -53,6 +53,7 @@ struct ParsedSenderConfig {
     DeviceIdentifier device = FabricNodeId(MeshId{0}, 0);
     std::optional<CoreCoord> core;
     std::vector<ParsedTrafficPatternConfig> patterns;
+    std::optional<uint32_t> link_id;  // Link ID for multi-link tests
 };
 
 // Resolved structures (after resolution) - use FabricNodeId
@@ -79,6 +80,7 @@ struct SenderConfig {
     FabricNodeId device = FabricNodeId(MeshId{0}, 0);
     std::optional<CoreCoord> core;
     std::vector<TrafficPatternConfig> patterns;
+    std::optional<uint32_t> link_id;  // Link ID for multi-link tests
 };
 
 enum class RoutingType {

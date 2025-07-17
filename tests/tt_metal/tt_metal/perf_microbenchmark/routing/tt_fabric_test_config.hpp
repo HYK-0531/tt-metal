@@ -791,7 +791,7 @@ inline ParametrizationOptionsMap YamlConfigParser::parse_parametrization_params(
 
         if (key == "ftype" || key == "ntype") {
             options[key] = parse_scalar_sequence<std::string>(node);
-        } else if (key == "size" || key == "num_packets") {
+        } else if (key == "size" || key == "num_packets" || key == "num_links") {
             options[key] = parse_scalar_sequence<uint32_t>(node);
         } else {
             TT_THROW("Unsupported parametrization parameter: {}", key);
@@ -876,6 +876,7 @@ private:
         SenderConfig resolved_sender;
         resolved_sender.device = resolve_device_identifier(parsed_sender.device, device_info_provider_);
         resolved_sender.core = parsed_sender.core;
+        resolved_sender.link_id = parsed_sender.link_id;  // Transfer link ID
 
         resolved_sender.patterns.reserve(parsed_sender.patterns.size());
         for (const auto& parsed_pattern : parsed_sender.patterns) {
@@ -1037,17 +1038,20 @@ private:
                         for (const auto& value : values) {
                             next_level_configs.emplace_back(current_config);
                             auto& next_config = next_level_configs.back();
-                            // Use optimized string concatenation utility
-                            detail::append_with_separator(next_config.name, "_", param_name, value);
 
-                            ParsedTrafficPatternConfig param_default;
-                            if (param_name == "size") {
-                                param_default.size = value;
-                            } else if (param_name == "num_packets") {
-                                param_default.num_packets = value;
+                            if (param_name == "num_links") {
+                                // num_links is part of fabric_setup, not traffic pattern defaults
+                                next_config.fabric_setup.num_links = value;
+                            } else {
+                                ParsedTrafficPatternConfig param_default;
+                                if (param_name == "size") {
+                                    param_default.size = value;
+                                } else if (param_name == "num_packets") {
+                                    param_default.num_packets = value;
+                                }
+                                next_config.defaults = merge_patterns(
+                                    current_config.defaults.value_or(ParsedTrafficPatternConfig{}), param_default);
                             }
-                            next_config.defaults = merge_patterns(
-                                current_config.defaults.value_or(ParsedTrafficPatternConfig{}), param_default);
                         }
                     }
                 }
@@ -1504,7 +1508,7 @@ private:
         }
     }
 
-    bool expand_link_duplicates(TestConfig& test) {
+    bool expand_link_duplicates(ParsedTestConfig& test) {
         // If num_links is 1, no duplication needed
         if (test.fabric_setup.num_links <= 1) {
             return true;  // Success - no expansion needed
@@ -1531,21 +1535,18 @@ private:
             }
         }
 
-        std::vector<SenderConfig> new_senders;
+        std::vector<ParsedSenderConfig> new_senders;
         new_senders.reserve(test.senders.size() * num_links);
 
         for (const auto& sender : test.senders) {
             for (uint32_t link_id = 0; link_id < num_links; ++link_id) {
-                SenderConfig duplicated_sender = sender;
+                ParsedSenderConfig duplicated_sender = sender;
+                duplicated_sender.link_id = link_id;  // Assign link ID
                 new_senders.push_back(duplicated_sender);
             }
         }
 
         test.senders = std::move(new_senders);
-
-        // Update the test name to reflect the link expansion
-        test.name += "_" + std::to_string(num_links) + "links";
-
         return true;  // Success
     }
 
@@ -1781,6 +1782,11 @@ private:
             to_yaml(out, config.core.value());
         }
 
+        if (config.link_id) {
+            out << YAML::Key << "link_id";
+            out << YAML::Value << config.link_id.value();
+        }
+
         out << YAML::Key << "patterns";
         out << YAML::Value;
         out << YAML::BeginSeq;
@@ -1867,10 +1873,6 @@ private:
         if (config.routing_type.has_value()) {
             out << YAML::Key << "routing_type";
             out << YAML::Value << to_string(config.routing_type.value());
-        }
-        if (config.num_links > 1) {  // Only serialize if not default value
-            out << YAML::Key << "num_links";
-            out << YAML::Value << config.num_links;
         }
         out << YAML::EndMap;
     }

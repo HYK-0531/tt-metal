@@ -356,9 +356,9 @@ public:
         }
 
         // Write detailed header
-        csv_stream
-            << "test_name,topology,num_devices,device,direction,total_traffic_count,num_packets,packet_size,cycles,"
-               "bandwidth_gb_s,packets_per_second\n";
+        csv_stream << "test_name,topology,num_devices,device,num_links,direction,total_traffic_count,num_packets,"
+                      "packet_size,cycles,"
+                      "bandwidth_gb_s,packets_per_second\n";
         csv_stream.close();
 
         log_info(tt::LogTest, "Initialized CSV file: {}", csv_file_path_.string());
@@ -376,7 +376,8 @@ public:
         }
 
         // Write summary header
-        summary_csv_stream << "test_name,topology,num_devices,packet_size,cycles,bandwidth_gb_s,packets_per_second\n";
+        summary_csv_stream
+            << "test_name,topology,num_devices,num_links,packet_size,cycles,bandwidth_gb_s,packets_per_second\n";
         summary_csv_stream.close();
 
         log_info(tt::LogTest, "Initialized summary CSV file: {}", csv_summary_file_path_.string());
@@ -498,7 +499,11 @@ private:
             // Process regular senders only (ignore sync senders)
             for (const auto& [core_coord, sender] : test_device.get_senders()) {
                 for (const auto& [config, fabric_conn_idx] : sender.get_configs()) {
-                    trace_traffic_path(src_node_id, config);
+                    // trace only one of the links, use link 0 as default
+                    uint32_t link_id = config.link_id.value_or(0);
+                    if (link_id == 0) {
+                        trace_traffic_path(src_node_id, config);
+                    }
                 }
             }
         }
@@ -875,7 +880,7 @@ private:
         // Write data rows (header already written in initialize_csv_file)
         for (const auto& result : bandwidth_results_) {
             csv_stream << config.name << "," << magic_enum::enum_name(config.fabric_setup.topology) << ","
-                       << result.num_devices << "," << result.device_id << ","
+                       << result.num_devices << "," << result.device_id << "," << config.fabric_setup.num_links << ","
                        << magic_enum::enum_name(result.direction) << "," << result.total_traffic_count << ","
                        << result.num_packets << "," << result.packet_size << "," << result.cycles << "," << std::fixed
                        << std::setprecision(6) << result.bandwidth_gb_s << "," << std::fixed << std::setprecision(3)
@@ -906,9 +911,10 @@ private:
             num_devices_str += "]";
 
             summary_csv_stream << config.name << "," << magic_enum::enum_name(config.fabric_setup.topology) << ",\""
-                               << num_devices_str << "\"," << result.packet_size << "," << result.cycles << ","
-                               << std::fixed << std::setprecision(6) << result.bandwidth_gb_s << "," << std::fixed
-                               << std::setprecision(3) << result.packets_per_second << "\n";
+                               << num_devices_str << "\"," << config.fabric_setup.num_links << "," << result.packet_size
+                               << "," << result.cycles << "," << std::fixed << std::setprecision(6)
+                               << result.bandwidth_gb_s << "," << std::fixed << std::setprecision(3)
+                               << result.packets_per_second << "\n";
         }
 
         summary_csv_stream.close();

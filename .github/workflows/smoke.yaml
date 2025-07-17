@@ -65,7 +65,7 @@ jobs:
           # Run one that we won't measure the time for and the subsequent tests will be told to not clear the cache.
           echo "List of tests:"
           /usr/bin/${{ inputs.product }}-validation-smoke --gtest_list_tests || true
-          (test_name=$(/usr/bin/${{ inputs.product }}-validation-smoke --gtest_list_tests || true) 2>&1 | awk 'NF && !/^\s/ {suite=$1} /^\s/ {print suite $1; exit}')
+          (test_name=$(/usr/bin/${{ inputs.product }}-validation-smoke --gtest_list_tests || true) 2>&1 | awk 'NF && !/^\s/ {suite=$1} /^\s/ && !/DISABLED_/ {print suite $1; exit}')
           echo "Chosen first test: '${test_name}'"
           /usr/bin/${{ inputs.product }}-validation-smoke --gtest_filter="$test_name" || true
 

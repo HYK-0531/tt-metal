@@ -1,5 +1,4 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
-
 # SPDX-License-Identifier: Apache-2.0
 
 import torch.nn as nn
@@ -33,6 +32,8 @@ class TtResnetBlock2D(nn.Module):
         self.split_in = split_in
         self.split_out = split_out
 
+        print(f"Split conv: {self.split_conv}, split_in: {self.split_in}, split_out: {self.split_out}")
+
         # fixed for ResnetBlock
         self.stride = (1, 1)
         self.padding = (1, 1)
@@ -59,39 +60,43 @@ class TtResnetBlock2D(nn.Module):
         conv_weights_2 = state_dict[f"{module_path}.conv2.weight"]
         conv_bias_2 = state_dict[f"{module_path}.conv2.bias"].unsqueeze(0).unsqueeze(0).unsqueeze(0)
 
-        if conv_shortcut:
-            conv_weights_3 = state_dict[f"{module_path}.conv_shortcut.weight"].squeeze()
-            conv_bias_3 = state_dict[f"{module_path}.conv_shortcut.bias"]
+        with ttnn.distribute(ttnn.ReplicateTensorToMesh(device)):
+            if conv_shortcut:
+                conv_weights_3 = state_dict[f"{module_path}.conv_shortcut.weight"].squeeze()
+                conv_bias_3 = state_dict[f"{module_path}.conv_shortcut.bias"]
 
-        if split_in > 1:
-            self.norm_1_blocks = 6 if "up_blocks.2.resnets.0" in module_path else 3
-            core_x = core_y = 2 if "up_blocks.2.resnets.0" in module_path else 4
-            self.norm_core_grid_1 = ttnn.CoreGrid(y=core_y, x=core_x)
-            self.gamma_t_1, self.beta_t_1 = prepare_gn_beta_gamma(
-                device, norm_weights_1, norm_bias_1, self.norm_core_grid_1.y
+            if split_in > 1:
+                self.norm_1_blocks = 6 if "up_blocks.2.resnets.0" in module_path else 3
+                core_x = core_y = 2 if "up_blocks.2.resnets.0" in module_path else 4
+                self.norm_core_grid_1 = ttnn.CoreGrid(y=core_y, x=core_x)
+                self.gamma_t_1, self.beta_t_1 = prepare_gn_beta_gamma(
+                    device, norm_weights_1, norm_bias_1, self.norm_core_grid_1.y
+                )
+                self.input_mask_1 = prepare_gn_mask(
+                    self.device, norm_weights_1.shape[0], self.norm_groups, self.norm_core_grid_1.y
+                )
+            else:
+                self.norm_1_blocks = 2
+                self.norm_core_grid_1 = ttnn.CoreGrid(y=8, x=8)
+                self.gamma_t_1, self.beta_t_1 = prepare_gn_beta_gamma(
+                    device, norm_weights_1, norm_bias_1, self.norm_core_grid_1.y
+                )
+                self.input_mask_1 = prepare_gn_mask(
+                    self.device, norm_weights_1.shape[0], self.norm_groups, self.norm_core_grid_1.y
+                )
+
+            self.gamma_t_2, self.beta_t_2 = prepare_gn_beta_gamma(
+                device, norm_weights_2, norm_bias_2, self.norm_core_grid_2.y
             )
-            self.input_mask_1 = prepare_gn_mask(
-                self.device, norm_weights_1.shape[0], self.norm_groups, self.norm_core_grid_1.y
-            )
-        else:
-            self.norm_1_blocks = 2
-            self.norm_core_grid_1 = ttnn.CoreGrid(y=8, x=8)
-            self.gamma_t_1, self.beta_t_1 = prepare_gn_beta_gamma(
-                device, norm_weights_1, norm_bias_1, self.norm_core_grid_1.y
-            )
-            self.input_mask_1 = prepare_gn_mask(
-                self.device, norm_weights_1.shape[0], self.norm_groups, self.norm_core_grid_1.y
+            self.input_mask_2 = prepare_gn_mask(
+                self.device, norm_weights_2.shape[0], self.norm_groups, self.norm_core_grid_2.y
             )
 
-        self.gamma_t_2, self.beta_t_2 = prepare_gn_beta_gamma(
-            device, norm_weights_2, norm_bias_2, self.norm_core_grid_2.y
-        )
-        self.input_mask_2 = prepare_gn_mask(
-            self.device, norm_weights_2.shape[0], self.norm_groups, self.norm_core_grid_2.y
-        )
+            self.conv_output_dtype = model_config.get_conv_output_dtype()
+            self.conv1_config = model_config.get_conv_config(conv_path=f"{module_path}.conv1")
 
-        self.conv_output_dtype = model_config.get_conv_output_dtype()
-        self.conv1_config = model_config.get_conv_config(conv_path=f"{module_path}.conv1")
+        should_split_devices = device.get_num_devices() > 1
+
         if self.split_conv:
             (
                 self.compute1_config,
@@ -121,6 +126,7 @@ class TtResnetBlock2D(nn.Module):
                 self.conv1_config.weights_dtype,
                 fp32_dest_acc_en=(self.conv1_config.weights_dtype == ttnn.bfloat8_b)
                 and (self.conv1_config.shard_layout != ttnn.TensorMemoryLayout.HEIGHT_SHARDED),
+                weight_split_dim=1 if should_split_devices else -1,
             )
 
         self.conv2_config = model_config.get_conv_config(conv_path=f"{module_path}.conv2")
@@ -136,26 +142,35 @@ class TtResnetBlock2D(nn.Module):
             self.conv2_config.weights_dtype,
             fp32_dest_acc_en=(self.conv2_config.weights_dtype == ttnn.bfloat8_b)
             and (self.conv2_config.shard_layout != ttnn.TensorMemoryLayout.HEIGHT_SHARDED),
+            weight_split_dim=1 if should_split_devices else -1,  # temp, split other conv over out channels as well
+            # weight_split_dim = 2 if should_split_devices else -1,
         )
 
-        if conv_shortcut:
-            self.tt_conv3_weights, self.tt_conv3_bias = prepare_linear_params(
-                device, conv_weights_3, conv_bias_3, model_config.conv_w_dtype
+        with ttnn.distribute(ttnn.ReplicateTensorToMesh(device)):
+            if conv_shortcut:
+                self.tt_conv3_weights, self.tt_conv3_bias = prepare_linear_params(
+                    device, conv_weights_3, conv_bias_3, model_config.conv_w_dtype
+                )
+                self.conv3_program_config = model_config.get_matmul_config(matmul_path=f"{module_path}.conv_shortcut")
+            else:
+                self.tt_conv3_weights = self.tt_conv3_bias = None
+
+            self.tt_time_emb_weights, self.tt_time_emb_bias = prepare_linear_params(
+                device, time_emb_weights, time_emb_bias, model_config.conv_w_dtype
             )
-            self.conv3_program_config = model_config.get_matmul_config(matmul_path=f"{module_path}.conv_shortcut")
-        else:
-            self.tt_conv3_weights = self.tt_conv3_bias = None
 
-        self.tt_time_emb_weights, self.tt_time_emb_bias = prepare_linear_params(
-            device, time_emb_weights, time_emb_bias, model_config.conv_w_dtype
-        )
-
-        mm_path = f"{module_path}.linear"
-        self.linear_program_config = model_config.get_matmul_config(matmul_path=f"{module_path}.linear")
-        assert self.linear_program_config is not None, "linear_program_config should not be None"
-        self.default_compute_config = model_config.get_mm_compute_config(mm_path)
+            mm_path = f"{module_path}.linear"
+            self.linear_program_config = model_config.get_matmul_config(matmul_path=f"{module_path}.linear")
+            assert self.linear_program_config is not None, "linear_program_config should not be None"
+            self.default_compute_config = model_config.get_mm_compute_config(mm_path)
 
     def forward(self, input_tensor, temb, input_shape):
+        print(f"Conv weights1 shape: {self.tt_conv1_weights.shape}")
+        print(f"Conv bias1 shape: {self.tt_conv1_bias.shape}")
+        print(f"Conv weights2 shape: {self.tt_conv2_weights.shape}")
+        print(f"Conv bias2 shape: {self.tt_conv2_bias.shape}")
+        print(f"Input tensor shape: {input_tensor.shape}")
+
         B, C, H, W = input_shape
         hidden_states = input_tensor
 
@@ -195,10 +210,15 @@ class TtResnetBlock2D(nn.Module):
                 epsilon=self.norm_eps,
             )
 
+        print(f"Gn done!")
+
         hidden_states = ttnn.silu(hidden_states)
         # TBD: reshard
         if hidden_states.memory_config().memory_layout != self.conv1_config.shard_layout:
             hidden_states = ttnn.sharded_to_interleaved(hidden_states, ttnn.L1_MEMORY_CONFIG)
+
+        ttnn.synchronize_device(self.device)
+        print("Everything before conv1 done!")
 
         if self.split_conv:
             hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
@@ -244,6 +264,30 @@ class TtResnetBlock2D(nn.Module):
             )
             C = self.conv1_params["output_channels"]
 
+        print(f"Conv1 done!")
+        ttnn.synchronize_device(self.device)
+
+        print("Hidden states shape after conv1:", hidden_states.shape)
+        print("Hidden states shard shape:", hidden_states.memory_config())
+
+        if self.device.get_num_devices() > 1:
+            print("C is:", C)
+            grid_coord = ttnn.CoreCoord(4, 7)  # hardcoded for now, to be fixed later
+            shard_grid = ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), grid_coord)})
+            shard_shape = 2048, 64  # hardcoded for now, to be fixed later
+            shard_spec = ttnn.ShardSpec(shard_grid, shard_shape, ttnn.ShardOrientation.ROW_MAJOR)
+            sharded_mem_config = ttnn.MemoryConfig(
+                ttnn.types.TensorMemoryLayout.BLOCK_SHARDED, ttnn.types.BufferType.L1, shard_spec
+            )
+            print("all gather config is:", sharded_mem_config)
+            hidden_states = ttnn.all_gather(
+                hidden_states,
+                dim=-1,
+                num_links=1,
+                memory_config=sharded_mem_config,
+            )
+
+        print("All gather done!")
         temb = ttnn.silu(temb)
 
         temb = ttnn.linear(
@@ -254,20 +298,26 @@ class TtResnetBlock2D(nn.Module):
             compute_kernel_config=self.default_compute_config,
         )
 
-        hidden_states = ttnn.sharded_to_interleaved(hidden_states, ttnn.L1_MEMORY_CONFIG)
+        hidden_states = ttnn.sharded_to_interleaved(hidden_states, ttnn.DRAM_MEMORY_CONFIG)
         # Note: moving this add to NG has perf impact, to be investigated
         hidden_states = ttnn.add(hidden_states, temb, use_legacy=True)
 
         hidden_states = ttnn.to_layout(hidden_states, ttnn.ROW_MAJOR_LAYOUT)
         grid_coord = ttnn.CoreCoord(self.norm_core_grid_2.x - 1, self.norm_core_grid_2.y - 1)
         shard_grid = ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), grid_coord)})
-        shard_shape = B * H * W // self.norm_core_grid_2.x, C // self.norm_core_grid_2.y
+        shard_shape = B * H * W // self.norm_core_grid_2.x, C * self.device.get_num_devices() // self.norm_core_grid_2.y
         shard_spec = ttnn.ShardSpec(shard_grid, shard_shape, ttnn.ShardOrientation.ROW_MAJOR)
         sharded_mem_config = ttnn.MemoryConfig(
             ttnn.types.TensorMemoryLayout.BLOCK_SHARDED, ttnn.types.BufferType.L1, shard_spec
         )
 
+        ttnn.synchronize_device(self.device)
+        print("GN2 done!")
+
         hidden_states = ttnn.to_memory_config(hidden_states, sharded_mem_config)
+
+        # print("GN weights shape:", self.gamma_t_2.shape)
+        # print("GN bias shape:", self.beta_t_2.shape)
 
         hidden_states = ttnn.group_norm(
             hidden_states,
@@ -304,7 +354,30 @@ class TtResnetBlock2D(nn.Module):
             return_weights_and_bias=True,
             dtype=self.conv_output_dtype,
         )
+        print(f"Conv2 done!")
+        print(
+            f"hidden states shape after conv2: {hidden_states.shape} and memory config: {hidden_states.memory_config()}"
+        )
+        ttnn.synchronize_device(self.device)
         C = self.conv2_params["output_channels"]
+        if self.device.get_num_devices() > 1:
+            print("C is:", C)
+            grid_coord = ttnn.CoreCoord(4, 7)  # hardcoded for now, to be fixed later
+            shard_grid = ttnn.CoreRangeSet({ttnn.CoreRange(ttnn.CoreCoord(0, 0), grid_coord)})
+            shard_shape = 2048, 64  # hardcoded for now, to be fixed later
+            shard_spec = ttnn.ShardSpec(shard_grid, shard_shape, ttnn.ShardOrientation.ROW_MAJOR)
+            sharded_mem_config = ttnn.MemoryConfig(
+                ttnn.types.TensorMemoryLayout.BLOCK_SHARDED, ttnn.types.BufferType.L1, shard_spec
+            )
+            print("all gather config is:", sharded_mem_config)
+            hidden_states = ttnn.all_gather(
+                hidden_states,
+                dim=-1,
+                num_links=1,
+                memory_config=sharded_mem_config,
+            )
+        ttnn.synchronize_device(self.device)
+        print("All gather done conv2!")
 
         if self.tt_conv3_weights is not None:
             input_tensor_pre_conv = input_tensor

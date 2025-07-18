@@ -65,6 +65,7 @@ def prepare_conv_params(
     fp32_dest_acc_en=False,
     math_fidelity=ttnn.MathFidelity.HiFi2,
     packer_l1_acc=False,
+    weight_split_dim=-1,
 ):
     compute_config = ttnn.init_device_compute_kernel_config(
         device.arch(),
@@ -74,8 +75,22 @@ def prepare_conv_params(
     )
 
     dtype = ttnn.float32 if dtype == ttnn.bfloat8_b else dtype
-    tt_weights = ttnn.from_torch(weights, dtype)
-    tt_bias = ttnn.from_torch(bias, dtype) if bias is not None else None
+    if weight_split_dim == -1:
+        tt_weights = ttnn.from_torch(weights, dtype, mesh_mapper=ttnn.ReplicateTensorToMesh(device))
+    elif weight_split_dim == 1:  # split weights along the out channel dimension
+        tt_weights = ttnn.from_torch(weights, dtype, mesh_mapper=ttnn.ttnn.ShardTensorToMesh(device, dim=0))
+    elif weight_split_dim == 2:  # split weights along the in channel dimension
+        tt_weights = ttnn.from_torch(weights, dtype, mesh_mapper=ttnn.ttnn.ShardTensorToMesh(device, dim=1))
+    tt_bias = None
+    if bias is not None:
+        if weight_split_dim != 1:
+            tt_bias = ttnn.from_torch(bias, dtype, mesh_mapper=ttnn.ReplicateTensorToMesh(device))
+        elif weight_split_dim == 1:
+            tt_bias = ttnn.from_torch(bias, dtype, mesh_mapper=ttnn.ttnn.ShardTensorToMesh(device, dim=-1))
+        # elif weight_split_dim == 2:
+        #     tt_bias = ttnn.from_torch(
+        #         bias, dtype, mesh_mapper=ttnn.ttnn.ShardTensorToMesh(device, dim=1)
+        #     )
 
     conv_params = {
         "input_channels": tt_weights.shape[1],

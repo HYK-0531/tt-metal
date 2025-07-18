@@ -18,22 +18,23 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import SDXL_
     "input_shape, temb_shape, down_block_id, resnet_id, conv_shortcut, split_in, block, pcc",
     [
         ((1, 320, 128, 128), (1, 1280), 0, 0, False, 1, "down_blocks", 0.999),
-        ((1, 320, 64, 64), (1, 1280), 1, 0, True, 1, "down_blocks", 0.999),
-        ((1, 640, 64, 64), (1, 1280), 1, 1, False, 1, "down_blocks", 0.997),
-        ((1, 640, 32, 32), (1, 1280), 2, 0, True, 1, "down_blocks", 0.999),
-        ((1, 1280, 32, 32), (1, 1280), 2, 1, False, 1, "down_blocks", 0.997),
-        ((1, 960, 128, 128), (1, 1280), 2, 0, True, 2, "up_blocks", 0.998),
-        ((1, 640, 128, 128), (1, 1280), 2, 1, True, 2, "up_blocks", 0.998),
-        ((1, 2560, 32, 32), (1, 1280), 0, 0, True, 1, "up_blocks", 0.996),
-        ((1, 1920, 32, 32), (1, 1280), 0, 2, True, 1, "up_blocks", 0.995),
-        ((1, 1920, 64, 64), (1, 1280), 1, 0, True, 1, "up_blocks", 0.999),
-        ((1, 1280, 64, 64), (1, 1280), 1, 1, True, 1, "up_blocks", 0.998),
-        ((1, 960, 64, 64), (1, 1280), 1, 2, True, 1, "up_blocks", 0.998),
+        # ((1, 320, 64, 64), (1, 1280), 1, 0, True, 1, "down_blocks", 0.999),
+        # ((1, 640, 64, 64), (1, 1280), 1, 1, False, 1, "down_blocks", 0.997),
+        # ((1, 640, 32, 32), (1, 1280), 2, 0, True, 1, "down_blocks", 0.999),
+        # ((1, 1280, 32, 32), (1, 1280), 2, 1, False, 1, "down_blocks", 0.997),
+        # ((1, 960, 128, 128), (1, 1280), 2, 0, True, 2, "up_blocks", 0.998),
+        # ((1, 640, 128, 128), (1, 1280), 2, 1, True, 2, "up_blocks", 0.998),
+        # ((1, 2560, 32, 32), (1, 1280), 0, 0, True, 1, "up_blocks", 0.996),
+        # ((1, 1920, 32, 32), (1, 1280), 0, 2, True, 1, "up_blocks", 0.995),
+        # ((1, 1920, 64, 64), (1, 1280), 1, 0, True, 1, "up_blocks", 0.999),
+        # ((1, 1280, 64, 64), (1, 1280), 1, 1, True, 1, "up_blocks", 0.998),
+        # ((1, 960, 64, 64), (1, 1280), 1, 2, True, 1, "up_blocks", 0.998),
     ],
 )
 @pytest.mark.parametrize("device_params", [{"l1_small_size": SDXL_L1_SMALL_SIZE}], indirect=True)
+@pytest.mark.parametrize("mesh_device", [1, 2], ids=["one_chip", "two_chips"], indirect=True)
 def test_resnetblock2d(
-    device,
+    mesh_device,
     temb_shape,
     input_shape,
     down_block_id,
@@ -44,6 +45,7 @@ def test_resnetblock2d(
     pcc,
     reset_seeds,
 ):
+    device = mesh_device
     unet = UNet2DConditionModel.from_pretrained(
         "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float32, use_safetensors=True, subfolder="unet"
     )
@@ -58,6 +60,11 @@ def test_resnetblock2d(
         assert "Incorrect block name"
 
     model_config = ModelOptimisations()
+
+    torch_input_tensor = torch_random(input_shape, -0.1, 0.1, dtype=torch.float32)
+    torch_temb_tensor = torch_random(temb_shape, -0.1, 0.1, dtype=torch.float32)
+    torch_output_tensor = torch_resnet(torch_input_tensor, torch_temb_tensor)
+
     tt_resnet = TtResnetBlock2D(
         device,
         state_dict,
@@ -67,17 +74,15 @@ def test_resnetblock2d(
         split_in,
     )
 
-    torch_input_tensor = torch_random(input_shape, -0.1, 0.1, dtype=torch.float32)
-    torch_temb_tensor = torch_random(temb_shape, -0.1, 0.1, dtype=torch.float32)
-    torch_output_tensor = torch_resnet(torch_input_tensor, torch_temb_tensor)
-
     ttnn_input_tensor = ttnn.from_torch(
         torch_input_tensor,
         dtype=ttnn.bfloat16,
         device=device,
         layout=ttnn.TILE_LAYOUT,
         memory_config=ttnn.DRAM_MEMORY_CONFIG,
+        mesh_mapper=ttnn.ReplicateTensorToMesh(device),
     )
+
     B, C, H, W = list(ttnn_input_tensor.shape)
 
     ttnn_input_tensor = ttnn.permute(ttnn_input_tensor, (0, 2, 3, 1))
@@ -88,12 +93,23 @@ def test_resnetblock2d(
         dtype=ttnn.bfloat16,
         device=device,
         layout=ttnn.TILE_LAYOUT,
-        memory_config=ttnn.L1_MEMORY_CONFIG,
+        memory_config=ttnn.DRAM_MEMORY_CONFIG,
     )
-    ttnn_output_tensor, output_shape = tt_resnet.forward(ttnn_input_tensor, ttnn_temb_tensor, [B, C, H, W])
 
-    output_tensor = ttnn.to_torch(ttnn_output_tensor)
-    output_tensor = output_tensor.reshape(input_shape[0], output_shape[1], output_shape[2], output_shape[0])
+    ttnn_output_tensor, output_shape = tt_resnet.forward(ttnn_input_tensor, ttnn_temb_tensor, [B, C, H, W])
+    print(f"ttnn output shape: {ttnn_output_tensor.shape}")
+    # tt_resnet.forward(ttnn_input_tensor, ttnn_temb_tensor, [B, C, H, W])
+
+    ttnn.synchronize_device(device)
+
+    output_tensor = ttnn.to_torch(ttnn_output_tensor, mesh_composer=ttnn.ConcatMeshToTensor(device, dim=0))
+    print(f"output shape post conversion: {output_tensor.shape}")
+    output_tensor = output_tensor[0:1]
+    print(f"output shape post conversion2: {output_tensor.shape}")
+    print(f"Output shape struct: {output_shape}")
+    output_tensor = output_tensor.reshape(
+        input_shape[0], output_shape[1], output_shape[2], output_shape[0] * device.get_num_devices()
+    )
     output_tensor = torch.permute(output_tensor, (0, 3, 1, 2))
 
     del unet

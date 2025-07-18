@@ -470,6 +470,9 @@ FORCE_INLINE auto get_interleaved_addr_gen(uint32_t base_addr) {
 }
 
 template <bool DRAM, bool is_size_pow2>
+[[deprecated(
+    "Legacy API.Use get_interleaved_addr_gen<bool DRAM, uint32_t page_size>(uint32_t base_addr) instead if page size "
+    "is known at compile time")]]
 FORCE_INLINE auto get_interleaved_addr_gen(uint32_t base_addr, uint32_t page_size, uint32_t log2_page_size) {
     if constexpr (is_size_pow2) {
         return InterleavedPow2AddrGen<DRAM>{.bank_base_address = base_addr, .log_base_2_of_page_size = log2_page_size};
@@ -479,6 +482,9 @@ FORCE_INLINE auto get_interleaved_addr_gen(uint32_t base_addr, uint32_t page_siz
 }
 
 template <bool DRAM, bool is_size_pow2>
+[[deprecated(
+    "Legacy API. Use get_interleaved_addr_gen<bool DRAM, uint32_t size>(uint32_t base_addr) instead if page size is "
+    "known at compile time")]]
 FORCE_INLINE auto get_interleaved_addr_gen(uint32_t base_addr, uint32_t size) {
     return get_interleaved_addr_gen<DRAM, is_size_pow2>(base_addr, size, size);
 }

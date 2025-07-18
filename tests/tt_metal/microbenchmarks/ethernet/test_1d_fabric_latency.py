@@ -104,6 +104,8 @@ def run_latency_test(
                 {int(congestion_writers_use_mcast)} \
                 {int(enable_fused_payload_with_sync)} \
                 {topology}"
+
+    print(f"cmd: {cmd}")
     rc = os.system(cmd)
     if rc != 0:
         if os.WEXITSTATUS(rc) == 1:

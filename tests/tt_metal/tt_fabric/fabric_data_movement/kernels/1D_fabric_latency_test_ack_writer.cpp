@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-#include "hw/inc/edm_fabric/edm_fabric_worker_adapters.hpp"
+#include "tt_metal/fabric/hw/inc/edm_fabric/edm_fabric_worker_adapters.hpp"
 #include "tt_metal/api/tt-metalium/fabric_edm_packet_header.hpp"
 #include "tt_metal/fabric/hw/inc/edm_fabric/fabric_connection_manager.hpp"
 #include "tt_metal/fabric/hw/inc/noc_addr.h"
@@ -30,14 +30,7 @@ void kernel_main() {
     const size_t packet_header_size_in_headers = get_arg_val<uint32_t>(arg_idx++);
     const size_t num_hops_upstream = get_arg_val<uint32_t>(arg_idx++);
 
-    auto fabric_connection = WorkerToFabricEdmSender::build_from_args(arg_idx);
-
-    ASSERT(fabric_connection.is_logically_connected());
-
-    if (!fabric_connection.is_logically_connected()) {
-        while (true) {
-        }
-    }
+    auto fabric_connection = WorkerToFabricEdmSender::build_from_args<ProgrammableCoreType::TENSIX>(arg_idx);
 
     fabric_connection.open();
 

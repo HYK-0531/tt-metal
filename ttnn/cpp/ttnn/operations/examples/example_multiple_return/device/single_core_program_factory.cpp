@@ -50,10 +50,10 @@ ExampleMultipleReturnDeviceOperation::SingleCore::create(
     auto [num_cores, all_cores, core_group_1, core_group_2, num_tiles_per_core_group_1, num_tiles_per_core_group_2] =
         split_work_to_cores(compute_with_storage_grid_size, num_tiles);
 
-#ifdef DEB
+//#ifdef DEB
     std::cout << "Num_cores " << num_cores << " num_cores_x " << num_cores_x << " num_cores_y " << num_cores_y
               << std::endl;
-#endif
+//#endif
 
     uint32_t src0_cb_index = tt::CBIndex::c_0;
     uint32_t num_input_tiles = 2;

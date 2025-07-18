@@ -10,7 +10,6 @@
 #include "cpp/ttnn/operations/ccl/ccl_host_types.hpp"
 #include "cpp/ttnn/operations/ccl/shared_with_host/hetergeneous_data_structs.hpp"
 #include "tt_metal/fabric/hw/inc/tt_fabric_status.h"
-#include "tt_metal/fabric/hw/inc/tt_fabric_mux_interface.hpp"
 #include "minimal_ccl_common.hpp"
 #include <cstdint>
 #include <utility>

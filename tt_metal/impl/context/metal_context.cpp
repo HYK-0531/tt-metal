@@ -473,7 +473,35 @@ tt_fabric::FabricConfig MetalContext::get_fabric_config() const {
     return fabric_config_;
 }
 
+std::map<tt_fabric::FabricNodeId, chip_id_t> get_physical_chip_mapping_from_eth_coords_mapping(
+    const std::vector<std::vector<eth_coord_t>>& mesh_graph_eth_coords) {
+    const auto& cluster = tt::tt_metal::MetalContext::instance().get_cluster();
+    std::map<tt_fabric::FabricNodeId, chip_id_t> physical_chip_ids_mapping;
+    for (std::uint32_t mesh_id = 0; mesh_id < mesh_graph_eth_coords.size(); mesh_id++) {
+        for (std::uint32_t chip_id = 0; chip_id < mesh_graph_eth_coords[mesh_id].size(); chip_id++) {
+            const auto& eth_coord = mesh_graph_eth_coords[mesh_id][chip_id];
+            physical_chip_ids_mapping.insert(
+                {tt_fabric::FabricNodeId(tt_fabric::MeshId{mesh_id}, chip_id),
+                 cluster.get_physical_chip_id_from_eth_coord(eth_coord)});
+        }
+    }
+    return physical_chip_ids_mapping;
+}
+
 void MetalContext::initialize_control_plane() {
+    // TODO: remove this once we have a way to specify custom mesh graph descriptors
+    tt::tt_metal::MetalContext::instance().set_custom_control_plane_mesh_graph(
+        "tests/tt_metal/tt_fabric/custom_mesh_descriptors/t3k_1x8_mesh_graph_descriptor.yaml",
+        get_physical_chip_mapping_from_eth_coords_mapping(std::vector<std::vector<eth_coord_t>>{
+            {{0, 0, 0, 0, 0},
+             {0, 1, 0, 0, 0},
+             {0, 2, 0, 0, 0},
+             {0, 3, 0, 0, 0},
+             {0, 3, 1, 0, 0},
+             {0, 2, 1, 0, 0},
+             {0, 1, 1, 0, 0},
+             {0, 0, 1, 0, 0}}}));
+    return;
     if (auto* custom_mesh_graph_desc_path = get_custom_mesh_graph_desc_path(); custom_mesh_graph_desc_path != nullptr) {
         std::filesystem::path mesh_graph_desc_path = std::filesystem::path(custom_mesh_graph_desc_path);
         TT_FATAL(

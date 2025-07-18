@@ -7,32 +7,21 @@ import warnings
 import torch.nn.functional as F
 
 
-def multi_scale_deformable_attn(
-    value, value_spatial_shapes, sampling_locations, attention_weights, device, reshape=False
-):
+def multi_scale_deformable_attn(value, value_spatial_shapes, sampling_locations, attention_weights, device):
     bs, _, num_heads, embed_dims = value.shape
     _, num_queries, num_heads, num_levels, num_points, _ = sampling_locations.shape
     value_list = []
     value_list.append(value)
+    sampling_locations = ttnn.to_layout(sampling_locations, layout=ttnn.ROW_MAJOR_LAYOUT)
     sampling_grids = 2 * sampling_locations - 1
     sampling_value_list = []
 
     for level, (H_, W_) in enumerate(value_spatial_shapes):
         value_l_ = value_list[level]
-        print(value_l_.shape)
-
         value_l_ = ttnn.reshape(value_l_, [value_l_.shape[0], value_l_.shape[1], value_l_.shape[2] * value_l_.shape[3]])
         value_l_ = ttnn.permute(value_l_, (0, 2, 1))
-        print(value_l_.shape)
-        print(bs)
-        print(num_heads)
-        print(embed_dims)
 
-        if reshape:
-            value_l_ = ttnn.reshape(value_l_, [bs * num_heads, embed_dims, 12, 20])  # 24751
-
-        else:
-            value_l_ = ttnn.reshape(value_l_, [bs * num_heads, embed_dims, 100, 100])  # 24751
+        value_l_ = ttnn.reshape(value_l_, [bs * num_heads, embed_dims, int(H_.item()), int(W_.item())])
 
         sampling_grid_l_ = sampling_grids[:, :, :, level]
         sampling_grid_l_ = ttnn.permute(sampling_grid_l_, (0, 2, 1, 3, 4))
@@ -221,9 +210,7 @@ class TtTemporalSelfAttention:
             )
         # ttnn.deallocate(reference_points)
 
-        output = multi_scale_deformable_attn(
-            value, spatial_shapes, sampling_locations, attention_weights, self.device, reshape=False
-        )
+        output = multi_scale_deformable_attn(value, spatial_shapes, sampling_locations, attention_weights, self.device)
         ttnn.deallocate(attention_weights)
         # ttnn.deallocate(reference_xy)
         output = ttnn.permute(output, (1, 2, 0))

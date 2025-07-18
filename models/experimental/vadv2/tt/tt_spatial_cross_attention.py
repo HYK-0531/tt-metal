@@ -281,9 +281,7 @@ class TtMSDeformableAttention3D:
                 f"Last dim of reference_points must be" f" 2 or 4, but get {reference_points.shape[-1]} instead."
             )
 
-        output = multi_scale_deformable_attn(
-            value, spatial_shapes, sampling_locations, attention_weights, self.device, reshape=True
-        )
+        output = multi_scale_deformable_attn(value, spatial_shapes, sampling_locations, attention_weights, self.device)
 
         if not self.batch_first:
             output = ttnn.permute(output, (1, 0, 2))

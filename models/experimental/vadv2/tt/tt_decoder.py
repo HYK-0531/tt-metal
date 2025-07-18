@@ -2,23 +2,31 @@
 
 # SPDX-License-Identifier: Apache-2.0
 
-import torch
 import ttnn
 from models.experimental.vadv2.tt.tt_base_transformer_layer import TtBaseTransformerLayer
 
 
-def inverse_sigmoid(x, eps=1e-5):
-    x = x.clamp(min=0, max=1)
-    x1 = x.clamp(min=eps)
-    x2 = (1 - x).clamp(min=eps)
-    return torch.log(x1 / x2)
+def inverse_sigmoid(x, eps: float = 1e-5):
+    x = ttnn.to_layout(x, layout=ttnn.TILE_LAYOUT)
+    x = ttnn.clamp(x, min=0, max=1)
+    x1 = ttnn.clamp(x, min=eps)
+    if len(x.shape) == 3:
+        x_temp = ttnn.ones(shape=[x.shape[0], x.shape[1], x.shape[2]], layout=ttnn.TILE_LAYOUT, device=x.device())
+    else:
+        x_temp = ttnn.ones(
+            shape=[x.shape[0], x.shape[1], x.shape[2], x.shape[3]], layout=ttnn.TILE_LAYOUT, device=x.device()
+        )
+    x_temp = x_temp - x
+    x2 = ttnn.clamp(x_temp, min=eps)
+    return ttnn.log(ttnn.div(x1, x2))
 
 
 class TtDetectionTransformerDecoder:
-    def __init__(self, num_layers, embed_dim, num_heads, params, device):
+    def __init__(self, num_layers, embed_dim, num_heads, params, params_branches, device):
         self.return_intermediate = True
         self.device = device
         self.params = params
+        self.params_branches = params_branches
         self.layers = [
             TtBaseTransformerLayer(
                 params.layers[f"layer{i}"],
@@ -85,20 +93,27 @@ class TtDetectionTransformerDecoder:
             output = ttnn.permute(output, (1, 0, 2))
 
             if reg_branches is not None:
-                output = ttnn.to_torch(output).float()
-                # ss
-                tmp = reg_branches[lid](output)
-                tmp = ttnn.from_torch(output, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT, device=self.device)
-                assert reference_points.shape[-1] == 2
+                # Select reg_branch layers for current lid
+                layers = self.params_branches.reg_branches[str(lid)]
 
-                new_reference_points = ttnn.zeros_like(reference_points)
-                new_reference_points[..., :2] = tmp[..., :2] + inverse_sigmoid(reference_points[..., :2])
-                # new_reference_points[..., 2:3] = tmp[
-                #     ..., 4:5] + inverse_sigmoid(reference_points[..., 2:3])
+                tmp = output
+                for i in range(3):
+                    tmp = ttnn.linear(
+                        tmp, layers[str(i)].weight, bias=layers[str(i)].bias, memory_config=ttnn.L1_MEMORY_CONFIG
+                    )
+                    if i < 2:
+                        tmp = ttnn.relu(tmp)
+                assert reference_points.shape[-1] == 3
 
+                new_reference_points = ttnn.zeros_like(reference_points, memory_config=ttnn.L1_MEMORY_CONFIG)
+                updated_xy = tmp[..., :2] + inverse_sigmoid(reference_points[..., :2])  # shape (..., 2)
+                updated_z = tmp[..., 4:5] + inverse_sigmoid(reference_points[..., 2:3])  # shape (..., 1)
+
+                new_reference_points = ttnn.concat([updated_xy, updated_z], dim=-1, memory_config=ttnn.L1_MEMORY_CONFIG)
+                ttnn.deallocate(tmp)
                 new_reference_points = ttnn.sigmoid(new_reference_points, memory_config=ttnn.L1_MEMORY_CONFIG)
 
-                reference_points = new_reference_points.detach()
+                reference_points = new_reference_points
 
             output = ttnn.permute(output, (1, 0, 2))
             if self.return_intermediate:
@@ -113,10 +128,11 @@ class TtDetectionTransformerDecoder:
 
 
 class TtMapDetectionTransformerDecoder:
-    def __init__(self, num_layers, embed_dim, num_heads, params, device):
+    def __init__(self, num_layers, embed_dim, num_heads, params, params_branches, device):
         self.return_intermediate = True
         self.device = device
         self.params = params
+        self.params_branches = params_branches
         self.layers = [
             TtBaseTransformerLayer(
                 params.layers[f"layer{i}"],
@@ -162,7 +178,7 @@ class TtMapDetectionTransformerDecoder:
         query_pos=None,
         reference_points=None,
         spatial_shapes=None,
-        reg_branches=None,
+        map_reg_branches=None,
         cls_branches=None,
         **kwargs,
     ):
@@ -182,21 +198,29 @@ class TtMapDetectionTransformerDecoder:
             )
             output = ttnn.permute(output, (1, 0, 2))
 
-            if reg_branches is not None:
-                output = ttnn.to_torch(output).float()
-                # ss
-                tmp = reg_branches[lid](output)
-                tmp = ttnn.from_torch(output, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT, device=self.device)
+            if map_reg_branches is not None:
+                layers = self.params_branches.map_reg_branches[str(lid)]
+
+                tmp = output
+                for i in range(3):
+                    tmp = ttnn.linear(
+                        tmp, layers[str(i)].weight, bias=layers[str(i)].bias, memory_config=ttnn.L1_MEMORY_CONFIG
+                    )
+                    if i < 2:  # Apply ReLU after the first two layers
+                        tmp = ttnn.relu(tmp)
+
                 assert reference_points.shape[-1] == 2
 
-                new_reference_points = ttnn.zeros_like(reference_points)
-                new_reference_points[..., :2] = tmp[..., :2] + inverse_sigmoid(reference_points[..., :2])
-                # new_reference_points[..., 2:3] = tmp[
-                #     ..., 4:5] + inverse_sigmoid(reference_points[..., 2:3])
+                new_reference_points = ttnn.zeros_like(reference_points, memory_config=ttnn.L1_MEMORY_CONFIG)
 
-                new_reference_points = ttnn.sigmoid(new_reference_points, memory_config=ttnn.L1_MEMORY_CONFIG)
+                updated_xy = tmp[..., :2] + inverse_sigmoid(reference_points[..., :2])
 
-                reference_points = new_reference_points.detach()
+                new_reference_points = ttnn.concat([updated_xy], dim=-1, memory_config=ttnn.L1_MEMORY_CONFIG)
+
+                ttnn.deallocate(tmp)
+                new_reference_points = ttnn.sigmoid(new_reference_points)
+
+                reference_points = new_reference_points
 
             output = ttnn.permute(output, (1, 0, 2))
             if self.return_intermediate:

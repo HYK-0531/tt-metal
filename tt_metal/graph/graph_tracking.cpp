@@ -92,7 +92,7 @@ bool GraphTracker::hook_allocate(const Buffer* buffer) {
     }
 
     bool hooked = hook->hook_allocate(buffer);
-    if (hooked) {
+    if (hooked && buffer != nullptr) {
         std::lock_guard<std::mutex> lock(hooked_buffers_mutex);
         bool inserted = hooked_buffers.insert(buffer).second;
         TT_FATAL(inserted, "Can't hook allocation of a buffer which is already allocated");

@@ -751,8 +751,10 @@ DeviceStorage replicate_to_mesh_buffer(
         input_size_bytes,
         expected_packed_buffer_size_bytes);
 
-    mesh_device->mesh_command_queue(*cq_id).enqueue_write_mesh_buffer(
-        mesh_buffer, data_to_write.data(), /*blocking=*/false);
+    if (!GraphTracker::instance().hook_allocate(nullptr)) {
+        mesh_device->mesh_command_queue(*cq_id).enqueue_write_mesh_buffer(
+            mesh_buffer, data_to_write.data(), /*blocking=*/false);
+    }
 
     std::vector<distributed::MeshCoordinate> coords;
     coords.reserve(mesh_device->shape().mesh_size());
@@ -766,8 +768,10 @@ DeviceStorage write_to_mesh_buffer(
     const DistributedHostBuffer& distributed_host_buffer,
     const std::shared_ptr<distributed::MeshBuffer>& mesh_buffer,
     ttnn::QueueId cq_id) {
-    mesh_buffer->device()->mesh_command_queue(*cq_id).enqueue_write(
-        mesh_buffer, distributed_host_buffer, /*blocking=*/false);
+    if (!GraphTracker::instance().hook_allocate(nullptr)) {
+        mesh_buffer->device()->mesh_command_queue(*cq_id).enqueue_write(
+            mesh_buffer, distributed_host_buffer, /*blocking=*/false);
+    }
     std::vector<distributed::MeshCoordinate> coords;
     coords.reserve(distributed_host_buffer.shard_coords().size());
     std::copy(

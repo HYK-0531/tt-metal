@@ -15,6 +15,7 @@
 #include "tt_metal/impl/program/dispatch.hpp"
 #include "tt_metal/impl/trace/dispatch.hpp"
 #include "tt_metal/impl/dispatch/dispatch_query_manager.hpp"
+#include "graph_tracking.hpp"
 #include "tt_metal/common/thread_pool.hpp"
 #include "tt_cluster.hpp"
 #include "dispatch/dispatch_settings.hpp"
@@ -22,6 +23,9 @@
 namespace tt::tt_metal::distributed {
 
 void MeshCommandQueueBase::write_sharded_buffer(const MeshBuffer& buffer, const void* src) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     auto global_buffer_shape = buffer.global_shard_spec().global_buffer_shape;
 
     auto shard_shape = buffer.physical_shard_shape();
@@ -106,6 +110,9 @@ void MeshCommandQueueBase::write_sharded_buffer(const MeshBuffer& buffer, const 
 }
 
 void MeshCommandQueueBase::read_sharded_buffer(MeshBuffer& buffer, void* dst) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     const auto& [height_replicated, width_replicated] = buffer.replicated_dims();
     TT_FATAL(
         not(height_replicated or width_replicated), "Cannot read a MeshBuffer that is replicated along any dimension.");
@@ -167,6 +174,9 @@ void MeshCommandQueueBase::enqueue_write_shard_to_sub_grid(
     const MeshCoordinateRange& device_range,
     bool blocking,
     std::optional<BufferRegion> region) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     if (buffer.global_layout() == MeshBufferLayout::REPLICATED) {
         // Multi-Threaded writes supported for Replicated buffers.
         // Currently not supported when doing TT-Mesh Native sharding, since we
@@ -190,12 +200,18 @@ void MeshCommandQueueBase::enqueue_write_shard_to_sub_grid(
 
 void MeshCommandQueueBase::enqueue_write_mesh_buffer(
     const std::shared_ptr<MeshBuffer>& buffer, const void* host_data, bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     MeshCoordinateRange mesh_device_extent(buffer->device()->shape());
     this->enqueue_write_shard_to_sub_grid(*buffer, host_data, mesh_device_extent, blocking);
 }
 
 void MeshCommandQueueBase::enqueue_read_mesh_buffer(
     void* host_data, const std::shared_ptr<MeshBuffer>& buffer, bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     TT_FATAL(
         buffer->global_layout() == MeshBufferLayout::SHARDED, "Can only read a Sharded MeshBuffer from a MeshDevice.");
     TT_FATAL(
@@ -207,6 +223,9 @@ void MeshCommandQueueBase::enqueue_write_shards(
     const std::shared_ptr<MeshBuffer>& buffer,
     const std::vector<ShardDataTransfer>& shard_data_transfers,
     bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     // TODO: #17215 - this API is used by TTNN, as it currently implements rich ND sharding API for multi-devices.
     // In the long run, the multi-device sharding API in Metal will change, and this will most likely be replaced.
     auto dispatch_lambda = [&shard_data_transfers, &buffer, this](uint32_t shard_idx) {
@@ -229,6 +248,9 @@ void MeshCommandQueueBase::enqueue_write_shards(
 
 void MeshCommandQueueBase::enqueue_write(
     const std::shared_ptr<MeshBuffer>& mesh_buffer, const DistributedHostBuffer& host_buffer, bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     // Iterate over global coordinates; skip host-remote coordinates, as per `host_buffer` configuration.
     std::vector<ShardDataTransfer> shard_data_transfers;
     for (const auto& host_buffer_coord : host_buffer.shard_coords()) {
@@ -248,6 +270,9 @@ void MeshCommandQueueBase::enqueue_read_shards(
     const std::vector<ShardDataTransfer>& shard_data_transfers,
     const std::shared_ptr<MeshBuffer>& buffer,
     bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     // TODO: #17215 - this API is used by TTNN, as it currently implements rich ND sharding API for multi-devices.
     // In the long run, the multi-device sharding API in Metal will change, and this will most likely be replaced.
     std::unordered_map<IDevice*, uint32_t> num_txns_per_device = {};
@@ -267,6 +292,9 @@ void MeshCommandQueueBase::enqueue_read(
     DistributedHostBuffer& host_buffer,
     const std::optional<std::unordered_set<MeshCoordinate>>& shards,
     bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     std::vector<ShardDataTransfer> shard_data_transfers;
     for (const auto& coord : MeshCoordinateRange(buffer->device()->shape())) {
         if (shards.has_value() && !shards->contains(coord)) {

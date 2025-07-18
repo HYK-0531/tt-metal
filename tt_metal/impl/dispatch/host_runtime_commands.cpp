@@ -25,6 +25,7 @@
 #include "command_queue.hpp"
 #include "device.hpp"
 #include "dispatch/device_command.hpp"
+#include "tt-metalium/graph_tracking.hpp"
 #include "impl/context/metal_context.hpp"
 #include "hal_types.hpp"
 #include "lightmetal/host_api_capture_helpers.hpp"
@@ -199,6 +200,9 @@ void EnqueueWriteBuffer(
     const std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<Buffer>>& buffer,
     std::vector<uint32_t>& src,
     bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     // TODO(agrebenisan): Move to deprecated
     EnqueueWriteBuffer(cq, std::move(buffer), src.data(), blocking);
 }
@@ -208,6 +212,9 @@ void EnqueueReadBuffer(
     const std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<Buffer>>& buffer,
     void* dst,
     bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     LIGHT_METAL_TRACE_FUNCTION_ENTRY();
     LIGHT_METAL_TRACE_FUNCTION_CALL(CaptureEnqueueReadBuffer, cq, buffer, dst, blocking);
     Buffer& buffer_obj = detail::GetBufferObject(buffer);
@@ -221,6 +228,9 @@ void EnqueueReadSubBuffer(
     void* dst,
     const BufferRegion& region,
     bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     detail::DispatchStateCheck(true);
     detail::ValidateBufferRegion(buffer, region);
 
@@ -240,6 +250,9 @@ void EnqueueWriteBuffer(
     const std::variant<std::reference_wrapper<Buffer>, std::shared_ptr<Buffer>>& buffer,
     HostDataType src,
     bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     LIGHT_METAL_TRACE_FUNCTION_ENTRY();
     LIGHT_METAL_TRACE_FUNCTION_CALL(CaptureEnqueueWriteBuffer, cq, buffer, src, blocking);
     Buffer& buffer_obj = detail::GetBufferObject(buffer);
@@ -253,6 +266,9 @@ void EnqueueWriteSubBuffer(
     HostDataType src,
     const BufferRegion& region,
     bool blocking) {
+    TT_FATAL(
+        !tt::tt_metal::GraphTracker::instance().hook_allocate(nullptr),
+        "We shouldn't write/read anything to the device");
     detail::DispatchStateCheck(true);
     detail::ValidateBufferRegion(buffer, region);
 

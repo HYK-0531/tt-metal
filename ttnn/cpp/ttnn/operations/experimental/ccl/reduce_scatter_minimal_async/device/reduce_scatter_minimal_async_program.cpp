@@ -163,8 +163,10 @@ tt::tt_metal::operation::ProgramWithCallbacks ring_reduce_scatter_minimal_async_
     std::vector<Tensor> input_tensors = {input_tensor};
     std::vector<Tensor> output_tensors = {intermediate_tensor, output_tensor};
     const auto& op_config = ttnn::ccl::CCLOpConfig(input_tensors, output_tensors, topology);
-    auto [num_targets_forward, num_targets_backward, dynamic_alternate] =
-        ccl::get_forward_backward_configuration(ring_size, ring_index, topology);
+    auto [unicast_forward_args, unicast_backward_args] =
+        ccl::get_forward_backward_line_unicast_configuration(topology, sender_device, forward_device, backward_device);
+    auto [mcast_forward_args, mcast_backward_args] = ccl::get_forward_backward_line_mcast_configuration(
+        topology, sender_device, forward_device, backward_device, ring_size - 1, ring_size - 1);
 
     // Get worker cores
     // 2 sender (reader + core + writer), 1 forward 1 backward
@@ -257,6 +259,7 @@ tt::tt_metal::operation::ProgramWithCallbacks ring_reduce_scatter_minimal_async_
     std::vector<KernelHandle> writer_kernel_ids;
     std::vector<KernelHandle> reduce_kernel_ids;
     for (uint32_t core_idx = 0; core_idx < num_senders_per_link; core_idx++) {
+        auto direction = core_idx % num_senders_per_link;
         auto sender_reader_kernel_config = tt::tt_metal::ReaderDataMovementConfig{};
         sender_reader_kernel_config.compile_args = {
             ring_index,                                              // my_chip_id
@@ -272,7 +275,7 @@ tt::tt_metal::operation::ProgramWithCallbacks ring_reduce_scatter_minimal_async_
             ring_size,                                               // ring_size
             num_batches,                                             // num_batches
             fuse_op,                                                 // fused op
-            core_idx % num_senders_per_link,                         // direction
+            direction,                                               // direction
         };
         auto worker_sender_reader_kernel_id = tt::tt_metal::CreateKernel(
             program,
@@ -299,13 +302,28 @@ tt::tt_metal::operation::ProgramWithCallbacks ring_reduce_scatter_minimal_async_
             ring_size,                                               // ring_size
             num_batches,                                             // num_batches
             num_tiles_to_write_per_packet,                           // num_tiles_to_write_per_packet
-            core_idx % num_senders_per_link,                         // direction
+            direction,                                               // direction
         };
+        if (direction) {
+            sender_writer_kernel_config.compile_args.insert(
+                sender_writer_kernel_config.compile_args.end(),
+                unicast_forward_args.begin(),
+                unicast_forward_args.end());
+            sender_writer_kernel_config.compile_args.insert(
+                sender_writer_kernel_config.compile_args.end(), mcast_forward_args.begin(), mcast_forward_args.end());
+        } else {
+            sender_writer_kernel_config.compile_args.insert(
+                sender_writer_kernel_config.compile_args.end(),
+                unicast_backward_args.begin(),
+                unicast_backward_args.end());
+            sender_writer_kernel_config.compile_args.insert(
+                sender_writer_kernel_config.compile_args.end(), mcast_backward_args.begin(), mcast_backward_args.end());
+        }
         auto worker_sender_writer_kernel_id = tt::tt_metal::CreateKernel(
             program,
             "ttnn/cpp/ttnn/operations/experimental/ccl/reduce_scatter_minimal_async/device/kernels/"
             "ring_reduce_scatter_minimal_async_writer.cpp",
-            core_idx % num_senders_per_link ? sender_forward_core_ranges : sender_backward_core_ranges,
+            direction ? sender_forward_core_ranges : sender_backward_core_ranges,
             sender_writer_kernel_config);
         writer_kernel_ids.push_back(worker_sender_writer_kernel_id);
 
@@ -320,7 +338,7 @@ tt::tt_metal::operation::ProgramWithCallbacks ring_reduce_scatter_minimal_async_
             ring_size,
             num_batches,
             num_links,
-            core_idx % num_senders_per_link};
+            direction};
 
         auto sender_reduce_kernel_id = tt::tt_metal::CreateKernel(
             program,
@@ -341,6 +359,7 @@ tt::tt_metal::operation::ProgramWithCallbacks ring_reduce_scatter_minimal_async_
         for (uint32_t core_idx = 0; core_idx < num_senders_per_link; core_idx++) {
             CoreCoord core = sender_worker_cores[link * 2 + core_idx];
             drain_sync_core = mesh_device->worker_core_from_logical_core(core);
+            auto direction = core_idx % num_senders_per_link;
 
             std::vector<uint32_t> reader_rt_args = {
                 input_tensor.buffer()->address(),         // input_tensor_address
@@ -376,7 +395,7 @@ tt::tt_metal::operation::ProgramWithCallbacks ring_reduce_scatter_minimal_async_
                     input_tensor_Wt,                              // row_offset
                 (link * batch_slice_num_pages / num_links),       // tiles_read
                 (link + 1) * batch_slice_num_pages / num_links};  // tiles_to_read
-            if (core_idx % num_senders_per_link) {  // forward
+            if (direction) {                                      // forward
                 writer_rt_args.push_back(forward_device.has_value());
                 if (forward_device.has_value()) {
                     const auto sender_fabric_node_id =
@@ -511,8 +530,12 @@ tt::tt_metal::operation::ProgramWithCallbacks line_reduce_scatter_minimal_async_
     std::vector<Tensor> input_tensors = {input_tensor};
     std::vector<Tensor> output_tensors = {intermediate_tensor, output_tensor};
     const auto& op_config = ttnn::ccl::CCLOpConfig(input_tensors, output_tensors, topology);
-    auto [num_targets_forward, num_targets_backward, dynamic_alternate] =
-        ccl::get_forward_backward_configuration(ring_size, ring_index, topology);
+    auto [unicast_forward_args, unicast_backward_args] =
+        ccl::get_forward_backward_line_unicast_configuration(topology, sender_device, forward_device, backward_device);
+    auto [num_targets_forward, num_targets_backward] =
+        ccl::get_forward_backward_line_mcast_distance(ring_size, ring_index, topology, true);
+    auto [mcast_forward_args, mcast_backward_args] = ccl::get_forward_backward_line_mcast_configuration(
+        topology, sender_device, forward_device, backward_device, num_targets_forward, num_targets_backward);
 
     // Get worker cores
     // 2 sender (reader + core + writer), 1 forward 1 backward
@@ -682,6 +705,21 @@ tt::tt_metal::operation::ProgramWithCallbacks line_reduce_scatter_minimal_async_
             num_total_reduction_steps,
             sync_with_other_direction,
         };
+        if (is_forward) {
+            sender_writer_kernel_config.compile_args.insert(
+                sender_writer_kernel_config.compile_args.end(),
+                unicast_forward_args.begin(),
+                unicast_forward_args.end());
+            sender_writer_kernel_config.compile_args.insert(
+                sender_writer_kernel_config.compile_args.end(), mcast_forward_args.begin(), mcast_forward_args.end());
+        } else {
+            sender_writer_kernel_config.compile_args.insert(
+                sender_writer_kernel_config.compile_args.end(),
+                unicast_backward_args.begin(),
+                unicast_backward_args.end());
+            sender_writer_kernel_config.compile_args.insert(
+                sender_writer_kernel_config.compile_args.end(), mcast_backward_args.begin(), mcast_backward_args.end());
+        }
         auto worker_sender_writer_kernel_id = tt::tt_metal::CreateKernel(
             program,
             "ttnn/cpp/ttnn/operations/experimental/ccl/reduce_scatter_minimal_async/device/kernels/"

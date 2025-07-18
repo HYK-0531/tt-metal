@@ -11,6 +11,7 @@
 #include "minimal_ccl_common.hpp"
 #include <cstdint>
 #include <utility>
+#include "cpp/ttnn/operations/experimental/ccl/utils/kernel/fabric_utils.hpp"
 
 using address_t = uint32_t;
 using tt::tt_metal::BufferType;
@@ -29,10 +30,11 @@ constexpr uint32_t num_tiles_to_write_per_packet = get_compile_time_arg_val(5);
 constexpr uint32_t output_page_size = get_compile_time_arg_val(6);
 constexpr uint32_t num_targets_forward_direction = get_compile_time_arg_val(7);
 constexpr uint32_t num_targets_backward_direction = get_compile_time_arg_val(8);
-constexpr bool dynamic_alternate = get_compile_time_arg_val(9);
-constexpr bool fuse_op = get_compile_time_arg_val(10);
-constexpr Topology topology = static_cast<Topology>(get_compile_time_arg_val(11));
-constexpr bool direction = get_compile_time_arg_val(12);  // 1 is forward, 0 is backward
+constexpr bool fuse_op = get_compile_time_arg_val(9);
+constexpr Topology topology = static_cast<Topology>(get_compile_time_arg_val(10));
+constexpr bool direction = get_compile_time_arg_val(11);  // 1 is forward, 0 is backward
+constexpr ccl_routing_utils::line_unicast_route_info_t unicast_route_info =
+    ccl_routing_utils::get_line_unicast_route_info_from_args<12>();
 
 void kernel_main() {
     ///////////////////////////////////////////////////
@@ -72,7 +74,7 @@ void kernel_main() {
     cb_push_back(reserved_packet_header_cb_id, 1);
     // pre-populate packet headers
     volatile PACKET_HEADER_TYPE* pkt_hdr = reinterpret_cast<volatile PACKET_HEADER_TYPE*>(packet_header_buffer_addr);
-    pkt_hdr->to_chip_unicast(1);
+    ccl_routing_utils::fabric_set_line_unicast_route(pkt_hdr, unicast_route_info);
 
     constexpr bool output_is_dram = output_type == tt::tt_metal::BufferType::DRAM;
     auto output_addrgen = InterleavedAddrGenFast<output_is_dram>{
@@ -204,14 +206,14 @@ void kernel_main() {
     if (direction == 1) {
         if (num_targets_backward_direction) {
             fabric_connection.get_backward_connection().wait_for_empty_write_slot();
-            pkt_hdr_sem_inc->to_chip_unicast(1);
+            ccl_routing_utils::fabric_set_line_unicast_route(pkt_hdr_sem_inc, unicast_route_info);
             fabric_connection.get_backward_connection().send_payload_flush_blocking_from_address(
                 packet_header_buffer_seminc, sizeof(PACKET_HEADER_TYPE));
         }
     } else {
         if (num_targets_forward_direction) {
             fabric_connection.get_forward_connection().wait_for_empty_write_slot();
-            pkt_hdr_sem_inc->to_chip_unicast(1);
+            ccl_routing_utils::fabric_set_line_unicast_route(pkt_hdr_sem_inc, unicast_route_info);
             fabric_connection.get_forward_connection().send_payload_flush_blocking_from_address(
                 packet_header_buffer_seminc, sizeof(PACKET_HEADER_TYPE));
         }
@@ -357,12 +359,10 @@ void kernel_main() {
         // 2. unicast output ready semaphore
         if (direction == 1) {
             fabric_connection.get_backward_connection().wait_for_empty_write_slot();
-            pkt_hdr_sem_inc->to_chip_unicast(1);
             fabric_connection.get_backward_connection().send_payload_flush_blocking_from_address(
                 packet_header_buffer_seminc, sizeof(PACKET_HEADER_TYPE));
         } else {
             fabric_connection.get_forward_connection().wait_for_empty_write_slot();
-            pkt_hdr_sem_inc->to_chip_unicast(1);
             fabric_connection.get_forward_connection().send_payload_flush_blocking_from_address(
                 packet_header_buffer_seminc, sizeof(PACKET_HEADER_TYPE));
         }

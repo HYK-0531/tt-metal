@@ -39,8 +39,8 @@
 #include <tt-metalium/math.hpp>
 #include "tt_metal/impl/dispatch/device_command.hpp"
 
-constexpr uint32_t DEFAULT_ITERATIONS = 100000;
-constexpr uint32_t DEFAULT_WARMUP_ITERATIONS = 10000;
+constexpr uint32_t DEFAULT_ITERATIONS = 10000;
+constexpr uint32_t DEFAULT_WARMUP_ITERATIONS = 2000;
 constexpr uint32_t MIN_KERNEL_SIZE_BYTES = 32;
 constexpr uint32_t DEFAULT_KERNEL_SIZE_K = 1;
 
@@ -274,12 +274,9 @@ static void BM_pgm_dispatch(benchmark::State& state, TestInfo info) {
 }
 
 static void SweepKernelCyclesAndCommonArgs(benchmark::internal::Benchmark* b) {
-    std::vector<int> common_args_list = {0, 64, 128, 192, 256};
-    std::vector<int> kernel_cycles_list = {0, 256, 512, 768, 1024};
-
-    for (int n_common_args : common_args_list) {
-        for (int cycles : kernel_cycles_list) {
-            b->Args({n_common_args, cycles});
+    for (int n_common_args = 0; n_common_args <= 256; n_common_args += 32) {
+        for (int kernel_cycles = 0; kernel_cycles <= 1024; kernel_cycles += 64) {
+            b->Args({n_common_args, kernel_cycles});
         }
     }
 }

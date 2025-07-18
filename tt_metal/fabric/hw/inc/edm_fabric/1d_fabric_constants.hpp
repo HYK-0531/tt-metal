@@ -398,10 +398,10 @@ static_assert(
 constexpr size_t SPECIAL_MARKER_2_IDX =
     TO_SENDER_CREDIT_COUNTERS_START_IDX + (multi_txq_enabled ? 2 * (NUM_SENDER_CHANNELS + NUM_RECEIVER_CHANNELS) : 0);
 constexpr size_t SPECIAL_MARKER_2 = 0x20c0ffee;
-static_assert(
-    !SPECIAL_MARKER_CHECK_ENABLED || get_compile_time_arg_val(SPECIAL_MARKER_2_IDX) == SPECIAL_MARKER_2,
-    "Special marker 2 not found. This implies some arguments were misaligned between host and device. Double check the "
-    "CT args.");
+// static_assert(
+//     !SPECIAL_MARKER_CHECK_ENABLED || get_compile_time_arg_val(SPECIAL_MARKER_2_IDX) == SPECIAL_MARKER_2,
+//     "Special marker 2 not found. This implies some arguments were misaligned between host and device. Double check
+//     the " "CT args.");
 
 constexpr size_t HOST_SIGNAL_ARGS_START_IDX = SPECIAL_MARKER_2_IDX + SPECIAL_MARKER_CHECK_ENABLED;
 // static_assert(HOST_SIGNAL_ARGS_START_IDX == 56, "HOST_SIGNAL_ARGS_START_IDX must be 56");

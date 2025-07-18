@@ -54,9 +54,10 @@ enum NocSendType : uint8_t {
     NOC_UNICAST_ATOMIC_INC = 2,
     NOC_FUSED_UNICAST_ATOMIC_INC = 3,
     NOC_UNICAST_SCATTER_WRITE = 4,
-    NOC_MULTICAST_WRITE = 5,       // mcast has bug
-    NOC_MULTICAST_ATOMIC_INC = 6,  // mcast has bug
-    NOC_SEND_TYPE_LAST = NOC_UNICAST_SCATTER_WRITE
+    NOC_READ = 5,
+    NOC_MULTICAST_WRITE = 6,       // mcast has bug
+    NOC_MULTICAST_ATOMIC_INC = 7,  // mcast has bug
+    NOC_SEND_TYPE_LAST = NOC_READ,
 };
 // How to send the payload across the cluster
 // 1 bit
@@ -214,6 +215,28 @@ struct PacketHeaderBase {
         modified_command_header.noc_address = noc_addr;
         this->command_fields.unicast_write = modified_command_header;
 #else
+        // Kind of a hack with lite fabric on BH because we virtualize dram and hardcode fabric noc to noc0
+        this->command_fields.unicast_write = noc_unicast_command_header;
+#endif
+        this->payload_size_bytes = payload_size_bytes;
+
+        return *static_cast<Derived*>(this);
+    }
+
+    inline Derived& to_noc_read(const NocUnicastCommandHeader& noc_unicast_command_header, size_t payload_size_bytes) {
+        this->noc_send_type = NOC_READ;
+#if defined(KERNEL_BUILD) || defined(FW_BUILD)
+        auto noc_address_components = get_noc_address_components(noc_unicast_command_header.noc_address);
+        auto noc_addr = safe_get_noc_addr(
+            noc_address_components.first.x,
+            noc_address_components.first.y,
+            noc_address_components.second,
+            edm_to_local_chip_noc);
+        NocUnicastCommandHeader modified_command_header = noc_unicast_command_header;
+        modified_command_header.noc_address = noc_addr;
+        this->command_fields.unicast_write = modified_command_header;
+#else
+        // Kind of a hack with lite fabric on BH because we virtualize dram and hardcode fabric noc to noc0
         this->command_fields.unicast_write = noc_unicast_command_header;
 #endif
         this->payload_size_bytes = payload_size_bytes;
@@ -291,8 +314,8 @@ struct PacketHeaderBase {
 
     inline volatile Derived* to_noc_unicast_write(
         const NocUnicastCommandHeader& noc_unicast_command_header, size_t payload_size_bytes) volatile {
-#if defined(KERNEL_BUILD) || defined(FW_BUILD)
         this->noc_send_type = NOC_UNICAST_WRITE;
+#if defined(KERNEL_BUILD) || defined(FW_BUILD)
         auto noc_address_components = get_noc_address_components(noc_unicast_command_header.noc_address);
         auto noc_addr = safe_get_noc_addr(
             noc_address_components.first.x,
@@ -301,10 +324,32 @@ struct PacketHeaderBase {
             edm_to_local_chip_noc);
 
         this->command_fields.unicast_write.noc_address = noc_addr;
-        this->payload_size_bytes = payload_size_bytes;
 #else
-        TT_THROW("Calling to_noc_unicast_write from host is unsupported");
+        // Kind of a hack with lite fabric on BH because we virtualize dram and hardcode fabric noc to noc0
+        this->command_fields.unicast_write = noc_unicast_command_header;
 #endif
+        this->payload_size_bytes = payload_size_bytes;
+
+        return static_cast<volatile Derived*>(this);
+    }
+
+    inline volatile Derived* to_noc_read(
+        const NocUnicastCommandHeader& noc_unicast_command_header, size_t payload_size_bytes) volatile {
+        this->noc_send_type = NOC_READ;
+#if defined(KERNEL_BUILD) || defined(FW_BUILD)
+        auto noc_address_components = get_noc_address_components(noc_unicast_command_header.noc_address);
+        auto noc_addr = safe_get_noc_addr(
+            noc_address_components.first.x,
+            noc_address_components.first.y,
+            noc_address_components.second,
+            edm_to_local_chip_noc);
+
+        this->command_fields.unicast_write.noc_address = noc_addr;
+#else
+        // Kind of a hack with lite fabric on BH because we virtualize dram and hardcode fabric noc to noc0
+        this->command_fields.unicast_write = noc_unicast_command_header;
+#endif
+        this->payload_size_bytes = payload_size_bytes;
         return static_cast<volatile Derived*>(this);
     }
 

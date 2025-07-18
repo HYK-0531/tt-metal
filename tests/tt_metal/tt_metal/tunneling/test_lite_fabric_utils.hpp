@@ -211,6 +211,7 @@ inline tt::tt_metal::Program create_lite_fabric_program(
     lite_fabric_rtargs[1] = local_sender_0_channel_address;
     lite_fabric_rtargs[2] = local_sender_channel_0_connection_info_addr;
     lite_fabric_rtargs[3] = remote_receiver_0_channel_buffer_address;
+    lite_fabric_rtargs[4] = 1;
 
     lite_fabric_addrs.lite_fabric_config_addr = lite_fabric_rtargs[0];
     lite_fabric_addrs.base_sender_channel_addr = lite_fabric_rtargs[1];
@@ -229,6 +230,7 @@ inline tt::tt_metal::Program create_lite_fabric_program(
         lite_fabric_config.primary_eth_core_y = (uint32_t)primary_eth_core.y;
         lite_fabric_config.init_state = static_cast<LiteFabricState>(initial_state);
         lite_fabric_config.multi_eth_cores_setup = config.init_all_eth_cores;
+        lite_fabric_config.on_mmio_chip = 1;
 
         tt::tt_metal::MetalContext::instance().get_cluster().write_core(
             (void*)&lite_fabric_config,

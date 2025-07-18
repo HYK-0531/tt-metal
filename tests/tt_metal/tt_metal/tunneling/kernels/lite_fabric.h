@@ -40,9 +40,13 @@ enum LiteFabricState : uint8_t {
 };
 
 struct host_lite_fabric_interface_t {
+    // for host writing fabric packets
     volatile uint8_t sender_host_write_index = 0;
     volatile uint8_t sender_fabric_read_index = 0;
-    volatile uint8_t pad[6] = {0};
+    // for host reading payloads
+    volatile uint8_t receiver_host_read_index = 0;
+    volatile uint8_t receiver_fabric_write_index = 0;
+    volatile uint8_t pad[4] = {0};
 } __attribute__((packed));
 
 // need to put this at a 16B aligned address
@@ -58,7 +62,8 @@ struct lite_fabric_config_t {
     volatile LiteFabricState init_state = LiteFabricState::UNKNOWN;
     volatile uint8_t multi_eth_cores_setup = 1;  // test mode only
     volatile LiteFabricState state = LiteFabricState::UNKNOWN;
-    volatile uint8_t pad0[3] = {0};
+    volatile uint8_t on_mmio_chip = 1;
+    volatile uint16_t pad0 = 0;
     volatile uint32_t local_neighbour_handshake = 0;  // this needs to be 16B aligned
     volatile uint32_t pad1[3] = {0};
     volatile uint32_t remote_neighbour_handshake = 0;  // this needs to be 16B aligned
@@ -91,8 +96,6 @@ FORCE_INLINE void do_init_and_handshake_sequence(uint32_t lite_fabric_config_add
     volatile tunneling::lite_fabric_config_t* lite_fabric_config =
         reinterpret_cast<volatile tunneling::lite_fabric_config_t*>(lite_fabric_config_addr);
 
-    DPRINT << "multi_eth_cores_setup " << (uint32_t)lite_fabric_config->multi_eth_cores_setup << ENDL();
-
     uint32_t launch_msg_addr = (uint32_t)&(((mailboxes_t*)MEM_AERISC_MAILBOX_BASE)->launch);
     constexpr uint32_t launch_and_go_msg_size_bytes =
         ((sizeof(launch_msg_t) * launch_msg_buffer_num_entries) + sizeof(go_msg_t) + 15) & ~0xF;
@@ -111,9 +114,6 @@ FORCE_INLINE void do_init_and_handshake_sequence(uint32_t lite_fabric_config_add
     uint32_t remote_neighbour_handshake_addr =
         lite_fabric_config_addr + offsetof(tunneling::lite_fabric_config_t, remote_neighbour_handshake);
 
-    DPRINT << "local_neighbour_handshake_addr: " << HEX() << local_neighbour_handshake_addr
-           << " remote_neighbour_handshake_addr: " << HEX() << remote_neighbour_handshake_addr << DEC() << ENDL();
-
     lite_fabric_config->remote_neighbour_handshake = 0xFEEDE145;
 
     // capture the initial state because it will be changed when sending it to neighbouring eths/subordinate eths
@@ -124,20 +124,23 @@ FORCE_INLINE void do_init_and_handshake_sequence(uint32_t lite_fabric_config_add
         switch (state) {
             case tunneling::LiteFabricState::MMIO_ETH_INIT_NEIGHBOUR: {
                 // first send the rt args and config to the remote core
+                rta_l1_base[4] = 0;  // clear whether it is on mmio chip
+
                 // clobber the initial state arg with the state that remote eth core should come up in
                 lite_fabric_config->init_state = lite_fabric_config->multi_eth_cores_setup
                                                      ? tunneling::LiteFabricState::NON_MMIO_ETH_INIT_LOCAL_ETHS
                                                      : tunneling::LiteFabricState::NEIGHBOUR_HANDSHAKE;
+                if (lite_fabric_config->multi_eth_cores_setup) {  // test only
+                    lite_fabric_config->on_mmio_chip = 0;
+                }
                 internal_::eth_send_packet<false>(
                     0,
                     lite_fabric_config_addr >> 4,
                     lite_fabric_config_addr >> 4,
                     sizeof(tunneling::lite_fabric_config_t) >> 4);
-                DPRINT << "Sent lite_fabric_config to " << HEX() << lite_fabric_config_addr << DEC() << ENDL();
 
                 internal_::eth_send_packet<false>(
                     0, rt_arg_base_addr >> 4, rt_arg_base_addr >> 4, 1024 >> 4);  // just send all rt args
-                DPRINT << "Sent runtime args to " << HEX() << rt_arg_base_addr << DEC() << ENDL();
 
                 // send the kernel binary
                 internal_::eth_send_packet<false>(
@@ -145,20 +148,15 @@ FORCE_INLINE void do_init_and_handshake_sequence(uint32_t lite_fabric_config_add
                     lite_fabric_config->binary_address >> 4,
                     lite_fabric_config->binary_address >> 4,
                     lite_fabric_config->binary_size_bytes >> 4);
-                DPRINT << "Sent binary to " << HEX() << lite_fabric_config->binary_address << DEC() << " size is "
-                       << lite_fabric_config->binary_size_bytes << ENDL();
 
                 // send launch and go message
                 internal_::eth_send_packet<false>(
                     0, launch_msg_addr >> 4, launch_msg_addr >> 4, launch_and_go_msg_size_bytes >> 4);
-                DPRINT << "Sent launch/go msg to 0x" << HEX() << launch_msg_addr << DEC() << " of size "
-                       << launch_and_go_msg_size_bytes << " go msg addr " << HEX()
-                       << (launch_msg_addr + (sizeof(launch_msg_t) * launch_msg_buffer_num_entries)) << DEC() << ENDL();
 
                 state = lite_fabric_config->multi_eth_cores_setup ? tunneling::LiteFabricState::LOCAL_HANDSHAKE
                                                                   : tunneling::LiteFabricState::NEIGHBOUR_HANDSHAKE;
+
                 lite_fabric_config->state = state;
-                DPRINT << "going to next state: " << (uint32_t)state << ENDL();
                 break;
             }
             case tunneling::LiteFabricState::LOCAL_HANDSHAKE: {
@@ -169,10 +167,6 @@ FORCE_INLINE void do_init_and_handshake_sequence(uint32_t lite_fabric_config_add
                     lite_fabric_config_addr + offsetof(tunneling::lite_fabric_config_t, primary_local_handshake);
                 uint32_t subordinate_local_handshake_addr =
                     lite_fabric_config_addr + offsetof(tunneling::lite_fabric_config_t, subordinate_local_handshake);
-
-                DPRINT << "primary_local_handshake_addr: " << HEX() << primary_local_handshake_addr
-                       << " subordinate_local_handshake_addr: " << HEX() << subordinate_local_handshake_addr << DEC()
-                       << ENDL();
 
                 if (initial_state == tunneling::LiteFabricState::MMIO_ETH_INIT_NEIGHBOUR or
                     initial_state == tunneling::LiteFabricState::NON_MMIO_ETH_INIT_LOCAL_ETHS) {
@@ -216,6 +210,7 @@ FORCE_INLINE void do_init_and_handshake_sequence(uint32_t lite_fabric_config_add
                 lite_fabric_config->init_state = tunneling::LiteFabricState::LOCAL_HANDSHAKE;
                 lite_fabric_config->primary_local_handshake = 0;
                 lite_fabric_config->subordinate_local_handshake = 0;
+                lite_fabric_config->on_mmio_chip = 0;
 
                 if (lite_fabric_config->multi_eth_cores_setup) {
                     uint32_t remaining_cores = lite_fabric_config->eth_chans_mask;
@@ -257,7 +252,6 @@ FORCE_INLINE void do_init_and_handshake_sequence(uint32_t lite_fabric_config_add
                     0, remote_neighbour_handshake_addr >> 4, local_neighbour_handshake_addr >> 4, 16 >> 4);
 
                 if (lite_fabric_config->local_neighbour_handshake == 0xFEEDE145) {
-                    DPRINT << "done with handshaking" << ENDL();
                     state = tunneling::LiteFabricState::DONE_HANDSHAKE;
                 }
 
@@ -267,8 +261,9 @@ FORCE_INLINE void do_init_and_handshake_sequence(uint32_t lite_fabric_config_add
         }
     }
 
+    lite_fabric_config->init_state = initial_state;  // restore initial state
     lite_fabric_config->state = LiteFabricState::DONE_HANDSHAKE;
-    DPRINT << "done init" << ENDL();
+    // DPRINT << "Done init and handshake" << ENDL();
 }
 
 #endif

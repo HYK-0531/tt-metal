@@ -179,9 +179,9 @@ jobs:
         env:
           TRACY_NO_INVARIANT_CHECK: 1
         run: |
+          export DEVICE_PERF_REPORT_FILENAME=Models_Device_Perf_$(date +%Y_%m_%d).csv
           echo "device_perf_report_filename=$DEVICE_PERF_REPORT_FILENAME" >> "$GITHUB_OUTPUT"
           ${{ matrix.test-info.command }}
-          export DEVICE_PERF_REPORT_FILENAME=Models_Device_Perf_$(date +%Y_%m_%d).csv
           python3 models/perf/merge_device_perf_results.py $DEVICE_PERF_REPORT_FILENAME
 
       - name: Check device perf report exists

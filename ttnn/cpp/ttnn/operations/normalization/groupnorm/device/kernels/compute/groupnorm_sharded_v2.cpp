@@ -144,28 +144,52 @@ void MAIN {
 #else
     constexpr uint32_t cb_in_rm = cb_in0;
 #endif
+    // per_core_MN at a time
+    //     tilize_init(cb_in_rm, per_core_MN, cb_in);
+    // #ifdef READER_REPACK
+    //     cb_wait_front(cb_in_rm, per_core_MN);
+    // #endif
+    //     cb_reserve_back(cb_in, per_core_MN);
+    //     tilize_block(cb_in_rm, per_core_MN, cb_in);
+    //     cb_pop_front(cb_in_rm, per_core_MN);
+    //     cb_push_back(cb_in, per_core_MN);
+    //
+    //     cb_wait_front(cb_in, per_core_MN);
+    //     tilize_uninit(cb_in_rm, cb_in);
+
+    // Per_core_N at a time
     tilize_init(cb_in_rm, per_core_N, cb_in);
     for (uint32_t m = 0; m < per_core_M; ++m) {
 #ifdef READER_REPACK
-        cb_wait_front(cb_in_rm, per_core_N);
+        cb_wait_front(cb_in_rm, per_core_MN);
 #endif
-        for (uint32_t i = 0; i < per_core_MN; i++) {
-            UNPACK(tt::compute::common::print_full_tile(cb_in_rm, i, true));
-        }
         cb_reserve_back(cb_in, per_core_N);
         tilize_block(cb_in_rm, per_core_N, cb_in);
         cb_pop_front(cb_in_rm, per_core_N);
         cb_push_back(cb_in, per_core_N);
     }
-    tilize_uninit(cb_in_rm, cb_in);
     cb_wait_front(cb_in, per_core_MN);
-    // UNPACK(DPRINT << "cb_in_rm: "<<cb_in_rm << ENDL());
-    // UNPACK(DPRINT << "cb_in0: "<<cb_in0 << ENDL());
-    // UNPACK(DPRINT << "per_core_N: "<<per_core_N << ENDL());
-    // UNPACK(DPRINT << "per_core_NM: "<<per_core_MN << ENDL());
-    // for(uint32_t i = 0; i < per_core_MN; i++){
-    //     UNPACK(tt::compute::common::print_full_tile(cb_in, i, true));
-    // }
+    tilize_uninit(cb_in_rm, cb_in);
+
+    // One at a time
+    //     tilize_init(cb_in_rm, 1, cb_in);
+    //     for (uint32_t m = 0; m < per_core_M; ++m) {
+    // #ifdef READER_REPACK
+    //         cb_wait_front(cb_in_rm, per_core_MN);
+    // #endif
+    //         for (uint32_t n = 0; n < per_core_N; ++n) {
+    //             cb_reserve_back(cb_in, 1);
+    //             tilize_block(cb_in_rm, 1, cb_in);
+    //             cb_pop_front(cb_in_rm, 1);
+    //             cb_push_back(cb_in, 1);
+    //
+    //         }
+    //     }
+    cb_wait_front(cb_in, per_core_MN);
+    tilize_uninit(cb_in_rm, cb_in);
+    for (uint32_t i = 0; i < per_core_MN; i++) {
+        UNPACK(tt::compute::common::print_full_tile(cb_in, i, true));
+    }
 #else
     binary_op_init_common(cb_in0, cb_input_mask, cb_x);
 #endif

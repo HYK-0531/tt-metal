@@ -154,6 +154,7 @@ __attribute__((optimize("jump-tables"))) FORCE_INLINE void service_fabric_reques
     volatile tunneling::lite_fabric_config_t& lite_fabric_config,
     tt::tt_fabric::EthChannelBuffer<tunneling::SENDER_NUM_BUFFERS_ARRAY[0]>& sender_buffer_channel,
     bool on_mmio_chip) {
+    invalidate_l1_cache();
     const auto& header = *packet_start;
     uint32_t payload_start_address = reinterpret_cast<size_t>(packet_start) + sizeof(PACKET_HEADER_TYPE);
 
@@ -166,7 +167,11 @@ __attribute__((optimize("jump-tables"))) FORCE_INLINE void service_fabric_reques
             const auto dest_address = header.command_fields.unicast_write.noc_address;
             DPRINT << "R: NOC_UNICAST_WRITE dest_address: " << HEX() << dest_address
                    << " payload start address: " << HEX() << payload_start_address << DEC() << ENDL();
-            noc_async_write_one_packet_with_trid<false, false>(
+
+            // noc_async_write(payload_start_address, dest_address, payload_size_bytes,
+            // tt::tt_fabric::edm_to_local_chip_noc); noc_async_write_barrier(tt::tt_fabric::edm_to_local_chip_noc);
+
+            noc_async_write_one_packet_with_trid<true, false>(
                 payload_start_address,
                 dest_address,
                 payload_size_bytes,
@@ -194,6 +199,15 @@ __attribute__((optimize("jump-tables"))) FORCE_INLINE void service_fabric_reques
                 noc_async_read(
                     src_address, payload_dst_address, payload_size_bytes, tt::tt_fabric::edm_to_local_chip_noc);
                 noc_async_read_barrier(tt::tt_fabric::edm_to_local_chip_noc);
+
+                // weird ... we read and then write back immediately but first 32B of payload are incorrect (values from
+                // the previous run)
+                noc_async_write(
+                    dst_address,
+                    src_address + payload_size_bytes,
+                    payload_size_bytes,
+                    tt::tt_fabric::edm_to_local_chip_noc);
+                noc_async_write_barrier(tt::tt_fabric::edm_to_local_chip_noc);
 
                 // update the write pointer in the sender channel... not really host interface but allows next iteration
                 // to run

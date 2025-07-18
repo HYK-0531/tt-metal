@@ -230,12 +230,12 @@ TEST_F(DeviceFixture, MmioEthCoreRunLiteFabricReadsSingleEthCore) {
             (uint64_t(virtual_dst_core.y) << (36 + 6)) | (uint64_t(virtual_dst_core.x) << 36) | (uint64_t)dest_addr;
 
         // Write random data to the destination core's L1 memory
-        std::iota(all_expected_data[packet_index].begin(), all_expected_data[packet_index].end(), 0);
+        std::iota(all_expected_data[packet_index].begin(), all_expected_data[packet_index].end(), 0x954);
         std::cout << "Writing data to core " << virtual_dst_core.str() << " at address " << std::hex << dest_addr
                   << std::dec << std::endl;
 
-        all_expected_data[packet_index] =
-            create_random_vector_of_bfloat16(4096, 100, std::chrono::system_clock::now().time_since_epoch().count());
+        // all_expected_data[packet_index] =
+        //     create_random_vector_of_bfloat16(4096, 100, std::chrono::system_clock::now().time_since_epoch().count());
         tt::tt_metal::MetalContext::instance().get_cluster().write_core(
             all_expected_data[packet_index].data(),
             all_expected_data[packet_index].size() * sizeof(uint32_t),

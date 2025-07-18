@@ -29,83 +29,60 @@ def inverse_sigmoid(x, eps=1e-5):
     return torch.log(x1 / x2)
 
 
-def multi_scale_deformable_attn_pytorch(value, value_spatial_shapes, sampling_locations, attention_weights):
-    """CPU version of multi-scale deformable attention.
+def multi_scale_deformable_attn_pytorch(
+    value: torch.Tensor,
+    value_spatial_shapes: torch.Tensor,
+    level_start_index: torch.Tensor,
+    sampling_locations: torch.Tensor,
+    attention_weights: torch.Tensor,
+    im2col_step: torch.Tensor,
+) -> torch.Tensor:
+    bs, num_keys, num_heads, head_dim = value.shape
+    num_levels = value_spatial_shapes.shape[0]
+    num_queries = sampling_locations.shape[1]
+    num_points = sampling_locations.shape[4]
 
-    Args:
-        value (Tensor): The value has shape
-            (bs, num_keys, mum_heads, embed_dims//num_heads)
-        value_spatial_shapes (Tensor): Spatial shape of
-            each feature map, has shape (num_levels, 2),
-            last dimension 2 represent (h, w)
-        sampling_locations (Tensor): The location of sampling points,
-            has shape
-            (bs ,num_queries, num_heads, num_levels, num_points, 2),
-            the last dimension 2 represent (x, y).
-        attention_weights (Tensor): The weight of sampling points used
-            when calculate the attention, has shape
-            (bs ,num_queries, num_heads, num_levels, num_points),
+    # Split value into a list of tensors for each level
+    value_list = []
+    start = 0
+    for lvl in range(num_levels):
+        h_l, w_l = value_spatial_shapes[lvl]
+        h_l = int(h_l.item())
+        w_l = int(w_l.item())
+        len_l = h_l * w_l
+        value_l = value[:, start : start + len_l, :, :]
+        value_list.append(value_l)
+        start += len_l
 
-    Returns:
-        Tensor: has shape (bs, num_queries, embed_dims)
-    """
+    # Normalize sampling locations to [-1, 1]
+    sampling_grids = []
+    for lvl in range(num_levels):
+        h_l, w_l = value_spatial_shapes[lvl]
+        h_l = int(h_l.item())
+        w_l = int(w_l.item())
+        grid = sampling_locations[:, :, :, lvl, :, :]
+        grid = grid.clone()
+        grid[..., 0] = grid[..., 0] / w_l * 2 - 1
+        grid[..., 1] = grid[..., 1] / h_l * 2 - 1
+        sampling_grids.append(grid)
 
-    bs, _, num_heads, embed_dims = value.shape
-    _, num_queries, num_heads, num_levels, num_points, _ = sampling_locations.shape
-    value_list = value.split([H_ * W_ for H_, W_ in value_spatial_shapes], dim=1)
-    sampling_grids = 2 * sampling_locations - 1
-    sampling_value_list = []
-    for level, (H_, W_) in enumerate(value_spatial_shapes):
-        # bs, H_*W_, num_heads, embed_dims ->
-        # bs, H_*W_, num_heads*embed_dims ->
-        # bs, num_heads*embed_dims, H_*W_ ->
-        # bs*num_heads, embed_dims, H_, W_
-        value_l_ = value_list[level].flatten(2).transpose(1, 2).reshape(bs * num_heads, embed_dims, H_, W_)
-        # bs, num_queries, num_heads, num_points, 2 ->
-        # bs, num_heads, num_queries, num_points, 2 ->
-        # bs*num_heads, num_queries, num_points, 2
-        sampling_grid_l_ = sampling_grids[:, :, :, level].transpose(1, 2).flatten(0, 1)
-        # bs*num_heads, embed_dims, num_queries, num_points
-        sampling_value_l_ = F.grid_sample(
-            value_l_, sampling_grid_l_, mode="bilinear", padding_mode="zeros", align_corners=False
-        )
-        sampling_value_list.append(sampling_value_l_)
-    # (bs, num_queries, num_heads, num_levels, num_points) ->
-    # (bs, num_heads, num_queries, num_levels, num_points) ->
-    # (bs, num_heads, 1, num_queries, num_levels*num_points)
-    attention_weights = attention_weights.transpose(1, 2).reshape(
-        bs * num_heads, 1, num_queries, num_levels * num_points
-    )
-    output = (
-        (torch.stack(sampling_value_list, dim=-2).flatten(-2) * attention_weights)
-        .sum(-1)
-        .view(bs, num_heads * embed_dims, num_queries)
-    )
-    return output.transpose(1, 2).contiguous()
+    # Perform sampling and attention
+    output = torch.zeros(bs, num_queries, num_heads, head_dim, device=value.device)
+    for lvl in range(num_levels):
+        h_l, w_l = value_spatial_shapes[lvl]
+        h_l = int(h_l.item())
+        w_l = int(w_l.item())
+        value_l = value_list[lvl].permute(0, 2, 3, 1).reshape(bs * num_heads, head_dim, h_l, w_l)
+        grid = sampling_grids[lvl].permute(0, 2, 1, 3, 4).reshape(bs * num_heads, num_queries * num_points, 1, 2)
+        sampled = F.grid_sample(value_l, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
+        sampled = sampled.view(bs, num_heads, head_dim, num_queries, num_points).permute(0, 3, 1, 4, 2)
+        attn = attention_weights[:, :, :, lvl, :].unsqueeze(-1)
+        output += (sampled * attn).sum(-2)
+
+    return output.view(bs, num_queries, num_heads * head_dim)
 
 
 class MultiheadAttention(nn.Module):
-    """A wrapper for ``torch.nn.MultiheadAttention``.
-
-    This module implements MultiheadAttention with identity connection,
-    and positional encoding  is also passed as input.
-
-    Args:
-        embed_dims (int): The embedding dimension.
-        num_heads (int): Parallel attention heads.
-        attn_drop (float): A Dropout layer on attn_output_weights.
-            Default: 0.0.
-        proj_drop (float): A Dropout layer after `nn.MultiheadAttention`.
-            Default: 0.0.
-        dropout_layer (obj:`ConfigDict`): The dropout_layer used
-            when adding the shortcut.
-        init_cfg (obj:`mmcv.ConfigDict`): The Config for initialization.
-            Default: None.
-        batch_first (bool): When it is True,  Key, Query and Value are shape of
-            (batch, n, embed_dim), otherwise (n, batch, embed_dim).
-             Default to False.
-    """
-
     def __init__(
         self,
         embed_dims,
@@ -149,39 +126,7 @@ class MultiheadAttention(nn.Module):
         key_padding_mask=None,
         **kwargs,
     ):
-        """Forward function for `MultiheadAttention`.
-
-        **kwargs allow passing a more general data flow when combining
-        with other operations in `transformerlayer`.
-
-        Args:
-            query (Tensor): The input query with shape [num_queries, bs,
-                embed_dims] if self.batch_first is False, else
-                [bs, num_queries embed_dims].
-            key (Tensor): The key tensor with shape [num_keys, bs,
-                embed_dims] if self.batch_first is False, else
-                [bs, num_keys, embed_dims] .
-                If None, the ``query`` will be used. Defaults to None.
-            value (Tensor): The value tensor with same shape as `key`.
-                Same in `nn.MultiheadAttention.forward`. Defaults to None.
-                If None, the `key` will be used.
-            identity (Tensor): This tensor, with the same shape as x,
-                will be used for the identity link.
-                If None, `x` will be used. Defaults to None.
-            query_pos (Tensor): The positional encoding for query, with
-                the same shape as `x`. If not None, it will
-                be added to `x` before forward function. Defaults to None.
-            key_pos (Tensor): The positional encoding for `key`, with the
-                same shape as `key`. Defaults to None. If not None, it will
-                be added to `key` before forward function. If None, and
-                `query_pos` has the same shape as `key`, then `query_pos`
-                will be used for `key_pos`. Defaults to None.
-            attn_mask (Tensor): ByteTensor mask with shape [num_queries,
-                num_keys]. Same in `nn.MultiheadAttention.forward`.
-                Defaults to None.
-            key_padding_mask (Tensor): ByteTensor with shape [bs, num_keys].
-                Defaults to None.
-
+        """
         Returns:
             Tensor: forwarded results with shape
                 [num_queries, bs, embed_dims]
@@ -410,7 +355,9 @@ class CustomMSDeformableAttention(nn.Module):
                 f"Last dim of reference_points must be" f" 2 or 4, but get {reference_points.shape[-1]} instead."
             )
 
-        output = multi_scale_deformable_attn_pytorch(value, spatial_shapes, sampling_locations, attention_weights)
+        output = multi_scale_deformable_attn_pytorch(
+            value, spatial_shapes, level_start_index, sampling_locations, attention_weights, self.im2col_step
+        )
 
         output = self.output_proj(output)
 
@@ -419,6 +366,50 @@ class CustomMSDeformableAttention(nn.Module):
             output = output.permute(1, 0, 2)
 
         return self.dropout(output) + identity
+
+
+# #Added be me
+# class DetrTransformerDecoderLayer(nn.Module):
+#     def __init__(self, embed_dim, num_heads):
+#         super(DetrTransformerDecoderLayer, self).__init__()
+#         self.attentions = ModuleList([MultiheadAttention(embed_dim, num_heads), CustomMSDeformableAttention()])
+#         self.ffns = ModuleList([FFN(embed_dim)])
+#         self.norms = ModuleList([LayerNorm(embed_dim) for _ in range(3)])
+
+#     def forward(
+#         self,
+#         query,
+#         key=None,
+#         value=None,
+#         query_pos=None,
+#         reference_points=None,
+#         spatial_shapes=None,
+#         reg_branches=None,
+#         key_padding_mask=None,
+#     ):
+#         identity = query
+
+#         query = self.attentions[0](
+#             query, key=query, value=query, query_pos=query_pos, key_pos=query_pos, key_padding_mask=key_padding_mask
+#         )
+#         query = self.norms[0](query)
+
+#         query = self.attentions[1](
+#             query,
+#             key=key,
+#             value=value,
+#             query_pos=query_pos,
+#             key_pos=query_pos,
+#             key_padding_mask=key_padding_mask,
+#             spatial_shapes=spatial_shapes,
+#             reference_points=reference_points,
+#         )
+#         query = self.norms[1](query)
+
+#         query = self.ffns[0](query)
+#         query = self.norms[2](query)
+
+#         return query  # residual connection added back
 
 
 class DetrTransformerDecoderLayer(nn.Module):

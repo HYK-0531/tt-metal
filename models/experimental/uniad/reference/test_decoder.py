@@ -64,5 +64,5 @@ def test_uniad_decoder(
 
     from tests.ttnn.utils_for_testing import assert_with_pcc
 
-    passing, pcc = assert_with_pcc(gt_intermediate, output1, 0.99)
-    passing, pcc = assert_with_pcc(gt_intermediate_reference, output2, 0.99)
+    passing, pcc = assert_with_pcc(gt_intermediate, output1, 0.99999999)  # 0.999999999999979
+    passing, pcc = assert_with_pcc(gt_intermediate_reference, output2, 0.9999999)  # 0.9999999999999882

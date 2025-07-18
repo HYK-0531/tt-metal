@@ -34,7 +34,7 @@ jobs:
       LD_LIBRARY_PATH: ${{ github.workspace }}/build/lib
     runs-on:
       - ${{ matrix.test-group.runner-label }}
-      - in-service
+      - ${{ inputs.extra-tag }}
       - ${{ (matrix.test-group.runner-label == 'N300' && matrix.test-group.performance && 'bare-metal') || 'cloud-virtual-machine' }}
       - ${{ (matrix.test-group.runner-label == 'N300' && matrix.test-group.performance && 'pipeline-perf') || 'cloud-virtual-machine' }}
     steps:

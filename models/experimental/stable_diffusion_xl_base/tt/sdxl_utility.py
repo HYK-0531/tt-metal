@@ -4,6 +4,12 @@
 
 import torch
 import ttnn
+from enum import Enum
+
+
+class SdxlParallelism(Enum):
+    NoParallelism = 0
+    TP2 = 1
 
 
 def to_channel_last_ttnn(torch_tensor, dtype, device, memory_config, layout):
@@ -65,7 +71,7 @@ def prepare_conv_params(
     fp32_dest_acc_en=False,
     math_fidelity=ttnn.MathFidelity.HiFi2,
     packer_l1_acc=False,
-    weight_split_dim=-1,
+    weight_split_dim=-1,  # -1 means no split, 1 means split along out channel dimension, 2 means split along in channel dimension
 ):
     compute_config = ttnn.init_device_compute_kernel_config(
         device.arch(),
@@ -75,6 +81,8 @@ def prepare_conv_params(
     )
 
     dtype = ttnn.float32 if dtype == ttnn.bfloat8_b else dtype
+    # tt_weights = ttnn.from_torch(weights, dtype, device=device)
+    # tt_bias = ttnn.from_torch(bias, dtype, device=device) if bias is not None else None
     if weight_split_dim == -1:
         tt_weights = ttnn.from_torch(weights, dtype, mesh_mapper=ttnn.ReplicateTensorToMesh(device))
     elif weight_split_dim == 1:  # split weights along the out channel dimension
@@ -87,10 +95,8 @@ def prepare_conv_params(
             tt_bias = ttnn.from_torch(bias, dtype, mesh_mapper=ttnn.ReplicateTensorToMesh(device))
         elif weight_split_dim == 1:
             tt_bias = ttnn.from_torch(bias, dtype, mesh_mapper=ttnn.ttnn.ShardTensorToMesh(device, dim=-1))
-        # elif weight_split_dim == 2:
-        #     tt_bias = ttnn.from_torch(
-        #         bias, dtype, mesh_mapper=ttnn.ttnn.ShardTensorToMesh(device, dim=1)
-        #     )
+        elif weight_split_dim == 2:
+            tt_bias = ttnn.from_torch(bias, dtype, mesh_mapper=ttnn.ttnn.ShardTensorToMesh(device, dim=1))
 
     conv_params = {
         "input_channels": tt_weights.shape[1],
@@ -110,6 +116,7 @@ def prepare_split_conv_params(
     split_out,
     fp32_dest_acc_en=False,
     math_fidelity=ttnn.MathFidelity.HiFi2,
+    weight_split_dim=-1,  # -1 means no split, 0 means split along out channel dimension, 1 means split along in channel dimension
 ):
     compute_config = ttnn.init_device_compute_kernel_config(
         device.arch(),

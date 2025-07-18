@@ -12,6 +12,7 @@ from diffusers import UNet2DConditionModel
 from tests.ttnn.utils_for_testing import assert_with_pcc
 from models.utility_functions import torch_random
 from models.experimental.stable_diffusion_xl_base.tests.test_common import SDXL_L1_SMALL_SIZE
+from models.experimental.stable_diffusion_xl_base.tt.sdxl_utility import SdxlParallelism
 
 
 @pytest.mark.parametrize(
@@ -32,7 +33,7 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import SDXL_
     ],
 )
 @pytest.mark.parametrize("device_params", [{"l1_small_size": SDXL_L1_SMALL_SIZE}], indirect=True)
-@pytest.mark.parametrize("mesh_device", [1, 2], ids=["one_chip", "two_chips"], indirect=True)
+@pytest.mark.parametrize("mesh_device", [1, 2], ids=["no_parallelism", "tp2"], indirect=True)
 def test_resnetblock2d(
     mesh_device,
     temb_shape,
@@ -65,6 +66,11 @@ def test_resnetblock2d(
     torch_temb_tensor = torch_random(temb_shape, -0.1, 0.1, dtype=torch.float32)
     torch_output_tensor = torch_resnet(torch_input_tensor, torch_temb_tensor)
 
+    if device.get_num_devices() == 1:
+        paralellism_strategy = SdxlParallelism.NoParallelism
+    elif device.get_num_devices() == 2:
+        paralellism_strategy = SdxlParallelism.TP2
+
     tt_resnet = TtResnetBlock2D(
         device,
         state_dict,
@@ -72,6 +78,7 @@ def test_resnetblock2d(
         model_config,
         conv_shortcut,
         split_in,
+        parallelism_strategy=paralellism_strategy,
     )
 
     ttnn_input_tensor = ttnn.from_torch(
@@ -94,11 +101,11 @@ def test_resnetblock2d(
         device=device,
         layout=ttnn.TILE_LAYOUT,
         memory_config=ttnn.DRAM_MEMORY_CONFIG,
+        mesh_mapper=ttnn.ReplicateTensorToMesh(device),
     )
 
     ttnn_output_tensor, output_shape = tt_resnet.forward(ttnn_input_tensor, ttnn_temb_tensor, [B, C, H, W])
     print(f"ttnn output shape: {ttnn_output_tensor.shape}")
-    # tt_resnet.forward(ttnn_input_tensor, ttnn_temb_tensor, [B, C, H, W])
 
     ttnn.synchronize_device(device)
 

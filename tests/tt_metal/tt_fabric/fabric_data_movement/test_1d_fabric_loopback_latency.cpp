@@ -95,6 +95,28 @@ static bool is_seminc_only_mode(const LatencyTestWriterSpecs& writer_specs) {
     return false;
 }
 
+static std::shared_ptr<tt::tt_metal::distributed::MeshBuffer> allocate_mesh_buffer(
+    tt::tt_metal::distributed::MeshDevice* mesh_device, size_t size_bytes) {
+    tt::tt_metal::distributed::ReplicatedBufferConfig global_buffer_config = {.size = size_bytes * 1000};
+    tt::tt_metal::distributed::DeviceLocalBufferConfig per_device_buffer_config{
+        .page_size = size_bytes, .buffer_type = BufferType::L1};
+    return tt::tt_metal::distributed::MeshBuffer::create(global_buffer_config, per_device_buffer_config, mesh_device);
+};
+
+static auto get_largest_write_size(const LatencyTestWriterSpecs& writer_specs) {
+    size_t largest_write_size = 16;
+    for (const auto& spec : writer_specs) {
+        if (spec.has_value()) {
+            if (std::holds_alternative<LatencyPacketTestWriterSpec>(spec->spec)) {
+                largest_write_size = std::max(largest_write_size, spec->message_size_bytes);
+            } else if (std::holds_alternative<DatapathBusyDataWriterSpec>(spec->spec)) {
+                largest_write_size = std::max(largest_write_size, spec->message_size_bytes);
+            }
+        }
+    }
+    return largest_write_size;
+}
+
 template <typename DEVICE_FIXTURE_T>
 inline void RunPersistent1dFabricLatencyTest(
     // Args for the measured writer
@@ -118,19 +140,54 @@ inline void RunPersistent1dFabricLatencyTest(
 
     DEVICE_FIXTURE_T test_fixture;
 
-    std::vector<IDevice*> devices_ = get_test_devices<DEVICE_FIXTURE_T>(test_fixture, line_size, is_6u);
-    std::vector<IDevice*> devices;
+    std::vector<IDevice*> devices = get_test_devices<DEVICE_FIXTURE_T>(test_fixture, line_size, is_6u);
     std::vector<IDevice*> devices_with_workers;
     devices.reserve(line_size);
     for (size_t i = 0; i < line_size; i++) {
-        devices.push_back(devices_.at(i));
-        TT_FATAL(devices_.at(i) != nullptr, "Device at index {} is null", i);
         if (writer_specs.size() > i && writer_specs.at(i).has_value()) {
-            log_info(tt::LogTest, "index: {} has worker", i);
-            devices_with_workers.push_back(devices_.at(i));
+            devices_with_workers.push_back(devices.at(i));
         }
     }
-    devices_with_workers.push_back(devices_.at(line_size - 1));
+    if (!is_ring) {
+        // add a program slot for the ack responder
+        devices_with_workers.push_back(devices.at(line_size - 1));
+    }
+
+    auto mesh_coords = {
+        MeshCoordinate(0, 0),
+        MeshCoordinate(0, 1),
+        MeshCoordinate(0, 2),
+        MeshCoordinate(0, 3),
+        MeshCoordinate(1, 3),
+        MeshCoordinate(1, 2),
+        MeshCoordinate(1, 1),
+        MeshCoordinate(1, 0)};
+    for (const auto& coord : mesh_coords) {
+        auto d = test_fixture.mesh_device_->get_device(coord);
+        log_info(
+            tt::LogTest,
+            "coord: [{}, {}] -> device->id(): {}, fabric_node_id: {}",
+            coord.coords()[0],
+            coord.coords()[1],
+            d->id(),
+            tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(d->id()));
+    }
+
+    // Find latency writer specs and location
+    std::optional<size_t> latency_writer_index_opt;
+    for (size_t i = 0; i < writer_specs.size(); i++) {
+        if (writer_specs[i].has_value() && std::holds_alternative<LatencyPacketTestWriterSpec>(writer_specs[i]->spec)) {
+            latency_writer_index_opt = i;
+            break;
+        }
+    }
+    TT_FATAL(latency_writer_index_opt.has_value(), "Latency writer not found");
+    size_t latency_writer_index = latency_writer_index_opt.value();
+
+    tt::tt_metal::DeviceAddr ping_message_received_semaphore_address = get_new_global_semaphore_address(test_fixture);
+    tt::tt_metal::DeviceAddr congestion_writers_ready_semaphore_address =
+        get_new_global_semaphore_address(test_fixture);
+    tt::tt_metal::DeviceAddr worker_done_sem_addr = get_new_global_semaphore_address(test_fixture);
 
     // Temporary until we move this to be under tt_metal and migrate to device init fabric
     // OR packet header management is removed from user space, whichever comes first
@@ -140,39 +197,32 @@ inline void RunPersistent1dFabricLatencyTest(
     static constexpr size_t packet_header_cb_size_in_headers = 4;
     std::vector<size_t> dest_buffer_addresses(writer_specs.size(), 0);
 
-    for (size_t i = 0; i < writer_specs.size(); i++) {
-        if (writer_specs.at(i).has_value()) {
-            const auto& spec = writer_specs.at(i).value();
-            tt::stl::SmallVector<std::shared_ptr<Buffer>> device_dest_buffers;
-            auto message_size_bytes = spec.message_size_bytes;
-            if (message_size_bytes == 0) {
-                // just allocate some dummy space - technically we don't need to allocate anything
-                // but this keeps things simpler and it's a few bytes in a test
-                message_size_bytes = 16;
-            }
-            device_dest_buffers.reserve(line_size);
-            for (auto* d : devices) {
-                device_dest_buffers.push_back(
-                    CreateBuffer(InterleavedBufferConfig{d, message_size_bytes, message_size_bytes, BufferType::L1}));
-            }
-            auto address = device_dest_buffers[0]->address();
-            TT_FATAL(
-                std::all_of(
-                    device_dest_buffers.begin(),
-                    device_dest_buffers.end(),
-                    [address](const auto& buffer) { return buffer->address() == address; }),
-                "All destination buffers must have the same address");
-            dest_buffer_addresses.at(i) = address;
-            TT_FATAL(address != 0, "address uninitialized");
-        }
-    }
+    auto largest_write_size_bytes = get_largest_write_size(writer_specs);
+    TT_FATAL(largest_write_size_bytes > 0, "Largest write size is 0, invalid test configuration");
+
+    const auto writer_message_size_bytes = writer_specs.at(latency_writer_index)->message_size_bytes;
+    std::shared_ptr<tt::tt_metal::distributed::MeshBuffer> latency_writer_buffer =
+        allocate_mesh_buffer(test_fixture.mesh_device_.get(), largest_write_size_bytes);
+    auto latency_writer_buffer_address = latency_writer_buffer->address();
+
+    std::shared_ptr<tt::tt_metal::distributed::MeshBuffer> largest_write_buffer =
+        allocate_mesh_buffer(test_fixture.mesh_device_.get(), largest_write_size_bytes);
+    auto congestion_writer_buffer_address = largest_write_buffer->address();
+    TT_FATAL(
+        latency_writer_buffer_address != congestion_writer_buffer_address,
+        "Latency and congestion writer buffers must have different addresses");
+    TT_FATAL(
+        latency_writer_buffer_address != ping_message_received_semaphore_address,
+        "Latency and ping message received semaphore must have different addresses");
+    TT_FATAL(
+        latency_writer_buffer_address != congestion_writers_ready_semaphore_address,
+        "Latency and congestion writers ready semaphore must have different addresses");
+    TT_FATAL(
+        latency_writer_buffer_address != worker_done_sem_addr,
+        "Latency and worker done semaphore must have different addresses");
+
     static constexpr tt::DataFormat cb_df = tt::DataFormat::Bfp8;
     // Get the inner 4 device ring on a WH T3K device so that we can use both links for all devices
-
-    tt::tt_metal::DeviceAddr ping_message_received_semaphore_address = get_new_global_semaphore_address(test_fixture);
-    tt::tt_metal::DeviceAddr congestion_writers_ready_semaphore_address =
-        get_new_global_semaphore_address(test_fixture);
-    tt::tt_metal::DeviceAddr worker_done_sem_addr = get_new_global_semaphore_address(test_fixture);
 
     // Other boiler plate setup
     CoreRangeSet worker_cores = CoreRangeSet(CoreRange(CoreCoord(0, 0), CoreCoord(num_links - 1, 0)));
@@ -199,17 +249,6 @@ inline void RunPersistent1dFabricLatencyTest(
         }
         return upstream_congestion_writer;
     };
-
-    // Find latency writer specs and location
-    std::optional<size_t> latency_writer_index_opt;
-    for (size_t i = 0; i < writer_specs.size(); i++) {
-        if (writer_specs[i].has_value() && std::holds_alternative<LatencyPacketTestWriterSpec>(writer_specs[i]->spec)) {
-            latency_writer_index_opt = i;
-            break;
-        }
-    }
-    TT_FATAL(latency_writer_index_opt.has_value(), "Latency writer not found");
-    size_t latency_writer_index = latency_writer_index_opt.value();
 
     std::vector<KernelHandle> worker_kernel_ids;
     std::vector<size_t> per_device_global_sem_addr_rt_arg;
@@ -253,11 +292,6 @@ inline void RunPersistent1dFabricLatencyTest(
 
         bool is_latency_packet_sender = std::holds_alternative<LatencyPacketTestWriterSpec>(writer_specs[i]->spec);
         bool is_datapath_busy_sender = std::holds_alternative<DatapathBusyDataWriterSpec>(writer_specs[i]->spec);
-        if (is_latency_packet_sender) {
-            log_info(tt::LogTest, "index: {} has latency packet sender", i);
-        } else if (is_datapath_busy_sender) {
-            log_info(tt::LogTest, "index: {} has datapath busy sender", i);
-        }
 
         IDevice* backward_device = i == 0 ? is_ring ? devices.at(line_size - 1) : nullptr : devices.at(i - 1);
         IDevice* forward_device = i == line_size - 1 ? is_ring ? devices.at(0) : nullptr : devices.at(i + 1);
@@ -285,7 +319,6 @@ inline void RunPersistent1dFabricLatencyTest(
             bool payloads_are_mcast = false;
             worker_ct_args = {!sem_inc_only && enable_fused_payload_with_sync, payloads_are_mcast, sem_inc_only};
         } else {
-            log_info(tt::LogTest, "adding datapath busy writer");
             const auto& datapath_spec = std::get<DatapathBusyDataWriterSpec>(writer_specs[i]->spec);
             worker_ct_args.push_back(datapath_spec.mcast);
         }
@@ -295,9 +328,9 @@ inline void RunPersistent1dFabricLatencyTest(
 
         // RT ARGS
         std::vector<uint32_t> rt_args = {};
-        size_t dest_bank_addr = dest_buffer_addresses.at(i);
         size_t distance_to_responder = is_ring ? line_size : (line_size - 1 - line_index);
         if (is_latency_packet_sender) {
+            size_t dest_bank_addr = latency_writer_buffer_address;
             sender_buffer_address = dest_bank_addr;
             std::vector<size_t> downstream_writer_semaphore_addresses;
             std::vector<size_t> downstream_writer_noc_x_list;
@@ -362,6 +395,7 @@ inline void RunPersistent1dFabricLatencyTest(
                 [&rt_args](size_t hop_distance) { rt_args.push_back(hop_distance); });
 
         } else {
+            size_t dest_bank_addr = congestion_writer_buffer_address;
             const auto& datapath_spec = std::get<DatapathBusyDataWriterSpec>(writer_specs[i]->spec);
             rt_args = {
                 dest_bank_addr,
@@ -411,10 +445,12 @@ inline void RunPersistent1dFabricLatencyTest(
     // create the kernel for
     // "tests/tt_metal/tt_fabric/fabric_data_movement/kernels/1D_fabric_latency_test_ack_writer.cpp"
     if (!is_ring) {
+        auto my_device = devices[line_size - 1];
+        auto backward_device = devices[line_size - 2];
+        size_t num_hops_upstream_to_writer = line_size - 1 - latency_writer_index;
         auto& ack_writer_program = programs.back();
         auto& latency_writer_spec = writer_specs.at(latency_writer_index);
         const auto& packet_spec = std::get<LatencyPacketTestWriterSpec>(latency_writer_spec->spec);
-        size_t num_hops_upstream_to_writer = line_size - 1 - latency_writer_index;
         // reserve CB
         tt_metal::CircularBufferConfig cb_src0_config =
             tt_metal::CircularBufferConfig(
@@ -423,7 +459,7 @@ inline void RunPersistent1dFabricLatencyTest(
         CBHandle sender_workers_cb = CreateCircularBuffer(ack_writer_program, worker_cores, cb_src0_config);
         auto ct_args = std::vector<uint32_t>{enable_fused_payload_with_sync, sem_inc_only};
         auto rt_args = std::vector<uint32_t>{
-            sender_buffer_address.value(),
+            latency_writer_buffer_address,
             ping_message_received_semaphore_address,
             latency_writer_spec->message_size_bytes,
             packet_spec.burst_size_num_messages,
@@ -433,9 +469,9 @@ inline void RunPersistent1dFabricLatencyTest(
             num_hops_upstream_to_writer};
 
         build_connection_args(
-            devices[line_size - 1],
+            my_device,
             nullptr,
-            devices[line_size - 2],
+            backward_device,
             ack_writer_program,
             latency_writer_spec->worker_core_logical,
             true,
@@ -456,17 +492,7 @@ inline void RunPersistent1dFabricLatencyTest(
 
     log_info(tt::LogTest, "Waiting for Op finish on all devices");
     wait_for_worker_program_completion(devices_with_workers);
-    log_info(tt::LogTest, "Main op done");
 
-    log_info(tt::LogTest, "Waiting for teardown completion");
-    // for (IDevice* d : devices) {
-    //     tt_metal::Synchronize(d);
-    // }
-    // for (size_t i = 0; i < programs.size(); i++) {
-    //     auto d = devices_with_workers.at(i);
-    //     auto& program = programs.at(i);
-    //     tt_metal::detail::DumpDeviceProfileResults(d);
-    // }
     log_info(tt::LogTest, "Finished");
 }
 
@@ -581,5 +607,4 @@ int main(int argc, char** argv) {
         RunPersistent1dFabricLatencyTest<Fabric1DLineDeviceInitFixture>(
             writer_specs, line_size, enable_fused_payload_with_sync, topology);
     }
-    log_info(tt::LogTest, "Finished2");
 }

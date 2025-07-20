@@ -67,7 +67,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     bool enable_act_double_buffer,
     bool enable_weights_double_buffer,
     bool enable_split_reader,
-    bool enable_subblock_padding) {
+    bool enable_subblock_padding,
+    bool full_inner_dim) {
     tt::tt_metal::IDevice* device = a.device();
     TT_FATAL(a.layout() == Layout::ROW_MAJOR, "Conv activation should be in row major layout");
     TT_FATAL(a.memory_config().is_sharded(), "Conv activation must be sharded.");
@@ -143,9 +144,7 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     const bool block_sharded = a.memory_config().memory_layout() == TensorMemoryLayout::BLOCK_SHARDED;
     const bool height_sharded = a.memory_config().memory_layout() == TensorMemoryLayout::HEIGHT_SHARDED;
 
-    // Pass this trough conv2dconfig
-    constexpr bool bs_slice_inner_dim = true;
-    bool slice_inner_dim = height_sharded || bs_slice_inner_dim;
+    const bool slice_inner_dim = height_sharded || !full_inner_dim;
 
     uint32_t conv_act_c_blocks;
     uint32_t input_channels_padded;
@@ -1186,7 +1185,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
     bool enable_act_double_buffer,
     bool enable_weights_double_buffer,
     bool enable_split_reader,
-    bool enable_subblock_padding) {
+    bool enable_subblock_padding,
+    bool full_inner_dim) {
     tt::tt_metal::Program program = tt::tt_metal::CreateProgram();
 
     ttnn::operations::sliding_window::ParallelConfig parallel_config{
@@ -1246,7 +1246,8 @@ tt::tt_metal::operation::ProgramWithCallbacks multi_core_optimized_conv_sharded_
         enable_act_double_buffer,
         enable_weights_double_buffer,
         enable_split_reader,
-        enable_subblock_padding);
+        enable_subblock_padding,
+        full_inner_dim);
 }
 }  // namespace conv2d
 

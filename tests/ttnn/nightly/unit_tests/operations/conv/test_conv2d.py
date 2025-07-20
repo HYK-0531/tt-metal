@@ -208,6 +208,7 @@ def run_conv(
     enable_kernel_stride_folding=False,
     enable_act_double_buffer=False,
     enable_weights_double_buffer=False,
+    bs_full_inner_dim=False,
 ):
     if isinstance(device, ttnn.MeshDevice) and len(device.get_device_ids()) > 1:
         assert input_mesh_mapper is not None, "Expected mesh mapper for input tensor when running on multiple devices"
@@ -322,6 +323,7 @@ def run_conv(
         transpose_shards=transpose_shards,
         in_place=in_place,
         enable_kernel_stride_folding=enable_kernel_stride_folding,
+        full_inner_dim=bs_full_inner_dim,
     )
     compute_config = ttnn.init_device_compute_kernel_config(
         device.arch(),
@@ -777,6 +779,7 @@ def test_conv_activation(
         input_layout=ttnn.TILE_LAYOUT if output_dtype == ttnn.bfloat8_b else None,
         enable_act_double_buffer=enable_act_double_buffer,
         enable_weights_double_buffer=enable_weights_double_buffer,
+        bs_full_inner_dim=True,
     )
 
 

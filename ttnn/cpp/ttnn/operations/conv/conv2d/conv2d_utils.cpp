@@ -375,7 +375,8 @@ OptimizedConvBlockConfig determine_per_core_conv_block_config(
     uint32_t window_h,
     uint32_t window_w,
     bool fp32_accum,
-    bool split_reader_enabled) {
+    bool split_reader_enabled,
+    bool full_inner_dim) {
     if (act_block_h_override > 0) {
         TT_ASSERT(
             act_block_h_override % 32 == 0,
@@ -414,12 +415,10 @@ OptimizedConvBlockConfig determine_per_core_conv_block_config(
         act_block_w = round_up(padded_in_channels * window_w, tt::constants::TILE_WIDTH);
     } else if (parallel_config.shard_scheme == TensorMemoryLayout::BLOCK_SHARDED) {
         constexpr bool sliced_inner_dim = true;
-        if (sliced_inner_dim) {
-            act_block_w = round_up(padded_in_channels / act_c_num_blocks * window_w, tt::constants::TILE_WIDTH);
-        } else {
-            act_block_w =
-                round_up(padded_in_channels / act_c_num_blocks * window_w * window_h, tt::constants::TILE_WIDTH);
-        }
+        act_block_w = round_up(
+            padded_in_channels / act_c_num_blocks * window_w * (full_inner_dim ? window_h : 1),
+            tt::constants::TILE_WIDTH);
+
     } else if (parallel_config.shard_scheme == TensorMemoryLayout::WIDTH_SHARDED) {
         TT_ASSERT(padded_in_channels % (32 * parallel_config.grid.num_cores() * act_block_w_div) == 0);
         act_block_w = (padded_in_channels * window_h * window_w) / (parallel_config.grid.num_cores() * act_block_w_div);
@@ -1000,7 +999,8 @@ std::tuple<OptimizedConvParallelizationConfig, OptimizedConvBlockConfig, MemoryC
         kernel_size[0],
         kernel_size[1],
         get_fp32_dest_acc_en(compute_config),
-        conv_config.enable_split_reader && input_parallel_config.shard_scheme == TensorMemoryLayout::HEIGHT_SHARDED);
+        conv_config.enable_split_reader && input_parallel_config.shard_scheme == TensorMemoryLayout::HEIGHT_SHARDED,
+        conv_config.full_inner_dim);
     return {opt_conv_op_parallel_config, opt_conv_op_block_config, conv_out_memory_config};
 }
 

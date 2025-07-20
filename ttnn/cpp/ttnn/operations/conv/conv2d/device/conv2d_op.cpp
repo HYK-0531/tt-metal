@@ -71,6 +71,7 @@ Tensor optimized_conv_new(
     const DeviceComputeKernelConfig& compute_kernel_config,
     bool enable_act_double_buffer,
     bool enable_weights_double_buffer,
+    bool full_inner_dim,
     bool enable_split_reader,
     bool enable_subblock_padding) {
     TT_FATAL(b.layout() == Layout::TILE,
@@ -108,6 +109,7 @@ Tensor optimized_conv_new(
         compute_kernel_config,
         enable_act_double_buffer,
         enable_weights_double_buffer,
+        full_inner_dim,
         enable_split_reader,
         enable_subblock_padding);
     IDevice* device = a.device();
@@ -260,6 +262,7 @@ operation::ProgramWithCallbacks OptimizedConvNew::create_program(
         output_tensor,
         enable_act_double_buffer,
         enable_weights_double_buffer,
+        full_inner_dim,
         enable_split_reader,
         enable_subblock_padding);
 

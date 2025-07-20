@@ -53,7 +53,7 @@ int main() {
     auto src1_dram_buffer = CreateBuffer(dram_config);
     auto dst_dram_buffer = CreateBuffer(dram_config);
 
-    // Create 3 circular buffers. Think them like pipes moving data from one core to another. cb_src0 and cb_src1 are
+    // Create 3 circular buffers. Think of them like pipes moving data from one core to another. cb_src0 and cb_src1 are
     // used to move data from the reader kernel to the compute kernel. cb_dst is used to move data from the compute
     // kernel to the writer kernel. Each circular buffer is made up of 2 tiles. Thus when one tile is pushed and being
     // used by the receiving end, the sending end can get the next piece of data ready to be pushed. Overlapping the

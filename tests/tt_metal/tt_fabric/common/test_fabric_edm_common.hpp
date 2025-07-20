@@ -157,7 +157,6 @@ public:
         ValidateEnvironment();
 
         const MeshShape cluster_shape = GetDeterminedMeshShape();
-        const auto& physical_device_ids = SystemMesh::instance().get_mapped_physical_device_ids(cluster_shape);
 
         mesh_device_ = MeshDevice::create(MeshDeviceConfig(cluster_shape));
         device_open = true;
@@ -199,6 +198,9 @@ public:
 
     void TearDown() override {
         if (device_open) {
+            for (size_t i = 0; i < mesh_device_->num_devices(); i++) {
+                tt::tt_metal::detail::CloseDevices({{i, mesh_device_->get_device(i)}});
+            }
             mesh_device_->close();
             device_open = false;
         }
@@ -1191,7 +1193,9 @@ static std::vector<IDevice*> generate_default_line_fabric_under_test(
         }
     } else {
         // Choosing pcie devices so that more links are supported. More links == more (likelihood of) congestion.
-        if (line_size <= 4) {
+        if (line_size == 2) {
+            devices_ = {view.get_device(MeshCoordinate(0, 1)), view.get_device(MeshCoordinate(0, 2))};
+        } else if (line_size <= 4) {
             devices_ = {
                 view.get_device(MeshCoordinate(0, 0)),
                 view.get_device(MeshCoordinate(0, 1)),
@@ -1208,6 +1212,15 @@ static std::vector<IDevice*> generate_default_line_fabric_under_test(
                 view.get_device(MeshCoordinate(1, 1)),
                 view.get_device(MeshCoordinate(1, 0))};
         }
+    }
+
+    for (auto device : devices_) {
+        log_info(
+            tt::LogTest,
+            "Device {} has fabric node id {}",
+            device->id(),
+            tt::tt_metal::MetalContext::instance().get_control_plane().get_fabric_node_id_from_physical_chip_id(
+                device->id()));
     }
 
     return devices_;
@@ -1513,8 +1526,7 @@ void Run1DFabricPacketSendTest(
     const WriteThroughputStabilityTestWithPersistentFabricParams& params = {},
     size_t fabric_context_switch_interval =
         tt::tt_fabric::FabricEriscDatamoverBuilder::default_firmware_context_switch_interval) {
-    constexpr bool use_device_init_fabric = std::is_same_v<FABRIC_DEVICE_FIXTURE, Fabric1DLineDeviceInitFixture> ||
-                                            std::is_same_v<FABRIC_DEVICE_FIXTURE, Fabric1DRingDeviceInitFixture>;
+    constexpr bool use_device_init_fabric = true;
     auto num_devices = tt::tt_metal::GetNumAvailableDevices();
     TT_FATAL(
         !params.disable_sends_for_interior_workers || params.fabric_mode == FabricTestMode::Linear ||
@@ -1585,26 +1597,27 @@ void Run1DFabricPacketSendTest(
         use_galaxy, use_tg, line_size, topology, mesh_device, params.num_fabric_rows, params.num_fabric_cols);
 
     // Persistent Fabric Setup
-    std::optional<tt::tt_fabric::EdmLineFabricOpInterface> fabric_handle = std::nullopt;
-    std::optional<SubdeviceInfo> subdevice_managers = std::nullopt;
-    std::optional<std::vector<Program>> fabric_programs = std::nullopt;
-    if (!use_device_init_fabric) {
-        std::vector<Program*> fabric_program_ptrs;
-        TT_FATAL(
-            fabrics_under_test_devices.size() == 1, "Expected 1 fabric under test when device init fabric is not used");
-        setup_test_with_persistent_fabric(
-            fabrics_under_test_devices[0],
-            subdevice_managers,
-            fabric_programs,
-            fabric_program_ptrs,
-            fabric_handle,
-            params.num_links,
-            topology,
-            fabric_context_switch_interval,
-            false,
-            is_6u_galaxy,
-            edm_buffer_config);
-    }
+    // std::optional<tt::tt_fabric::EdmLineFabricOpInterface> fabric_handle = std::nullopt;
+    // std::optional<SubdeviceInfo> subdevice_managers = std::nullopt;
+    // std::optional<std::vector<Program>> fabric_programs = std::nullopt;
+    // if (!use_device_init_fabric) {
+    //     std::vector<Program*> fabric_program_ptrs;
+    //     TT_FATAL(
+    //         fabrics_under_test_devices.size() == 1, "Expected 1 fabric under test when device init fabric is not
+    //         used");
+    //     setup_test_with_persistent_fabric(
+    //         fabrics_under_test_devices[0],
+    //         subdevice_managers,
+    //         fabric_programs,
+    //         fabric_program_ptrs,
+    //         fabric_handle,
+    //         params.num_links,
+    //         topology,
+    //         fabric_context_switch_interval,
+    //         false,
+    //         is_6u_galaxy,
+    //         edm_buffer_config);
+    // }
 
     // Other boiler plate setup
     std::vector<std::vector<CoreCoord>> worker_cores_vec_per_device;
@@ -1670,6 +1683,7 @@ void Run1DFabricPacketSendTest(
             line_size,
             worker_devices.size());
     }
+
     std::vector<std::vector<KernelHandle>> worker_kernel_ids_per_fabric(fabrics_under_test_devices.size());
     std::vector<std::vector<size_t>> per_fabric_per_device_global_sem_addr_rt_arg(fabrics_under_test_devices.size());
     for (size_t fabric_index = 0; fabric_index < fabrics_under_test_devices.size(); fabric_index++) {
@@ -1709,17 +1723,17 @@ void Run1DFabricPacketSendTest(
             const size_t sync_core_noc_x = device->worker_core_from_logical_core(worker_cores_vec[0]).x;
             const size_t sync_core_noc_y = device->worker_core_from_logical_core(worker_cores_vec[0]).y;
 
-            std::optional<tt::tt_fabric::EdmLineFabricOpInterface> local_device_fabric_handle = std::nullopt;
-            if (!use_device_init_fabric) {
-                local_device_fabric_handle =
-                    tt::tt_fabric::EdmLineFabricOpInterface::build_program_builder_worker_connection_fabric(
-                        device,
-                        worker_config.forward_device,
-                        worker_config.backward_device,
-                        &program,
-                        params.num_links,
-                        topology);
-            }
+            // std::optional<tt::tt_fabric::EdmLineFabricOpInterface> local_device_fabric_handle = std::nullopt;
+            // if (!use_device_init_fabric) {
+            //     local_device_fabric_handle =
+            //         tt::tt_fabric::EdmLineFabricOpInterface::build_program_builder_worker_connection_fabric(
+            //             device,
+            //             worker_config.forward_device,
+            //             worker_config.backward_device,
+            //             &program,
+            //             params.num_links,
+            //             topology);
+            // }
 
             // reserve CB
             constexpr size_t packet_header_buffer_size = 8192;
@@ -1754,23 +1768,41 @@ void Run1DFabricPacketSendTest(
                     .noc = tt_metal::NOC::NOC_0,
                     .compile_args = worker_ct_args});
             worker_kernel_ids.push_back(worker_kernel_id);
+            auto device_fabric_node_id =
+                tt::tt_metal::MetalContext::instance().get_control_plane().get_fabric_node_id_from_physical_chip_id(
+                    device->id());
+            // auto build_connection_args = [use_device_init_fabric, &local_device_fabric_handle, device, &program](
+            auto build_connection_args =
+                [device, &program](
+                    CoreCoord& worker_core,
+                    size_t link,
+                    bool is_connected_in_direction,
+                    IDevice* connected_device,
+                    // not updated to CCL line direction because this is a metal/fabric level
+                    // test
+                    tt::tt_fabric::EdmLineFabricOpInterface::Direction direction,
+                    std::vector<uint32_t>& rt_args_out) {
+                    rt_args_out.push_back(is_connected_in_direction);
+                    if (is_connected_in_direction) {
+                        // if (use_device_init_fabric) {                    if (use_device_init_fabric) {
+                        // const auto& device_fabric_node_id =
+                        //     tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(device->id());
+                        // const auto& connected_device_fabric_node_id =
+                        //     tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(connected_device->id());
 
-            auto build_connection_args = [use_device_init_fabric, &local_device_fabric_handle, device, &program](
-                                             CoreCoord& worker_core,
-                                             size_t link,
-                                             bool is_connected_in_direction,
-                                             IDevice* connected_device,
-                                             // not updated to CCL line direction because this is a metal/fabric level
-                                             // test
-                                             tt::tt_fabric::EdmLineFabricOpInterface::Direction direction,
-                                             std::vector<uint32_t>& rt_args_out) {
-                rt_args_out.push_back(is_connected_in_direction);
-                if (is_connected_in_direction) {
-                    if (use_device_init_fabric) {
-                        const auto& device_fabric_node_id =
-                            tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(device->id());
+                        const auto& device_fabric_node_id = tt::tt_metal::MetalContext::instance()
+                                                                .get_control_plane()
+                                                                .get_fabric_node_id_from_physical_chip_id(device->id());
                         const auto& connected_device_fabric_node_id =
-                            tt::tt_fabric::get_fabric_node_id_from_physical_chip_id(connected_device->id());
+                            tt::tt_metal::MetalContext::instance()
+                                .get_control_plane()
+                                .get_fabric_node_id_from_physical_chip_id(connected_device->id());
+                        log_info(tt::LogTest, "Device {} has fabric node id {}", device->id(), device_fabric_node_id);
+                        log_info(
+                            tt::LogTest,
+                            "Connected device {} has fabric node id {}",
+                            connected_device->id(),
+                            connected_device_fabric_node_id);
                         tt::tt_fabric::append_fabric_connection_rt_args(
                             device_fabric_node_id,
                             connected_device_fabric_node_id,
@@ -1778,29 +1810,27 @@ void Run1DFabricPacketSendTest(
                             program,
                             {worker_core},
                             rt_args_out);
-                    } else {
-                        const auto connection = local_device_fabric_handle->uniquely_connect_worker(device, direction);
-                        {
-                            auto worker_flow_control_semaphore_id = CreateSemaphore(program, {worker_core}, 0);
-                            auto worker_teardown_semaphore_id = CreateSemaphore(program, {worker_core}, 0);
-                            auto worker_buffer_index_semaphore_id = CreateSemaphore(program, {worker_core}, 0);
-                            append_worker_to_fabric_edm_sender_rt_args(
-                                connection,
-                                worker_flow_control_semaphore_id,
-                                worker_teardown_semaphore_id,
-                                worker_buffer_index_semaphore_id,
-                                rt_args_out);
-                            log_info(
-                                tt::LogTest,
-                                "On device: {}, connecting to EDM fabric in {} direction. EDM noc_x: {}, noc_y: {}",
-                                device->id(),
-                                direction,
-                                connection.edm_noc_x,
-                                connection.edm_noc_y);
-                        }
+                        // } else {
+                        //     const auto connection = local_device_fabric_handle->uniquely_connect_worker(device,
+                        //     direction);
+                        //     {
+                        //         auto worker_flow_control_semaphore_id = CreateSemaphore(program, {worker_core}, 0);
+                        //         auto worker_teardown_semaphore_id = CreateSemaphore(program, {worker_core}, 0);
+                        //         auto worker_buffer_index_semaphore_id = CreateSemaphore(program, {worker_core}, 0);
+                        //         append_worker_to_fabric_edm_sender_rt_args(
+                        //             connection,
+                        //             worker_flow_control_semaphore_id,
+                        //             worker_teardown_semaphore_id,
+                        //             worker_buffer_index_semaphore_id,
+                        //             rt_args_out);
+                        //         log_info(
+                        //             tt::LogTest,
+                        //             "On device: {}, connecting to EDM fabric in {} direction. EDM noc_x: {}, noc_y:
+                        //             {}", device->id(), direction, connection.edm_noc_x, connection.edm_noc_y);
+                        //     }
+                        // }
                     }
-                }
-            };
+                };
 
             for (size_t l = 0; l < params.num_links; l++) {
                 auto worker_core = worker_cores_vec[l];
@@ -1930,24 +1960,23 @@ void Run1DFabricPacketSendTest(
         log_trace(tt::LogTest, "Waiting for Op finish on all devices");
         for (size_t fabric_index = 0; fabric_index < fabrics_under_test_devices.size(); fabric_index++) {
             auto& worker_devices = fabric_under_test_worker_devices[fabric_index];
-            wait_for_worker_program_completion(worker_devices, subdevice_managers);
+            wait_for_worker_program_completion(worker_devices);  //, subdevice_managers);
         }
         log_trace(tt::LogTest, "Main op done");
     }
 
-    if (!use_device_init_fabric) {
-        auto& devices = fabrics_under_test_devices[0];
-        TT_FATAL(fabric_programs->size() == devices.size(), "Expected fabric programs size to be same as devices size");
-        log_trace(tt::LogTest, "Fabric teardown");
-        persistent_fabric_teardown_sequence(
-            devices,
-            subdevice_managers,
-            fabric_handle.value(),
-            tt::tt_fabric::TerminationSignal::IMMEDIATELY_TERMINATE);
-        for (auto& device : devices) {
-            device->clear_loaded_sub_device_manager();
-        }
-    }
+    // if (!use_device_init_fabric) {
+    //     auto& devices = fabrics_under_test_devices[0];
+    //     TT_FATAL(fabric_programs->size() == devices.size(), "Expected fabric programs size to be same as devices
+    //     size"); log_trace(tt::LogTest, "Fabric teardown"); persistent_fabric_teardown_sequence(
+    //         devices,
+    //         subdevice_managers,
+    //         fabric_handle.value(),
+    //         tt::tt_fabric::TerminationSignal::IMMEDIATELY_TERMINATE);
+    //     for (auto& device : devices) {
+    //         device->clear_loaded_sub_device_manager();
+    //     }
+    // }
 
     log_trace(tt::LogTest, "Waiting for teardown completion");
     for (size_t fabric_index = 0; fabric_index < fabrics_under_test_devices.size(); fabric_index++) {

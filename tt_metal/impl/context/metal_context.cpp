@@ -224,6 +224,9 @@ void MetalContext::teardown() {
     dispatch_query_manager_.reset();
     dispatch_core_manager_.reset();
     tt::tt_metal::reset_topology_state();
+    distributed_context_.reset();
+    cluster_.reset();
+    hal_.reset();
 }
 
 MetalContext& MetalContext::instance() {
@@ -246,12 +249,6 @@ MetalContext::MetalContext() {
 distributed::multihost::DistributedContext& MetalContext::get_distributed_context() {
     TT_FATAL(distributed_context_, "Distributed context not initialized.");
     return *distributed_context_;
-}
-
-MetalContext::~MetalContext() {
-    distributed_context_.reset();
-    cluster_.reset();
-    hal_.reset();
 }
 
 llrt::RunTimeOptions& MetalContext::rtoptions() { return rtoptions_; }
